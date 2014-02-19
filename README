@@ -1,0 +1,50 @@
+This is a shortened version of the dnsdb query testing tool.
+
+Dependencies:
+	jannson
+	libcurl
+
+On Linux (Debian 7):
+	apt-get install libcurl4-openssl-dev
+	apt-get install libjansson-dev
+
+On Linux (CentOS 6):
+	# Based on PHP instructions for installing libcurl...
+	wget http://curl.haxx.se/download/curl-7.28.1.tar.gz
+	tar xvzf curl-7.28.1.tar.gz
+	cd curl-7.28.1/
+	./configure --with-libssh2 --enable-ares=/usr/local/ --enable-ipv6
+	make
+	make install
+
+	# lib jansson
+	wget http://www.digip.org/jansson/releases/jansson-2.5.tar.gz
+	tar -xpzf jansson-2.5.tar.gz
+	cd jansson-2.5
+	./configure
+	make
+	make install
+
+	echo /usr/local/lib >> /etc/ld.so.conf.d/local.conf
+	ldconfig
+
+On FreeBSD 10:
+	pkg install curl
+	pkg install jansson-2.5
+
+DNSDB Usage:
+	make
+	setenv DNSDB_API_KEY xyz			(FreeBSD, csh)
+	DNSDB_API_KEY='xyz'; export DNSDB_API_KEY	(Linux, bash)
+	./dnsdb_query -r vix.com/ns
+	./dnsdb_query -n \*.vix.com/ns
+	./dnsdb_query -i 24.104.150.0/24
+
+Not implemented:
+	long option names
+	-R, -s, sorting in general
+	-c, config is just DNSDB_API_KEY environment variable
+	--before, --after
+
+Wrongly implemented:
+	-i should be prefix/len not prefix,len
