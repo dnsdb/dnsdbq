@@ -561,7 +561,7 @@ dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 
-	memset(rec, 0, sizeof *rec);
+    memset(rec, 0, sizeof (struct dnsdb_crack));
 	if (debug)
 		printf("[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
 	rec->obj.main = json_loadb(buf, len, 0, &error);
