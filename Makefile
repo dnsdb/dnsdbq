@@ -1,7 +1,7 @@
 CURLINCL = `curl-config --cflags` 
 JANSINCL = -I/usr/local/include
 
-CURLLIBS = `curl-config --static-libs`
+CURLLIBS = `curl-config --libs`
 JANSLIBS = -L/usr/local/lib -ljansson
 
 CWARN =-W -Wall -Wcast-qual -Wpointer-arith -Wwrite-strings \
