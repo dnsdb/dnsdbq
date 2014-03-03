@@ -10,7 +10,7 @@ CWARN =-W -Wall -Wcast-qual -Wpointer-arith -Wwrite-strings \
 # -Wunreachable-code is often wrong
 #CWARN  +=-Wunreachable-code
 # try shipping without any warnings
-#CWARN   +=-Werror
+CWARN   +=-Werror
 
 CDEBUG = -g
 CFLAGS += $(CDEBUG) $(CWARN)
