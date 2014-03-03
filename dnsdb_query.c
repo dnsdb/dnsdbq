@@ -258,6 +258,7 @@ main(int argc, char *argv[]) {
                 }
             }
         }
+        fclose(fp);
     }
 	if (api_key == NULL) {
 		fprintf(stderr, "must set DNSDB_API_KEY in environment\n");
@@ -368,9 +369,9 @@ dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 	writer_len += bytes;
 
 	while ((nl = memchr(writer_buf, '\n', writer_len)) != NULL) {
-		struct dnsdb_crack rec;
 		const char *msg;
 		size_t pre_len, post_len;
+        struct dnsdb_crack rec;
 
 		if (dnsdb_writer_error())
 			return (0);
@@ -471,7 +472,7 @@ present_dns(const struct dnsdb_crack *rec, FILE *outf) {
 				rdata = "[bad value]";
 			fprintf(outf, "%s  %s  %s\n",
 				rec->rrname, rec->rrtype, rdata);
-			json_decref(rr);
+			//json_decref(rr);
 			ppflag++;
 		}
 	} else {
@@ -510,7 +511,7 @@ present_csv(const struct dnsdb_crack *rec, FILE *outf) {
 			else
 				rdata = "[bad value]";
 			present_csv_line(rec, rdata, outf);
-			json_decref(rr);
+			//json_decref(rr);
 		}
 	} else {
 		present_csv_line(rec, rec->rdata, outf);
@@ -560,7 +561,6 @@ static const char *
 dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
-
     memset(rec, 0, sizeof (struct dnsdb_crack));
 	if (debug)
 		printf("[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
@@ -634,7 +634,7 @@ dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
         rec->bailiwick = json_string_value(rec->obj.bailiwick);
     }
 
-           /* Records. */
+    /* Records. */
 	rec->obj.rrname = json_object_get(rec->obj.main, "rrname");
 	if (rec->obj.rrname != NULL) {
 		if (!json_is_string(rec->obj.rrname)) {
@@ -661,7 +661,6 @@ dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
 		}
 		/* N.b., the array case is for the consumer to iterate over. */
 	}
-
 	assert(msg == NULL);
 	return (NULL);
 
@@ -673,25 +672,9 @@ dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
 
 static void
 dnsdb_crack_destroy(struct dnsdb_crack *rec) {
-	if (rec->obj.time_first)
-		json_decref(rec->obj.time_first);
-	if (rec->obj.time_last)
-		json_decref(rec->obj.time_last);
-	if (rec->obj.zone_first)
-		json_decref(rec->obj.zone_first);
-	if (rec->obj.zone_last)
-		json_decref(rec->obj.zone_last);
-	if (rec->obj.count)
-		json_decref(rec->obj.count);
-	if (rec->obj.bailiwick)
-		json_decref(rec->obj.bailiwick);
-	if (rec->obj.rrtype)
-		json_decref(rec->obj.rrtype);
-	if (rec->obj.rrname)
-		json_decref(rec->obj.rrname);
-	if (rec->obj.rdata)
-		json_decref(rec->obj.rdata);
-	json_decref(rec->obj.main);
+    json_decref(rec->obj.main);
+    if (debug)
+        memset(rec, 0x5a, sizeof *rec);
 }
 
 static void
@@ -800,4 +783,3 @@ conf_parse(FILE *fp, struct dnsdb_config_opts *opts)
     }
     return 1;
 }
-
