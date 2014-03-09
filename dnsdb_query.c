@@ -71,53 +71,82 @@ static void time_print(time_t x, FILE *);
 
 int
 main(int argc, char *argv[]) {
-	char *command = NULL;
 	const char *api_key = getenv("DNSDB_API_KEY");
 	const char *dnsdb_server = getenv("DNSDB_SERVER");
-	int ch, limit = 0;
+	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
+	char *command;
+	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
 	present pres = present_dns;
+	int ch, limit = 0;
 
-	while ((ch = getopt(argc, argv, "r:n:i:l:t:hvdj")) != -1) {
-		int x;
-
+	while ((ch = getopt(argc, argv, "r:n:i:l:p:t:b:hvdj")) != -1) {
 		switch (ch) {
-		case 'r':
-			if (command != NULL)
-				usage();
-			x = asprintf(&command, "rrset/name/%s", optarg);
-			if (x < 0) {
-				perror("asprintf");
-				exit(1);
-			}
-			break;
-		case 'n':
-			if (command != NULL)
-				usage();
-			x = asprintf(&command, "rdata/name/%s", optarg);
-			if (x < 0) {
-				perror("asprintf");
-				exit(1);
-			}
-			break;
-		case 'i': {
+		case 'r': {
 			const char *p;
 
-			if (command != NULL)
+			if (mode != no_mode)
 				usage();
-			if ((p = strchr(optarg, '/')) != NULL)
-				x = asprintf(&command, "rdata/ip/%-*.*s,%s",
-					     (int) (p - optarg),
-					     (int) (p - optarg),
-					     optarg, p + 1);
+			assert(name == NULL);
+			mode = rdata_mode;
+			if (type == NULL && bailiwick == NULL)
+				p = strchr(optarg, '/');
 			else
-				x = asprintf(&command, "rdata/ip/%s", optarg);
-			if (x < 0) {
-				perror("asprintf");
-				exit(1);
+				p = NULL;
+			if (p != NULL) {
+				const char *q;
+
+				q = strchr(p + 1, '/');
+				if (q != NULL) {
+					bailiwick = strdup(q + 1);
+					type = strndup(p + 1, q - p - 1);
+				} else {
+					type = strdup(p + 1);
+				}
+				name = strndup(optarg, p - optarg);
+			} else {
+				name = strdup(optarg);
 			}
 			break;
 		    }
-		case 't':
+		case 'n': {
+			const char *p;
+
+			if (mode != no_mode)
+				usage();
+			assert(name == NULL);
+			mode = name_mode;
+			if (type == NULL)
+				p = strchr(optarg, '/');
+			else
+				p = NULL;
+			if (p != NULL) {
+				name = strndup(optarg, p - optarg);
+				type = strdup(p + 1);
+			} else {
+				name = strdup(optarg);
+			}
+			break;
+		    }
+		case 'i': {
+			const char *p;
+
+			if (mode != no_mode)
+				usage();
+			assert(name == NULL);
+			mode = ip_mode;
+			if (length == NULL)
+				p = strchr(optarg, '/');
+			else
+				p = NULL;
+			if (p != NULL) {
+				name = strndup(optarg, p - optarg);
+				length = strdup(p + 1);
+			} else {
+				name = strdup(optarg);
+			}
+			break;
+		    }
+		case 'p':
 			if (strcmp(optarg, "json") == 0)
 				pres = NULL;
 			else if (strcmp(optarg, "dns") == 0)
@@ -126,6 +155,16 @@ main(int argc, char *argv[]) {
 				pres = present_csv;
 			else
 				usage();
+			break;
+		case 't':
+			if (type != NULL)
+				free(type);
+			type = strdup(optarg);
+			break;
+		case 'b':
+			if (bailiwick != NULL)
+				free(bailiwick);
+			bailiwick = strdup(optarg);
 			break;
 		case 'l':
 			limit = atoi(optarg);
@@ -147,8 +186,62 @@ main(int argc, char *argv[]) {
 	}
 	argc -= optind;
 	argv += optind;
-	if (command == NULL)
+	if (debug) {
+		if (name != NULL)
+			fprintf(stderr, "name = '%s'\n", name);
+		if (type != NULL)
+			fprintf(stderr, "type = '%s'\n", type);
+		if (bailiwick != NULL)
+			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
+		if (length != NULL)
+			fprintf(stderr, "length = '%s'\n", length);
+	}
+	switch (mode) {
+		int x;
+	case no_mode:
 		usage();
+	case rdata_mode:
+		if (type != NULL && bailiwick != NULL)
+			x = asprintf(&command, "rrset/name/%s/%s/%s",
+				     name, type, bailiwick);
+		else if (type != NULL)
+			x = asprintf(&command, "rrset/name/%s/%s",
+				     name, type);
+		else
+			x = asprintf(&command, "rrset/name/%s",
+				     name);
+		if (x < 0) {
+			perror("asprintf");
+			exit(1);
+		}
+		break;
+	case name_mode:
+		if (type != NULL)
+			x = asprintf(&command, "rdata/name/%s/%s",
+				     name, type);
+		else
+			x = asprintf(&command, "rdata/name/%s",
+				     name);
+		if (x < 0) {
+			perror("asprintf");
+			exit(1);
+		}
+		break;
+	case ip_mode:
+		if (length != NULL)
+			x = asprintf(&command, "rdata/ip/%s,%s",
+				     name, length);
+		else
+			x = asprintf(&command, "rdata/ip/%s",
+				     name);
+		if (x < 0) {
+			perror("asprintf");
+			exit(1);
+		}
+		break;
+	default:
+		abort();
+	}
 	if (api_key == NULL) {
 		fprintf(stderr, "must set DNSDB_API_KEY in environment\n");
 		exit(1);
@@ -157,6 +250,12 @@ main(int argc, char *argv[]) {
 		dnsdb_server = DNSDB_SERVER;
 	dnsdb_query(command, api_key, dnsdb_server, limit, pres);
 	free(command);
+	if (name != NULL)
+		free(name);
+	if (type != NULL)
+		free(type);
+	if (bailiwick != NULL)
+		free(bailiwick);
 	return (0);
 }
 
@@ -164,7 +263,7 @@ main(int argc, char *argv[]) {
 
 static void usage(void) {
 	fprintf(stderr,
-"usage: dnsdb_query [-v] [-d] [-h] [-j] [-t json|csv] [-l LIMIT]\n"
+"usage: dnsdb_query [-vdhj] [-t TYPE] [-b bailiwick] [-p json|csv] [-l LIMIT]\n"
 "\t{-r OWNER[/TYPE[/BAILIWICK]]\n"
 "\t\t| -n NAME[/TYPE]\n"
 "\t\t| -i IP[/PFXLEN]\n"
@@ -335,7 +434,7 @@ present_dns(const struct dnsdb_crack *rec, FILE *outf) {
 	if (rec->obj.count != NULL) {
 		fprintf(outf, "%s count: %d", prefix, rec->count);
 		prefix = ";";
-		pflag++;;
+		pflag++;
 		ppflag++;
 	}
 	if (rec->obj.bailiwick != NULL) {
@@ -362,7 +461,6 @@ present_dns(const struct dnsdb_crack *rec, FILE *outf) {
 				rdata = "[bad value]";
 			fprintf(outf, "%s  %s  %s\n",
 				rec->rrname, rec->rrtype, rdata);
-			json_decref(rr);
 			ppflag++;
 		}
 	} else {
@@ -401,7 +499,6 @@ present_csv(const struct dnsdb_crack *rec, FILE *outf) {
 			else
 				rdata = "[bad value]";
 			present_csv_line(rec, rdata, outf);
-			json_decref(rr);
 		}
 	} else {
 		present_csv_line(rec, rec->rdata, outf);
@@ -564,25 +661,9 @@ dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
 
 static void
 dnsdb_crack_destroy(struct dnsdb_crack *rec) {
-	if (rec->obj.time_first)
-		json_decref(rec->obj.time_first);
-	if (rec->obj.time_last)
-		json_decref(rec->obj.time_last);
-	if (rec->obj.zone_first)
-		json_decref(rec->obj.zone_first);
-	if (rec->obj.zone_last)
-		json_decref(rec->obj.zone_last);
-	if (rec->obj.count)
-		json_decref(rec->obj.count);
-	if (rec->obj.bailiwick)
-		json_decref(rec->obj.bailiwick);
-	if (rec->obj.rrtype)
-		json_decref(rec->obj.rrtype);
-	if (rec->obj.rrname)
-		json_decref(rec->obj.rrname);
-	if (rec->obj.rdata)
-		json_decref(rec->obj.rdata);
 	json_decref(rec->obj.main);
+	if (debug)
+		memset(rec, 0x5a, sizeof *rec);
 }
 
 static void
