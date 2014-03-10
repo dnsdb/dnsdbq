@@ -64,8 +64,8 @@ static void dnsdb_crack_destroy(struct dnsdb_crack *);
 static size_t dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob);
 static void dnsdb_writer_fini(void);
 static int dnsdb_writer_error(void);
-
 static void time_print(time_t x, FILE *);
+static void escape(char **);
 
 /* Public. */
 
@@ -186,6 +186,14 @@ main(int argc, char *argv[]) {
 	}
 	argc -= optind;
 	argv += optind;
+	if (name != NULL)
+		escape(&name);
+	if (type != NULL)
+		escape(&type);
+	if (bailiwick != NULL)
+		escape(&bailiwick);
+	if (length != NULL)
+		escape(&length);
 	if (debug) {
 		if (name != NULL)
 			fprintf(stderr, "name = '%s'\n", name);
@@ -673,4 +681,19 @@ time_print(time_t x, FILE *outf) {
 
 	strftime(z, sizeof z, "%F %T", y);
 	fputs(z, outf);
+}
+
+static void
+escape(char **src) {
+	char *escaped;
+
+	escaped = curl_escape(*src, strlen(*src));
+	if (escaped == NULL) {
+		fprintf(stderr, "curl_escape(%s) failed\n", *src);
+		exit(1);
+	}
+	free(*src);
+	*src = strdup(escaped);
+	curl_free(escaped);
+	escaped = NULL;
 }
