@@ -1,21 +1,4 @@
-/* Copyright (C) 2014-2015, Farsight Security, Inc. No rights reserved. */
-
-/***************************************************************************
- *
- * Portions Copyright (C) 1998 - 2012, Daniel Stenberg, <daniel@haxx.se>, et al
- *
- * This software is licensed as described in the file COPYING, which
- * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
- *
- * You may opt to use, copy, modify, merge, publish, distribute and/or sell
- * copies of the Software, and permit persons to whom the Software is
- * furnished to do so, under the terms of the COPYING file.
- *
- * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
- * KIND, either express or implied.
- *
- ***************************************************************************/ 
+/* Copyright (C) 2014-2017, Farsight Security, Inc. No rights reserved. */
 
 /* External. */
 
@@ -92,6 +75,7 @@ static void dnsdb_writer_fini(present);
 static int dnsdb_writer_error(void);
 static void time_print(time_t x, int, FILE *);
 static int time_get(const char *src, time_t *dst);
+static void escape(char **);
 
 /* Public. */
 
@@ -246,15 +230,33 @@ main(int argc, char *argv[]) {
 	argc -= optind;
 	argv += optind;
 
-	if (debug && after != 0) {
-		fprintf(stderr, "after =  ");
-		time_print(after, FALSE, stderr);
-		putc('\n', stderr);
-	}
-	if (debug && before != 0) {
-		fprintf(stderr, "before = ");
-		time_print(before, FALSE, stderr);
-		putc('\n', stderr);
+	if (name != NULL)
+		escape(&name);
+	if (type != NULL)
+		escape(&type);
+	if (bailiwick != NULL)
+		escape(&bailiwick);
+	if (length != NULL)
+		escape(&length);
+	if (debug) {
+		if (name != NULL)
+			fprintf(stderr, "name = '%s'\n", name);
+		if (type != NULL)
+			fprintf(stderr, "type = '%s'\n", type);
+		if (bailiwick != NULL)
+			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
+		if (length != NULL)
+			fprintf(stderr, "length = '%s'\n", length);
+		if (after != 0) {
+			fprintf(stderr, "after =  ");
+			time_print(after, FALSE, stderr);
+			putc('\n', stderr);
+		}
+		if (before != 0) {
+			fprintf(stderr, "before = ");
+			time_print(before, FALSE, stderr);
+			putc('\n', stderr);
+		}
 	}
 
 	read_configs();
@@ -1053,4 +1055,19 @@ time_get(const char *src, time_t *dst) {
 		return (1);
 	}
 	return (0);
+}
+
+static void
+escape(char **src) {
+	char *escaped;
+
+	escaped = curl_escape(*src, strlen(*src));
+	if (escaped == NULL) {
+		fprintf(stderr, "curl_escape(%s) failed\n", *src);
+		exit(1);
+	}
+	free(*src);
+	*src = strdup(escaped);
+	curl_free(escaped);
+	escaped = NULL;
 }
