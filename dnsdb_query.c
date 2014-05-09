@@ -43,7 +43,7 @@ struct dnsdb_crack {
 	} obj;
 	time_t time_first, time_last, zone_first, zone_last;
 	const char *bailiwick, *rrname, *rrtype, *rdata;
-	int count;
+	json_int_t count;
 };
 
 typedef void (*present)(const struct dnsdb_crack *, FILE *);
@@ -432,7 +432,7 @@ present_dns(const struct dnsdb_crack *rec, FILE *outf) {
 	prefix = ";;";
 	pflag = 0;
 	if (rec->obj.count != NULL) {
-		fprintf(outf, "%s count: %d", prefix, rec->count);
+		fprintf(outf, "%s count: %lld", prefix, (long long)rec->count);
 		prefix = ";";
 		pflag++;
 		ppflag++;
@@ -526,7 +526,7 @@ present_csv_line(const struct dnsdb_crack *rec,
 
 	/* Count and bailiwick. */
 	if (rec->obj.count != NULL)
-		fprintf(outf, "%lu", (unsigned long) rec->count);
+		fprintf(outf, "%lld", (long long) rec->count);
 	putc(',', outf);
 	if (rec->obj.bailiwick != NULL)
 		fprintf(outf, "\"%s\"", rec->bailiwick);
@@ -611,7 +611,7 @@ dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
 			msg = "count must be an integer";
 			goto ouch;
 		}
-		rec->count = (int) json_integer_value(rec->obj.count);
+		rec->count = json_integer_value(rec->obj.count);
 	}
 	rec->obj.bailiwick = json_object_get(rec->obj.main, "bailiwick");
 	if (rec->obj.bailiwick != NULL) {
