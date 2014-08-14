@@ -48,12 +48,14 @@ struct dnsdb_crack {
 
 typedef void (*present)(const struct dnsdb_crack *, FILE *);
 
+static const char *program_name = NULL;
+static int filter = 0;
 static int verbose = 0;
 static int debug = 0;
 
 /* Forward. */
 
-static void usage(void)  __attribute__((__noreturn__));
+static void usage(const char *error)  __attribute__((__noreturn__));
 static void dnsdb_query(const char *command, const char *api_key,
 			const char *dnsdb_server, int limit, present);
 static void present_dns(const struct dnsdb_crack *, FILE *);
@@ -74,18 +76,23 @@ main(int argc, char *argv[]) {
 	const char *api_key = getenv("DNSDB_API_KEY");
 	const char *dnsdb_server = getenv("DNSDB_SERVER");
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
-	char *command;
 	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
 	present pres = present_dns;
 	int ch, limit = 0;
 
-	while ((ch = getopt(argc, argv, "r:n:i:l:p:t:b:hvdj")) != -1) {
+	program_name = strrchr(argv[0], '/');
+	if (program_name == NULL)
+		program_name = argv[0];
+	else
+		program_name++;
+
+	while ((ch = getopt(argc, argv, "r:n:i:l:p:t:b:vdjfh")) != -1) {
 		switch (ch) {
 		case 'r': {
 			const char *p;
 
 			if (mode != no_mode)
-				usage();
+				usage("-r, -n, or -i can only appear once");
 			assert(name == NULL);
 			mode = rdata_mode;
 			if (type == NULL && bailiwick == NULL)
@@ -112,7 +119,7 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage();
+				usage("-r, -n, or -i can only appear once");
 			assert(name == NULL);
 			mode = name_mode;
 			if (type == NULL)
@@ -131,7 +138,7 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage();
+				usage("-r, -n, or -i can only appear once");
 			assert(name == NULL);
 			mode = ip_mode;
 			if (length == NULL)
@@ -146,6 +153,9 @@ main(int argc, char *argv[]) {
 			}
 			break;
 		    }
+		case 'l':
+			limit = atoi(optarg);
+			break;
 		case 'p':
 			if (strcmp(optarg, "json") == 0)
 				pres = NULL;
@@ -154,20 +164,21 @@ main(int argc, char *argv[]) {
 			else if (strcmp(optarg, "csv") == 0)
 				pres = present_csv;
 			else
-				usage();
+				usage("-p must specify json, dns, or csv");
 			break;
 		case 't':
+			if (filter)
+				usage("can't mix -t with -f");
 			if (type != NULL)
 				free(type);
 			type = strdup(optarg);
 			break;
 		case 'b':
+			if (filter)
+				usage("can't mix -b with -f");
 			if (bailiwick != NULL)
 				free(bailiwick);
 			bailiwick = strdup(optarg);
-			break;
-		case 'l':
-			limit = atoi(optarg);
 			break;
 		case 'v':
 			verbose++;
@@ -178,97 +189,131 @@ main(int argc, char *argv[]) {
 		case 'j':
 			pres = NULL;
 			break;
+		case 'f':
+			filter++;
+			break;
 		case 'h':
-			/*FALLTHROUGH*/
+			usage(NULL);
+			break;
 		default:
-			usage();
+			usage("unrecognized option");
 		}
 	}
 	argc -= optind;
 	argv += optind;
-	if (debug) {
-		if (name != NULL)
-			fprintf(stderr, "name = '%s'\n", name);
-		if (type != NULL)
-			fprintf(stderr, "type = '%s'\n", type);
-		if (bailiwick != NULL)
-			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
-		if (length != NULL)
-			fprintf(stderr, "length = '%s'\n", length);
-	}
-	switch (mode) {
-		int x;
-	case no_mode:
-		usage();
-	case rdata_mode:
-		if (type != NULL && bailiwick != NULL)
-			x = asprintf(&command, "rrset/name/%s/%s/%s",
-				     name, type, bailiwick);
-		else if (type != NULL)
-			x = asprintf(&command, "rrset/name/%s/%s",
-				     name, type);
-		else
-			x = asprintf(&command, "rrset/name/%s",
-				     name);
-		if (x < 0) {
-			perror("asprintf");
-			exit(1);
-		}
-		break;
-	case name_mode:
-		if (type != NULL)
-			x = asprintf(&command, "rdata/name/%s/%s",
-				     name, type);
-		else
-			x = asprintf(&command, "rdata/name/%s",
-				     name);
-		if (x < 0) {
-			perror("asprintf");
-			exit(1);
-		}
-		break;
-	case ip_mode:
-		if (length != NULL)
-			x = asprintf(&command, "rdata/ip/%s,%s",
-				     name, length);
-		else
-			x = asprintf(&command, "rdata/ip/%s",
-				     name);
-		if (x < 0) {
-			perror("asprintf");
-			exit(1);
-		}
-		break;
-	default:
-		abort();
-	}
 	if (api_key == NULL) {
 		fprintf(stderr, "must set DNSDB_API_KEY in environment\n");
 		exit(1);
 	}
 	if (dnsdb_server == NULL)
 		dnsdb_server = DNSDB_SERVER;
-	dnsdb_query(command, api_key, dnsdb_server, limit, pres);
-	free(command);
-	if (name != NULL)
-		free(name);
-	if (type != NULL)
-		free(type);
-	if (bailiwick != NULL)
-		free(bailiwick);
+
+	if (filter) {
+		char command[1000];
+
+		if (mode != no_mode)
+			usage("can't mix -n, -r, or -i with -f");
+		while (fgets(command, sizeof command, stdin) != NULL) {
+			char *nl = strrchr(command, '\n');
+
+			if (nl != NULL)
+				*nl = '\0';
+			dnsdb_query(command, api_key, dnsdb_server,
+				    limit, pres);
+			fprintf(stdout, "--\n");
+		}
+	} else {
+		char *command;
+
+		if (debug) {
+			if (name != NULL)
+				fprintf(stderr, "name = '%s'\n", name);
+			if (type != NULL)
+				fprintf(stderr, "type = '%s'\n", type);
+			if (bailiwick != NULL)
+				fprintf(stderr, "bailiwick = '%s'\n",
+					bailiwick);
+			if (length != NULL)
+				fprintf(stderr, "length = '%s'\n", length);
+		}
+		switch (mode) {
+			int x;
+		case no_mode:
+			usage("must specify -r, -n, or -i unless -f is used");
+		case rdata_mode:
+			if (type != NULL && bailiwick != NULL)
+				x = asprintf(&command, "rrset/name/%s/%s/%s",
+					     name, type, bailiwick);
+			else if (type != NULL)
+				x = asprintf(&command, "rrset/name/%s/%s",
+					     name, type);
+			else
+				x = asprintf(&command, "rrset/name/%s",
+					     name);
+			if (x < 0) {
+				perror("asprintf");
+				exit(1);
+			}
+			break;
+		case name_mode:
+			if (type != NULL)
+				x = asprintf(&command, "rdata/name/%s/%s",
+					     name, type);
+			else
+				x = asprintf(&command, "rdata/name/%s",
+					     name);
+			if (x < 0) {
+				perror("asprintf");
+				exit(1);
+			}
+			break;
+		case ip_mode:
+			if (length != NULL)
+				x = asprintf(&command, "rdata/ip/%s,%s",
+					     name, length);
+			else
+				x = asprintf(&command, "rdata/ip/%s",
+					     name);
+			if (x < 0) {
+				perror("asprintf");
+				exit(1);
+			}
+			break;
+		default:
+			abort();
+		}
+		if (name != NULL)
+			free(name);
+		if (type != NULL)
+			free(type);
+		if (bailiwick != NULL)
+			free(bailiwick);
+		dnsdb_query(command, api_key, dnsdb_server, limit, pres);
+		free(command);
+	}
 	return (0);
 }
 
 /* Private. */
 
-static void usage(void) {
+static void usage(const char *error) {
+	if (error != NULL)
+		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
-"usage: dnsdb_query [-vdhj] [-t TYPE] [-b bailiwick] [-p json|csv] [-l LIMIT]\n"
-"\t{-r OWNER[/TYPE[/BAILIWICK]]\n"
-"\t\t| -n NAME[/TYPE]\n"
-"\t\t| -i IP[/PFXLEN]\n"
+"usage: %s [-vdjh] [-p dns|json|csv] [-l LIMIT] {\n"
+"\t-f |\n"
+"\t[-t type] [-b bailiwick] {\n"
+"\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
+"\t\t-n NAME[/TYPE] |\n"
+"\t\t-i IP[/PFXLEN]\n"
 "\t}\n"
-		);
+"}\n"
+"for -f, stdin must contain lines of the following forms:\n"
+"\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
+"\trdata/name/NAME[/TYPE]\n"
+"\trdata/ip/ADDR[/PFXLEN]\n"
+"for -f, output format will be determined by -p, using --\\n framing\n",
+		program_name);
 	exit(1);
 }
 
@@ -281,6 +326,8 @@ dnsdb_query(const char *command, const char *api_key,
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
  
+	if (debug)
+		fprintf(stderr, "dnsdb_query(%s)\n", command);
 	curl = curl_easy_init();
 	if (curl != NULL) {
 		struct curl_slist *headers = NULL;
@@ -349,7 +396,7 @@ dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 	char *nl;
 
 	if (debug)
-		printf("dnsdb_writer(%d, %d): %d\n",
+		fprintf(stderr, "dnsdb_writer(%d, %d): %d\n",
 			(int)size, (int)nmemb, (int)bytes);
 
 	writer_buf = realloc(writer_buf, writer_len + bytes);
@@ -366,7 +413,7 @@ dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 		pre_len = nl - writer_buf;
 		msg = dnsdb_crack_new(&rec, writer_buf, pre_len);
 		if (msg) {
-			printf("%s\n", msg);
+			puts(msg);
 		} else {
 			(*pres)(&rec, stdout);
 			dnsdb_crack_destroy(&rec);
@@ -394,7 +441,7 @@ dnsdb_writer_fini(void) {
 static int
 dnsdb_writer_error(void) {
 	if (writer_buf[0] != '\0' && writer_buf[0] != '{') {
-		printf("API: %-*.*s",
+		fprintf(stderr, "API: %-*.*s",
 		       (int)writer_len, (int)writer_len, writer_buf);
 		writer_buf[0] = '\0';
 		writer_len = 0;
@@ -551,18 +598,19 @@ dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
 
 	memset(rec, 0, sizeof *rec);
 	if (debug)
-		printf("[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
+		fprintf(stderr, "[%d] '%-*.*s'\n",
+			(int)len, (int)len, (int)len, buf);
 	rec->obj.main = json_loadb(buf, len, 0, &error);
 	if (rec->obj.main == NULL) {
-		printf("%d:%d: %s %s\n",
+		fprintf(stderr, "%d:%d: %s %s\n",
 		       error.line, error.column,
 		       error.text, error.source);
 		abort();
 	}
 	if (debug) {
-		fputs("---\n", stdout);
-		json_dumpf(rec->obj.main, stdout, JSON_INDENT(2));
-		fputs("\n===\n", stdout);
+		fputs("---\n", stderr);
+		json_dumpf(rec->obj.main, stderr, JSON_INDENT(2));
+		fputs("\n===\n", stderr);
 	}
 
 	/* Timestamps. */
