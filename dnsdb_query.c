@@ -398,7 +398,7 @@ read_configs(void) {
 			break;
 		}
 	}
-	if (cf != NULL) {
+	if (*conf != NULL) {
 		char *cmd, *tok, line[1000];
 		FILE *f;
 
@@ -890,16 +890,28 @@ time_print(time_t x, FILE *outf) {
 
 static int
 time_get(const char *src, time_t *dst) {
+	char *endptr;
 	struct tm tt;
 	u_long t;
 
 	if (strptime(src, "%Y-%m-%d %H:%M:%S", &tt) != NULL ||
 	    strptime(src, "%Y-%m-%d", &tt) != NULL)
 	{
+		if (debug)
+			fprintf(stderr, "time_get(%s) -> p(%lu)\n", src, t);
 		*dst = (u_long) mktime(&tt);
 		return (1);
 	}
+	t = strtoul(src, &endptr, 10);
+	if (*src != '\0' && *endptr == '\0') {
+		if (debug)
+			fprintf(stderr, "time_get(%s) -> c(%lu)\n", src, t);
+		*dst = (time_t) t;
+		return (1);
+	}
 	if (ns_parse_ttl(src, &t) == 0) {
+		if (debug)
+			fprintf(stderr, "time_get(%s) -> t(%lu)\n", src, t);
 		*dst = (time_t) (((u_long) time(NULL)) - t);
 		return (1);
 	}
