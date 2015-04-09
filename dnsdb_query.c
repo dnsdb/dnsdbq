@@ -28,6 +28,8 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
+#include <ctype.h>
 
 #include <curl/curl.h>
 #include <jansson.h>
@@ -35,6 +37,16 @@
 /* Internal. */
 
 #define DNSDB_SERVER "https://api.dnsdb.info"
+#define DNSDB_CONF "dnsdb-query.conf"
+
+struct dnsdb_config_opts {
+	char api_key[256];
+	char server[256];
+	int fmt;
+#define FORMAT_JSON 1
+#define FORMAT_TEXT 2
+#define FORMAT_CSV  3
+};
 
 struct dnsdb_crack {
 	struct {
@@ -52,6 +64,7 @@ static const char *program_name = NULL;
 static int filter = 0;
 static int verbose = 0;
 static int debug = 0;
+static const char *config_file = NULL;
 
 /* Forward. */
 
@@ -68,17 +81,31 @@ static void dnsdb_writer_fini(void);
 static int dnsdb_writer_error(void);
 
 static void time_print(time_t x, FILE *);
+static FILE *conf_open(char *);
+static int conf_parse(FILE *, struct dnsdb_config_opts *);
 
 /* Public. */
 
 int
 main(int argc, char *argv[]) {
+	/*
+	 * Options are parsed from environment but will be overwritten if a
+	 * config file is found / specified and contains the same options.
+	 *
+	 * Special case: -p or -j at command line will override environment
+	 * and config file.
+	 */
 	const char *api_key = getenv("DNSDB_API_KEY");
 	const char *dnsdb_server = getenv("DNSDB_SERVER");
+	const char *dnsdb_format = getenv("DNSDB_FORMAT");
+	const char *home = getenv("HOME");
+	char config_prefix[PATH_MAX];
+	FILE *fp;
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
 	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
 	present pres = present_dns;
-	int ch, limit = 0;
+	int ch, limit = 0, format_set = 0;
+	struct dnsdb_config_opts config_opts;
 
 	program_name = strrchr(argv[0], '/');
 	if (program_name == NULL)
@@ -86,8 +113,11 @@ main(int argc, char *argv[]) {
 	else
 		program_name++;
 
-	while ((ch = getopt(argc, argv, "r:n:i:l:p:t:b:vdjfh")) != -1) {
+	while ((ch = getopt(argc, argv, "c:r:n:i:l:p:t:b:vdjfh")) != -1) {
 		switch (ch) {
+		case 'c':
+			config_file = optarg;
+			break;
 		case 'r': {
 			const char *p;
 
@@ -165,6 +195,7 @@ main(int argc, char *argv[]) {
 				pres = present_csv;
 			else
 				usage("-p must specify json, dns, or csv");
+			format_set = 1;
 			break;
 		case 't':
 			if (filter)
@@ -188,6 +219,7 @@ main(int argc, char *argv[]) {
 			break;
 		case 'j':
 			pres = NULL;
+			format_set = 1;
 			break;
 		case 'f':
 			filter++;
@@ -201,6 +233,82 @@ main(int argc, char *argv[]) {
 	}
 	argc -= optind;
 	argv += optind;
+
+	/*
+	 * if user didn't specify -p or -j AND there's a format env var,
+	 * parse it
+	 */
+	if (format_set == 0 && dnsdb_format != NULL) {
+		if (strncmp(dnsdb_format, "text", 4) == 0)
+			pres = present_dns;
+		else if (strncmp(dnsdb_format, "json", 4) == 0)
+			pres = NULL;
+		else if (strncmp(dnsdb_format, "csv", 3) == 0)
+			pres = present_csv;
+		else
+			fprintf(stderr,
+				"ignoring unknown DNSDB_FORMAT env var: %s\n",
+				dnsdb_format);
+	}
+
+	/*
+	 * try to open user-specified config, hard fail if something goes
+	 * wrong
+	 */
+	if (config_file) {
+		fp = fopen(config_file, "r");
+		if (fp == NULL) {
+			fprintf(stderr, "can't open %s: %s\n", config_file, 
+			strerror(errno));
+			exit(1);
+		}
+	}
+	else {
+		/* first try to open system-wide default config */
+		strncpy(config_prefix, "/etc/", 5);
+		fp = conf_open(config_prefix);
+		if (fp == NULL) {
+			/*
+			 * ..if that doesn't work, try to open .config in user's
+			 * $HOME
+			 */
+			strncpy(config_prefix, home, PATH_MAX);
+			strncpy(config_prefix + strlen(home), "/.",
+					PATH_MAX - 2 - strlen(home));
+			fp = conf_open(config_prefix);
+		}
+	}
+	if (fp != NULL) {
+		/* examine config file for options and set 'em if we find 'em */
+		if (conf_parse(fp, &config_opts) == -1) {
+			fprintf(stderr,
+				"config file %s contains invalid options\n",
+				config_prefix);
+			exit(1);
+		}
+		else {
+			api_key = config_opts.api_key;
+			dnsdb_server = config_opts.server;
+			/*
+			 * user didn't specify -p or -j, let's use what's in
+			 * the config
+			 */
+			if (format_set == 0) {
+				switch (config_opts.fmt) {
+					case FORMAT_JSON:
+						pres = NULL;
+						break;
+					case FORMAT_TEXT:
+						pres = present_dns;
+						break;
+					case FORMAT_CSV:
+						pres = present_csv;
+						break;
+				}
+			}
+		}
+	}
+
 	if (api_key == NULL) {
 		fprintf(stderr, "must set DNSDB_API_KEY in environment\n");
 		exit(1);
@@ -300,7 +408,7 @@ static void usage(const char *error) {
 	if (error != NULL)
 		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
-"usage: %s [-vdjh] [-p dns|json|csv] [-l LIMIT] {\n"
+"usage: %s [-vdjh] [-p dns|json|csv] [-l LIMIT] [-c config]{\n"
 "\t-f |\n"
 "\t[-t type] [-b bailiwick] {\n"
 "\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
@@ -721,4 +829,96 @@ time_print(time_t x, FILE *outf) {
 
 	strftime(z, sizeof z, "%F %T", y);
 	fputs(z, outf);
+}
+
+static FILE *
+conf_open(char *prefix)
+{
+	char file_name[PATH_MAX];
+	int prefix_siz = strlen(prefix);
+	FILE *fp;
+
+	memset(file_name, 0, PATH_MAX);
+	strncpy(file_name, prefix, PATH_MAX - 1);
+	strncpy(file_name + prefix_siz, DNSDB_CONF, PATH_MAX - 1 - prefix_siz);
+
+	fp = fopen(file_name, "r");
+	if (fp == NULL) {
+		if (errno != ENOENT) {
+			fprintf(stderr, "can't open %s: %s\n", file_name,
+					strerror(errno));
+		}
+		return (NULL);
+	}
+	return (fp);
+}
+
+static int
+conf_parse(FILE *fp, struct dnsdb_config_opts *opts)
+{
+	char buf[BUFSIZ];
+	char *p, *q;
+
+	/* set defaults */
+	strncpy(opts->server, DNSDB_SERVER, 255);
+
+	while (fgets(buf, BUFSIZ, fp)) {
+		if (buf[0] == '#' || isspace(buf[0])) {
+			continue;
+		}
+		p = buf;
+		if (strncmp(buf, "APIKEY", 6) == 0) {
+			q = strsep(&p, "=");
+			if (q == NULL || p == NULL) {
+				fprintf(stderr,
+					"invalid APIKEY option: %s\n", buf);
+				return (-1);
+			}
+			strncpy(opts->api_key, p, 255);
+			opts->api_key[strlen(opts->api_key) - 1] = 0;
+			continue;
+		}
+		else if (strncmp(buf, "DNSDB_SERVER", 12) == 0) {
+			q = strsep(&p, "=");
+			if (q == NULL || p == NULL) {
+				fprintf(stderr,
+					"invalid DNSDB_SERVER option: %s\n",
+					buf);
+				return (-1);
+			}
+			strncpy(opts->server, p, 255);
+			opts->server[strlen(opts->server) - 1] = 0;
+			continue;
+		}
+		else if (strncmp(buf, "DNSDB_FORMAT", 12) == 0) {
+			q = strsep(&p, "=");
+			if (q == NULL || p == NULL) {
+				fprintf(stderr,
+					"invalid DNSDB_FORMAT option: %s\n",
+					buf);
+				return (-1);
+			}
+			if (strncmp(p, "json", 4) == 0) {
+				opts->fmt = FORMAT_JSON;
+			}
+			else if (strncmp(p, "text", 4) == 0) {
+				opts->fmt = FORMAT_TEXT;
+			}
+			else if (strncmp(p, "csv", 3) == 0) {
+				opts->fmt = FORMAT_CSV;
+			}
+			else {
+				fprintf(stderr,
+					"invalid DNSDB_FORMAT option: %s\n",
+					p);
+				return (-1);
+			}
+			continue;
+		}
+		else {
+			fprintf(stderr, "unrecognized option: %s\n", buf);
+			return (-1);
+		}
+	}
+	return (1);
 }
