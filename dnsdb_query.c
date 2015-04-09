@@ -1,4 +1,4 @@
-/* Copyright (C) 2014, Farsight Security, Inc. No rights reserved. */
+/* Copyright (C) 2014-2015, Farsight Security, Inc. No rights reserved. */
 
 /***************************************************************************
  *
