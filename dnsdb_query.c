@@ -1,4 +1,4 @@
-/* Copyright (C) 2014, Farsight Security, Inc. No rights reserved. */
+/* Copyright (C) 2014-2015, Farsight Security, Inc. No rights reserved. */
 
 /***************************************************************************
  *
@@ -28,9 +28,11 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <wordexp.h>
 
 #include <curl/curl.h>
 #include <jansson.h>
+#include "ns_ttl.h"
 
 /* Internal. */
 
@@ -48,7 +50,17 @@ struct dnsdb_crack {
 
 typedef void (*present)(const struct dnsdb_crack *, FILE *);
 
+static const char * const conf_files[] = {
+	"~/.isc-dnsdb-query.conf",
+	"~/.dnsdb-query.conf",
+	"/etc/isc-dnsdb-query.conf",
+	"/etc/dnsdb-query.conf",
+	NULL
+};
+
 static const char *program_name = NULL;
+static char *api_key = NULL;
+static char *dnsdb_server = NULL;
 static int filter = 0;
 static int verbose = 0;
 static int debug = 0;
@@ -56,8 +68,9 @@ static int debug = 0;
 /* Forward. */
 
 static void usage(const char *error)  __attribute__((__noreturn__));
-static void dnsdb_query(const char *command, const char *api_key,
-			const char *dnsdb_server, int limit, present);
+static void read_configs(void);
+static void dnsdb_query(const char *command, int limit, present,
+			time_t, time_t);
 static void present_dns(const struct dnsdb_crack *, FILE *);
 static void present_csv(const struct dnsdb_crack *, FILE *);
 static void present_csv_line(const struct dnsdb_crack *, const char *, FILE *);
@@ -66,19 +79,19 @@ static void dnsdb_crack_destroy(struct dnsdb_crack *);
 static size_t dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob);
 static void dnsdb_writer_fini(void);
 static int dnsdb_writer_error(void);
-
 static void time_print(time_t x, FILE *);
+static int time_get(const char *src, time_t *dst);
 
 /* Public. */
 
 int
 main(int argc, char *argv[]) {
-	const char *api_key = getenv("DNSDB_API_KEY");
-	const char *dnsdb_server = getenv("DNSDB_SERVER");
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
 	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
+	time_t after = 0, before = 0;
 	present pres = present_dns;
 	int ch, limit = 0;
+	const char *val;
 
 	program_name = strrchr(argv[0], '/');
 	if (program_name == NULL)
@@ -86,8 +99,22 @@ main(int argc, char *argv[]) {
 	else
 		program_name++;
 
-	while ((ch = getopt(argc, argv, "r:n:i:l:p:t:b:vdjfh")) != -1) {
+	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:vdjfh")) != -1) {
 		switch (ch) {
+		case 'A':
+			if (!time_get(optarg, &after)) {
+				fprintf(stderr, "bad -A timestamp: '%s'\n",
+					optarg);
+				exit(1);
+			}
+			break;
+		case 'B':
+			if (!time_get(optarg, &before)) {
+				fprintf(stderr, "bad -B timestamp: '%s'\n",
+					optarg);
+				exit(1);
+			}
+			break;
 		case 'r': {
 			const char *p;
 
@@ -201,12 +228,46 @@ main(int argc, char *argv[]) {
 	}
 	argc -= optind;
 	argv += optind;
+
+	if (debug && after != 0) {
+		fprintf(stderr, "after =  ");
+		time_print(after, stderr);
+		putc('\n', stderr);
+	}
+	if (debug && before != 0) {
+		fprintf(stderr, "before = ");
+		time_print(before, stderr);
+		putc('\n', stderr);
+	}
+
+	read_configs();
+	val = getenv("DNSDB_API_KEY");
+	if (val != NULL) {
+		if (api_key != NULL)
+			free(api_key);
+		api_key = strdup(val);
+		if (debug)
+			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
+	}
+	val = getenv("DNSDB_SERVER");
+	if (val != NULL) {
+		if (dnsdb_server != NULL)
+			free(dnsdb_server);
+		dnsdb_server = strdup(val);
+		if (debug)
+			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
+				dnsdb_server);
+	}
 	if (api_key == NULL) {
-		fprintf(stderr, "must set DNSDB_API_KEY in environment\n");
+		fprintf(stderr, "no API key given\n");
 		exit(1);
 	}
-	if (dnsdb_server == NULL)
-		dnsdb_server = DNSDB_SERVER;
+	if (dnsdb_server == NULL) {
+		dnsdb_server = strdup(DNSDB_SERVER);
+		if (debug)
+			fprintf(stderr, "conf default dnsdb_server = '%s'\n",
+				dnsdb_server);
+	}
 
 	if (filter) {
 		char command[1000];
@@ -218,9 +279,9 @@ main(int argc, char *argv[]) {
 
 			if (nl != NULL)
 				*nl = '\0';
-			dnsdb_query(command, api_key, dnsdb_server,
-				    limit, pres);
+			dnsdb_query(command, limit, pres, after, before);
 			fprintf(stdout, "--\n");
+			fflush(stdout);
 		}
 	} else {
 		char *command;
@@ -288,9 +349,11 @@ main(int argc, char *argv[]) {
 			free(type);
 		if (bailiwick != NULL)
 			free(bailiwick);
-		dnsdb_query(command, api_key, dnsdb_server, limit, pres);
+		dnsdb_query(command, limit, pres, after, before);
 		free(command);
 	}
+	free(api_key);
+	free(dnsdb_server);
 	return (0);
 }
 
@@ -300,7 +363,7 @@ static void usage(const char *error) {
 	if (error != NULL)
 		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
-"usage: %s [-vdjh] [-p dns|json|csv] [-l LIMIT] {\n"
+"usage: %s [-vdjh] [-p dns|json|csv] [-l LIMIT] [-A after] [-B before] {\n"
 "\t-f |\n"
 "\t[-t type] [-b bailiwick] {\n"
 "\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
@@ -312,27 +375,87 @@ static void usage(const char *error) {
 "\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
 "\trdata/name/NAME[/TYPE]\n"
 "\trdata/ip/ADDR[/PFXLEN]\n"
-"for -f, output format will be determined by -p, using --\\n framing\n",
+"for -f, output format will be determined by -p, using --\\n framing\n"
+"for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] or rel. %%dw%%dd%%dh%%dm%%ds format\n",
 		program_name);
 	exit(1);
 }
 
 static void
-dnsdb_query(const char *command, const char *api_key,
-	    const char *dnsdb_server, int limit,
-	    present pres)
+read_configs(void) {
+	const char * const *conf;
+	const char *cf;
+
+	cf = NULL;
+	for (conf = conf_files; *conf != NULL; conf++) {
+		wordexp_t we;
+
+		wordexp(*conf, &we, WRDE_NOCMD);
+		cf = strdup(we.we_wordv[0]);
+		wordfree(&we);
+		if (access(cf, R_OK) == 0) {
+			if (debug)
+				fprintf(stderr, "conf found: '%s'\n", cf);
+			break;
+		}
+	}
+	if (*conf != NULL) {
+		char *cmd, *tok, line[1000];
+		FILE *f;
+
+		(void) asprintf(&cmd,
+				". %s;"
+				"echo apikey $APIKEY;"
+				"echo server $DNSDB_SERVER",
+				cf);
+		f = popen(cmd, "r");
+		if (f == NULL) {
+			perror(cmd);
+			exit(1);
+		}
+		if (debug)
+			fprintf(stderr, "conf cmd = '%s'\n", cmd);
+		free(cmd);
+		while (fgets(line, sizeof line, f) != NULL) {
+			if (strchr(line, '\n') == NULL) {
+				fprintf(stderr, "%s: line too long\n", cf);
+				exit(1);
+			}
+			if (debug)
+				fprintf(stderr, "conf line: %s", line);
+			tok = strtok(line, "\040\012");
+			if (tok != NULL && strcmp(tok, "apikey") == 0) {
+				tok = strtok(NULL, "\040\012");
+				if (tok != NULL)
+					api_key = strdup(tok);
+			} else if (tok != NULL && strcmp(tok, "server") == 0) {
+				tok = strtok(NULL, "\040\012");
+				if (tok != NULL)
+					dnsdb_server = strdup(tok);
+			} else {
+				fprintf(stderr, "%s: line malformed\n", cf);
+				exit(1);
+			}
+		}
+		pclose(f);
+	}
+}
+
+static void
+dnsdb_query(const char *command, int limit, present pres,
+	    time_t after, time_t before)
 {
 	CURL *curl;
 
-	curl_global_init(CURL_GLOBAL_DEFAULT);
- 
 	if (debug)
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
+	curl_global_init(CURL_GLOBAL_DEFAULT);
 	curl = curl_easy_init();
 	if (curl != NULL) {
 		struct curl_slist *headers = NULL;
 		CURLcode res;
 		char *url = NULL, *key_header = NULL;
+		char sep = '?';
 		int x;
 
 		x = asprintf(&url, "%s/lookup/%s", dnsdb_server, command);
@@ -343,7 +466,7 @@ dnsdb_query(const char *command, const char *api_key,
 		if (limit != 0) {
 			char *tmp;
 
-			x = asprintf(&tmp, "%s?limit=%d", url, limit);
+			x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, limit);
 			if (x < 0) {
 				perror("asprintf");
 				exit(1);
@@ -351,9 +474,52 @@ dnsdb_query(const char *command, const char *api_key,
 			free(url);
 			url = tmp;
 			tmp = NULL;
+			sep = '&';
+		}
+		if (after != 0 && before != 0) {
+			char *tmp;
+
+			x = asprintf(&tmp, "%s%c"
+				     "time_first_after=%lu"
+				     "&time_last_before=%lu",
+				     url, sep, (u_long)after, (u_long)before);
+			if (x < 0) {
+				perror("asprintf");
+				exit(1);
+			}
+			free(url);
+			url = tmp;
+			tmp = NULL;
+			sep = '&';
+		} else if (after != 0) {
+			char *tmp;
+
+			x = asprintf(&tmp, "%s%c" "time_last_after=%lu",
+				     url, sep, (u_long)after);
+			if (x < 0) {
+				perror("asprintf");
+				exit(1);
+			}
+			free(url);
+			url = tmp;
+			tmp = NULL;
+			sep = '&';
+		} else if (before != 0) {
+			char *tmp;
+
+			x = asprintf(&tmp, "%s%c" "time_first_before=%lu",
+				     url, sep, (u_long)before);
+			if (x < 0) {
+				perror("asprintf");
+				exit(1);
+			}
+			free(url);
+			url = tmp;
+			tmp = NULL;
+			sep = '&';
 		}
 		if (verbose)
-			printf("url [%s]\n", url);
+			fprintf(filter ? stderr : stdout, "url [%s]\n", url);
 		x = asprintf(&key_header, "X-Api-Key: %s", api_key);
 		if (x < 0) {
 			perror("asprintf");
@@ -721,4 +887,28 @@ time_print(time_t x, FILE *outf) {
 
 	strftime(z, sizeof z, "%F %T", y);
 	fputs(z, outf);
+}
+
+static int
+time_get(const char *src, time_t *dst) {
+	char *endptr;
+	struct tm tt;
+	u_long t;
+
+	if (strptime(src, "%Y-%m-%d %H:%M:%S", &tt) != NULL ||
+	    strptime(src, "%Y-%m-%d", &tt) != NULL)
+	{
+		*dst = (u_long) mktime(&tt);
+		return (1);
+	}
+	t = strtoul(src, &endptr, 10);
+	if (*src != '\0' && *endptr == '\0') {
+		*dst = (time_t) t;
+		return (1);
+	}
+	if (ns_parse_ttl(src, &t) == 0) {
+		*dst = (time_t) (((u_long) time(NULL)) - t);
+		return (1);
+	}
+	return (0);
 }

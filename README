@@ -1,4 +1,4 @@
-This is a shortened version of the dnsdb query testing tool.
+This is a shortened version of the dnsdb query testing tool, with -A and -B.
 
 Dependencies:
 	jannson
@@ -30,7 +30,7 @@ On Linux (CentOS 6):
 
 On FreeBSD 10:
 	pkg install curl
-	pkg install jansson-2.5
+	pkg install jansson
 
 DNSDB Usage:
 	make
