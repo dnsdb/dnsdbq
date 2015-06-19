@@ -29,11 +29,10 @@ On Linux (CentOS 6):
 	ldconfig
 
 On FreeBSD 10:
-	pkg install curl
-	pkg install jansson
+	pkg install curl jansson
 
 On OSX:
-    brew install jansson
+	brew install jansson
 
 DNSDB Usage:
 	make
@@ -41,13 +40,11 @@ DNSDB Usage:
 	DNSDB_API_KEY='xyz'; export DNSDB_API_KEY	(Linux, bash)
 	./dnsdb_query -r vix.com/ns
 	./dnsdb_query -n \*.vix.com/ns
-	./dnsdb_query -i 24.104.150.0/24
+	./dnsdb_query -i 24.104.150.0,24
 
 Not implemented:
 	long option names
 	-R, -s, sorting in general
-	-c, config is just DNSDB_API_KEY environment variable
-	--before, --after
 
 Wrongly implemented:
 	-i should be prefix/len not prefix,len
