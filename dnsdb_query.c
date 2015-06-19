@@ -281,6 +281,7 @@ main(int argc, char *argv[]) {
 				*nl = '\0';
 			dnsdb_query(command, limit, pres, after, before);
 			fprintf(stdout, "--\n");
+			fflush(stdout);
 		}
 	} else {
 		char *command;
@@ -518,7 +519,7 @@ dnsdb_query(const char *command, int limit, present pres,
 			sep = '&';
 		}
 		if (verbose)
-			printf("url [%s]\n", url);
+			fprintf(filter ? stderr : stdout, "url [%s]\n", url);
 		x = asprintf(&key_header, "X-Api-Key: %s", api_key);
 		if (x < 0) {
 			perror("asprintf");
