@@ -12,7 +12,7 @@
 .\" See the License for the specific language governing permissions and
 .\" limitations under the License.
 .\"
-.Dd 2017-01-19
+.Dd 2017-01-23
 .Dt dnsdb_query 1 DNSDB
 .Os " "
 .Sh NAME
@@ -23,16 +23,17 @@
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
-.Op Fl r Ar rdata
-.Op Fl n Ar name
 .Op Fl i Ar ip
 .Op Fl l Ar limit
+.Op Fl n Ar name
 .Op Fl p Ar output_type
+.Op Fl r Ar rdata
 .Op Fl t Ar type
 .Op batch_filename
 .Sh DESCRIPTION
 .Nm dnsdb_query
-constructs and issues queries to the Farsight DNSDB and displays responses.
+constructs and issues queries to the Farsight DNSDB and displays responses. It
+is commonly used as a production command line interface to the DNSDB API server.
 
 DNSDB is a database that stores and indexes both the passive DNS data
 available via Farsight Security's Security Information Exchange as well as the
@@ -42,33 +43,55 @@ for search results such as first seen and last seen timestamps as well as the
 DNS bailiwick associated with an RRset. DNSDB also has the ability to perform
 inverse or rdata searches.
 
-A Farsight Security-provisioned apikey is required for identification and
-authentication.
+You'll need to get an API key from Farsight to use
+.Ic dnsdb_query
+with DNSDB.
+
 .Ss OPTIONS
-The following arguments are available:
 .Bl -tag -width 3n
 .It Fl A Ar timestamp
-Specify a "time_first_after" timestamp. Only results first seen on or after
-this date will be emitted. Expects timestamp to be of
-the absolute form:
+Specify a "time_first_after" timestamp. Only results first seen by the Farsight
+sensor network on or after this date will be emitted. Expects timestamp to be
+of the absolute form:
 .Ic YYYY-DD-MM[ HH:MM:SS]
 or the relative form:
-.Ic %dw%dd%dh%dm%ds.
+.Ic %dw%dd%dh%dm%ds .
+Examples are below.
 .It Fl B Ar timestamp
-Specify a "time_first_before" timestamp. Only results first seen on or before
-this date will be emitted. Expects timestamp to be of
+Specify a "time_first_before" timestamp. Only results first seen by the
+Farsight sensor network on or before this date will be emitted. Expects
+timestamp to be of
 the absolute form:
 .Ic YYYY-DD-MM[ HH:MM:SS]
 or the relative form:
-.Ic %dw%dd%dh%dm%ds.
+.Ic %dw%dd%dh%dm%ds .
+Examples are below.
 .It Fl b Ar bailiwick
 specify bailiwick (only valid with
 .Fl r
-queries).
+queries). Farsight's passive DNS infrastructure performs a complex process
+of "bailiwick reconstruction" where an RRset's position within the DNS
+hierarchy is approximated. This serves two purposes:
+.Bl -enum -offset indent
+.It
+Provide context of the location of a given DNS record within the DNS hierarchy
+.It
+Prevent "untrustworthy" records that are a result of intentional or
+unintentional cache poisoning attempts from being replicated by downstream
+consumers.
+.El
+
+For example, given the fully qualified domain name
+.Ic www.dachshund.example.com ,
+valid bailiwics would be
+.Ic dachshund.example.com ,
+.Ic example.com ,
+or
+.Ic com .
 .It Fl d
 enable debug mode.
 .It Fl f
-specify batch lookup allowing one or more queries to be performed. Queries
+specify batch lookup mode allowing one or more queries to be performed. Queries
 should be specified in a file and each should be of the following format:
 
 .Bl -enum -offset indent
@@ -88,20 +111,24 @@ This option cannot be mixed with
 .Fl r ,
 or
 .Fl i .
-An example of how to use it is below.
+An example of how to use
+.Fl f
+is below.
 .It Fl h
 emit usage and quit.
 .It Fl i Ar ip
-specify rdata ip query.
+specify rdata ip ("right-hand side") query. Valid arguments
+can an IP (v4 or v6) address, a prefix, or an IP address range. Examples are
+below.
 .It Fl j
 specify newline delimited json output mode.
 .It Fl l Ar limit
 clamp the number of responses to
 .Ic limit .
 .It Fl n Ar name
-specify rdata name query.
-.It Fl r Ar rdata
-specify rrset query.
+specify
+.Ic rdata
+name ("right-hand side") query.
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -110,6 +137,8 @@ for comma separated value output,
 for presentation output similar to that of dig(1), or
 .Ic json
 for newline delimited json output.
+.It Fl r Ar rdata
+specify rrset ("left-hand side") query.
 .It Fl t Ar type
 specify type of rdata query and how
 .Ic value
@@ -143,11 +172,40 @@ is an even number of hexadecimal digits specifying a raw octet string.
 enable verbose mode.
 .El
 .Sh EXAMPLES
+
+A few examples of how to use timefencing options.
+.Bd -literal -offset 4n
+# only responses after Aug 08, 2015
+$ dnsdb_query ... -A 2015-08-22
+# only responses before Jan 01, 2013
+$ dnsdb_query ... -B 2013-01-22
+# only responses from 2015
+$ dnsdb_query ... -B 2016-01-01 -A 2015-01-01
+# only responses after 2015-08-22 14:36:10
+$ dnsdb_query ... -A "2015-08-22 14:36:10"
+# only responses from the last 60 minutes
+$ dnsdb_query ... -A "-3600"
+# only responses after "just now"
+$ date +%s
+1485284066
+$ dnsdb_query ... -A 1485284066
+.Ed
+
+A few examples of how to specify IP address information.
+.Bd -literal -offset 4n
+# specify a single IPv4 address
+$ dnsdb_query ... -i 128.223.32.35
+# specify an IPv4 CIDR
+$ dnsdb_query ... -i 128.223.32.0/24
+# specify a range of IPv4 addresses
+$ dnsdb_query ... -i 128.223.32.0-128.223.32.32
+.Ed
+
 Perform an rrset query for a single A record for
 .Ic farsightsecurity.com .
 The output is serialized as JSON and is piped to the
 .Ic jq
-program for pretty printing.
+program (a command-line JSON processor) for pretty printing.
 .Bd -literal -offset 4n
 $ dnsdb_query -r farsightsecurity.com/A -l 1 -j | jq .
 {
@@ -178,7 +236,7 @@ rdata/name/\*.opb.org
 rdata/ip/198.35.26.96
 rdata/ip/23.21.237.247
 $ dnsdb_query -j -f < batch.txt > batch-output.json
-$ head -1 batch-output.json  | jq .
+$ head -1 batch-output.json | jq .
 {
   "count": 2411,
   "zone_time_first": 1275401003,
@@ -194,9 +252,12 @@ $ head -1 batch-output.json  | jq .
 }
 .Ed
 .Sh FILES
-.Ic ~/.dnsdb-query.conf :
-configuration file which should contain the user's apikey, server URL, and at
-some point, other configuration data.
+.Ic ~/.isc-dnsdb-query.conf ,
+.Ic ~/.dnsdb-query.conf ,
+.Ic /etc/isc-dnsdb-query.conf ,
+or
+.Ic /etc/dnsdb-query.conf :
+configuration file which should contain the user's apikey and server URL.
 
 .Bl -offset indent
 .It
