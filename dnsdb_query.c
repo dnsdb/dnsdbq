@@ -34,6 +34,13 @@
 #include <jansson.h>
 #include "ns_ttl.h"
 
+#ifndef FALSE
+#define FALSE 0
+#endif
+#ifndef TRUE
+#define TRUE 1
+#endif
+
 /* Internal. */
 
 #define DNSDB_SERVER "https://api.dnsdb.info"
@@ -79,7 +86,7 @@ static void dnsdb_crack_destroy(struct dnsdb_crack *);
 static size_t dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob);
 static void dnsdb_writer_fini(void);
 static int dnsdb_writer_error(void);
-static void time_print(time_t x, FILE *);
+static void time_print(time_t x, int, FILE *);
 static int time_get(const char *src, time_t *dst);
 
 /* Public. */
@@ -231,12 +238,12 @@ main(int argc, char *argv[]) {
 
 	if (debug && after != 0) {
 		fprintf(stderr, "after =  ");
-		time_print(after, stderr);
+		time_print(after, FALSE, stderr);
 		putc('\n', stderr);
 	}
 	if (debug && before != 0) {
 		fprintf(stderr, "before = ");
-		time_print(before, stderr);
+		time_print(before, FALSE, stderr);
 		putc('\n', stderr);
 	}
 
@@ -626,17 +633,17 @@ present_dns(const struct dnsdb_crack *rec, FILE *outf) {
 	/* Timestamps. */
 	if (rec->obj.time_first != NULL && rec->obj.time_last != NULL) {
 		fputs(";; record times: ", outf);
-		time_print(rec->time_first, outf);
+		time_print(rec->time_first, FALSE, outf);
 		fputs(" .. ", outf);
-		time_print(rec->time_last, outf);
+		time_print(rec->time_last, FALSE, outf);
 		putc('\n', outf);
 		ppflag++;
 	}
 	if (rec->obj.zone_first != NULL && rec->obj.zone_last != NULL) {
 		fputs(";;   zone times: ", outf);
-		time_print(rec->zone_first, outf);
+		time_print(rec->zone_first, FALSE, outf);
 		fputs(" .. ", outf);
-		time_print(rec->zone_last, outf);
+		time_print(rec->zone_last, FALSE, outf);
 		putc('\n', outf);
 		ppflag++;
 	}
@@ -725,16 +732,16 @@ present_csv_line(const struct dnsdb_crack *rec,
 {
 	/* Timestamps. */
 	if (rec->obj.time_first != NULL)
-		time_print(rec->time_first, outf);
+		time_print(rec->time_first, TRUE, outf);
 	putc(',', outf);
 	if (rec->obj.time_last != NULL)
-		time_print(rec->time_last, outf);
+		time_print(rec->time_last, TRUE, outf);
 	putc(',', outf);
 	if (rec->obj.zone_first != NULL)
-		time_print(rec->zone_first, outf);
+		time_print(rec->zone_first, TRUE, outf);
 	putc(',', outf);
 	if (rec->obj.zone_last != NULL)
-		time_print(rec->zone_last, outf);
+		time_print(rec->zone_last, TRUE, outf);
 	putc(',', outf);
 
 	/* Count and bailiwick. */
@@ -881,11 +888,11 @@ dnsdb_crack_destroy(struct dnsdb_crack *rec) {
 }
 
 static void
-time_print(time_t x, FILE *outf) {
+time_print(time_t x, int rfc3339, FILE *outf) {
 	struct tm *y = gmtime(&x);
 	char z[99];
 
-	strftime(z, sizeof z, "%F %T", y);
+	strftime(z, sizeof z, rfc3339 ? "%FT%TZ" : "%F %T", y);
 	fputs(z, outf);
 }
 
