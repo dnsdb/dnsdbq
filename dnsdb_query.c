@@ -22,6 +22,9 @@
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
 
+#include <sys/types.h>
+#include <sys/wait.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -71,7 +74,7 @@ static char *dnsdb_server = NULL;
 static int filter = 0;
 static int verbose = 0;
 static int debug = 0;
-
+static enum { sort_not, sort_normal, sort_reverse } sorted = sort_not;
 /* Forward. */
 
 static void usage(const char *error)  __attribute__((__noreturn__));
@@ -83,8 +86,9 @@ static void present_csv(const struct dnsdb_crack *, FILE *);
 static void present_csv_line(const struct dnsdb_crack *, const char *, FILE *);
 static const char *dnsdb_crack_new(struct dnsdb_crack *, char *, size_t);
 static void dnsdb_crack_destroy(struct dnsdb_crack *);
+static void dnsdb_writer_init(void);
 static size_t dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob);
-static void dnsdb_writer_fini(void);
+static void dnsdb_writer_fini(present);
 static int dnsdb_writer_error(void);
 static void time_print(time_t x, int, FILE *);
 static int time_get(const char *src, time_t *dst);
@@ -106,7 +110,7 @@ main(int argc, char *argv[]) {
 	else
 		program_name++;
 
-	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:vdjfh")) != -1) {
+	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:vdjfsSh")) != -1) {
 		switch (ch) {
 		case 'A':
 			if (!time_get(optarg, &after)) {
@@ -225,6 +229,12 @@ main(int argc, char *argv[]) {
 			break;
 		case 'f':
 			filter++;
+			break;
+		case 's':
+			sorted = sort_normal;
+			break;
+		case 'S':
+			sorted = sort_reverse;
 			break;
 		case 'h':
 			usage(NULL);
@@ -370,7 +380,7 @@ static void usage(const char *error) {
 	if (error != NULL)
 		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
-"usage: %s [-vdjh] [-p dns|json|csv] [-l LIMIT] [-A after] [-B before] {\n"
+"usage: %s [-vdjsSh] [-p dns|json|csv] [-l LIMIT] [-A after] [-B before] {\n"
 "\t-f |\n"
 "\t[-t type] [-b bailiwick] {\n"
 "\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
@@ -540,10 +550,14 @@ dnsdb_query(const char *command, int limit, present pres,
 		headers = curl_slist_append(headers,
 					    "Accept: application/json");
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-		if (pres != NULL) {
+		/* libcurl default is to send json to stdout, so if that's
+		 * what we're doing, and we're not sorting, don't override.
+		 */
+		if (pres != NULL || sorted != sort_not) {
 			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
 					 dnsdb_writer);
 			curl_easy_setopt(curl, CURLOPT_WRITEDATA, pres);
+			dnsdb_writer_init();
 		}
 		res = curl_easy_perform(curl);
 		if (res != CURLE_OK)
@@ -553,7 +567,8 @@ dnsdb_query(const char *command, int limit, present pres,
 		curl_slist_free_all(headers);
 		free(url);
 		free(key_header);
-		dnsdb_writer_fini();
+		if (pres != NULL || sorted != sort_not)
+			dnsdb_writer_fini(pres);
 	}
  
 	curl_global_cleanup();
@@ -561,6 +576,53 @@ dnsdb_query(const char *command, int limit, present pres,
 
 static char *writer_buf = NULL;
 static size_t writer_len = 0;
+static FILE *sort_stdin, *sort_stdout;
+static pid_t sort_pid;
+
+static void
+dnsdb_writer_init(void) {
+	if (sorted != sort_not) {
+		int p1[2], p2[2];
+
+		if (pipe(p1) < 0 || pipe(p2) < 0) {
+			perror("pipe");
+			exit(1);
+		}
+		if ((sort_pid = fork()) < 0) {
+			perror("fork");
+			exit(1);
+		}
+		if (sort_pid == 0) {
+			extern char **environ;
+			char *sort_argv[6], **sap;
+
+			if (dup2(p1[0], STDIN_FILENO) < 0 ||
+			    dup2(p2[1], STDOUT_FILENO) < 0) {
+				perror("dup2");
+				_exit(1);
+			}
+			close(p1[0]);
+			close(p1[1]);
+			close(p2[0]);
+			close(p2[1]);
+			sap = sort_argv;
+			*sap++ = (char *)"sort";
+			*sap++ = (char *)"-k1";
+			*sap++ = (char *)"-k2";
+			*sap++ = (char *)"-n";
+			if (sorted == sort_reverse)
+				*sap++ = (char *)"-r";
+			*sap++ = NULL;
+			execve("/usr/bin/sort", sort_argv, environ);
+			perror("execve");
+			_exit(1);
+		}
+		close(p1[0]);
+		sort_stdin = fdopen(p1[1], "w");
+		sort_stdout = fdopen(p2[0], "r");
+		close(p2[1]);
+	}
+}
 
 static size_t
 dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
@@ -577,19 +639,44 @@ dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 	writer_len += bytes;
 
 	while ((nl = memchr(writer_buf, '\n', writer_len)) != NULL) {
+		size_t pre_len, post_len;
 		struct dnsdb_crack rec;
 		const char *msg;
-		size_t pre_len, post_len;
 
 		if (dnsdb_writer_error())
 			return (0);
 		pre_len = nl - writer_buf;
+
 		msg = dnsdb_crack_new(&rec, writer_buf, pre_len);
 		if (msg) {
 			puts(msg);
 		} else {
-			(*pres)(&rec, stdout);
-			dnsdb_crack_destroy(&rec);
+			time_t first, last;
+
+			if (rec.time_first != 0 && rec.time_last != 0) {
+				first = rec.time_first;
+				last = rec.time_last;
+			} else {
+				first = rec.zone_first;
+				last = rec.zone_last;
+			}
+			if (sorted != sort_not) {
+				fprintf(sort_stdin, "%lu %lu %*.*s\n",
+					(unsigned long)first,
+					(unsigned long)last,
+					(int)pre_len, (int)pre_len,
+					writer_buf);
+				if (debug)
+					fprintf(stderr,
+						"sort_stdin: %lu %lu %*.*s\n",
+						(unsigned long)first,
+						(unsigned long)last,
+						(int)pre_len, (int)pre_len,
+						writer_buf);
+			} else {
+				(*pres)(&rec, stdout);
+				dnsdb_crack_destroy(&rec);
+			}
 		}
 		post_len = (writer_len - pre_len) - 1;
 		memmove(writer_buf, nl + 1, post_len);
@@ -599,7 +686,7 @@ dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 }
 
 static void
-dnsdb_writer_fini(void) {
+dnsdb_writer_fini(present pres) {
 	if (writer_buf != NULL) {
 		(void) dnsdb_writer_error();
 		free(writer_buf);
@@ -608,6 +695,54 @@ dnsdb_writer_fini(void) {
 			fprintf(stderr, "stranding %d octets!\n",
 				(int)writer_len);
 		writer_len = 0;
+	}
+	if (sorted != sort_not) {
+		char line[65536];
+		int status;
+
+		fclose(sort_stdin);
+		while (fgets(line, sizeof line, sort_stdout) != NULL) {
+			struct dnsdb_crack rec;
+			char *nl, *linep;
+			const char *msg;
+
+			if ((nl = strchr(line, '\n')) == NULL) {
+				fprintf(stderr, "no \\n found in '%s'\n",
+					line);
+				continue;
+			}
+			linep = line;
+			/* skip time_first and time_last -- the sort keys. */
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr, "no SP found in '%s'\n", line);
+				continue;
+			}
+			linep += strspn(linep, " ");
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr, "no SP found in '%s'\n", line);
+				continue;
+			}
+			linep += strspn(linep, " ");
+			if (pres == NULL) {
+				fputs(linep, stdout);
+				continue;
+			}
+			msg = dnsdb_crack_new(&rec, linep, nl - linep);
+			if (msg != NULL) {
+				puts(msg);
+				continue;
+			}
+			(*pres)(&rec, stdout);
+			dnsdb_crack_destroy(&rec);
+		}
+		fclose(sort_stdout);
+		if (waitpid(sort_pid, &status, 0) < 0) {
+			perror("waitpid");
+		} else {
+			if (status != 0)
+				fprintf(stderr, "sort exit status is %u\n",
+					status);
+		}
 	}
 }
 
