@@ -229,7 +229,6 @@ main(int argc, char *argv[]) {
 	}
 	argc -= optind;
 	argv += optind;
-
 	if (name != NULL)
 		escape(&name);
 	if (type != NULL)
