@@ -31,17 +31,18 @@
 
 #define DNSDB_SERVER "https://api.dnsdb.info"
 
-struct dnsdb_crack {
+typedef struct {
 	struct {
-		json_t *main, *time_first, *time_last, *zone_first, *zone_last,
+		json_t *main,
+			*time_first, *time_last, *zone_first, *zone_last,
 			*count, *bailiwick, *rrname, *rrtype, *rdata;
 	} obj;
 	time_t time_first, time_last, zone_first, zone_last;
 	const char *bailiwick, *rrname, *rrtype, *rdata;
 	json_int_t count;
-};
+} cracked_t;
 
-typedef void (*present)(const struct dnsdb_crack *, FILE *);
+typedef void (*present_t)(const cracked_t *, FILE *);
 
 static const char * const conf_files[] = {
 	"~/.isc-dnsdb-query.conf",
@@ -57,22 +58,44 @@ static char *dnsdb_server = NULL;
 static int filter = 0;
 static int verbose = 0;
 static int debug = 0;
-static enum { sort_not, sort_normal, sort_reverse } sorted = sort_not;
+static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
+
+static __attribute__((__noreturn__)) void usage(const char *error) {
+	if (error != NULL)
+		fprintf(stderr, "error: %s\n", error);
+	fprintf(stderr,
+"usage: %s [-vdjsSh] [-p dns|json|csv] [-l LIMIT] [-A after] [-B before] {\n"
+"\t-f |\n"
+"\t[-t type] [-b bailiwick] {\n"
+"\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
+"\t\t-n NAME[/TYPE] |\n"
+"\t\t-i IP[/PFXLEN]\n"
+"\t}\n"
+"}\n"
+"for -f, stdin must contain lines of the following forms:\n"
+"\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
+"\trdata/name/NAME[/TYPE]\n"
+"\trdata/ip/ADDR[/PFXLEN]\n"
+"for -f, output format will be determined by -p, using --\\n framing\n"
+"for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
+"or rel. %%dw%%dd%%dh%%dm%%ds format\n",
+		program_name);
+	exit(1);
+}
+
 /* Forward. */
 
-static void usage(const char *error)  __attribute__((__noreturn__));
 static void read_configs(void);
-static void dnsdb_query(const char *command, int limit, present,
-			time_t, time_t);
-static void present_dns(const struct dnsdb_crack *, FILE *);
-static void present_csv(const struct dnsdb_crack *, FILE *);
-static void present_csv_line(const struct dnsdb_crack *, const char *, FILE *);
-static const char *dnsdb_crack_new(struct dnsdb_crack *, char *, size_t);
-static void dnsdb_crack_destroy(struct dnsdb_crack *);
-static void dnsdb_writer_init(void);
-static size_t dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob);
-static void dnsdb_writer_fini(present);
-static int dnsdb_writer_error(void);
+static void dnsdb_query(const char *, int, present_t, time_t, time_t);
+static void present_dns(const cracked_t *, FILE *);
+static void present_csv(const cracked_t *, FILE *);
+static void present_csv_line(const cracked_t *, const char *, FILE *);
+static const char *crack_new(cracked_t *, char *, size_t);
+static void crack_destroy(cracked_t *);
+static void writer_init(void);
+static size_t writer(char *ptr, size_t size, size_t nmemb, void *blob);
+static void writer_fini(present_t);
+static int writer_error(void);
 static void time_print(time_t x, int, FILE *);
 static int time_get(const char *src, time_t *dst);
 static void escape(char **);
@@ -81,10 +104,10 @@ static void escape(char **);
 
 int
 main(int argc, char *argv[]) {
-	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
 	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
+	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
 	time_t after = 0, before = 0;
-	present pres = present_dns;
+	present_t pres = present_dns;
 	int ch, limit = 0;
 	const char *val;
 
@@ -215,10 +238,10 @@ main(int argc, char *argv[]) {
 			filter++;
 			break;
 		case 's':
-			sorted = sort_normal;
+			sorted = normal_sort;
 			break;
 		case 'S':
-			sorted = sort_reverse;
+			sorted = reverse_sort;
 			break;
 		case 'h':
 			usage(NULL);
@@ -293,10 +316,14 @@ main(int argc, char *argv[]) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -f");
 		while (fgets(command, sizeof command, stdin) != NULL) {
-			char *nl = strrchr(command, '\n');
+			char *nl = strchr(command, '\n');
 
-			if (nl != NULL)
-				*nl = '\0';
+			if (nl == NULL) {
+				fprintf(stderr, "filter line too long: %s\n",
+					command);
+				continue;
+			}
+			*nl = '\0';
 			dnsdb_query(command, limit, pres, after, before);
 			fprintf(stdout, "--\n");
 			fflush(stdout);
@@ -304,17 +331,6 @@ main(int argc, char *argv[]) {
 	} else {
 		char *command;
 
-		if (debug) {
-			if (name != NULL)
-				fprintf(stderr, "name = '%s'\n", name);
-			if (type != NULL)
-				fprintf(stderr, "type = '%s'\n", type);
-			if (bailiwick != NULL)
-				fprintf(stderr, "bailiwick = '%s'\n",
-					bailiwick);
-			if (length != NULL)
-				fprintf(stderr, "length = '%s'\n", length);
-		}
 		switch (mode) {
 			int x;
 		case no_mode:
@@ -372,32 +388,10 @@ main(int argc, char *argv[]) {
 	}
 	free(api_key);
 	free(dnsdb_server);
-	return (0);
+	exit(0);
 }
 
 /* Private. */
-
-static void usage(const char *error) {
-	if (error != NULL)
-		fprintf(stderr, "error: %s\n", error);
-	fprintf(stderr,
-"usage: %s [-vdjsSh] [-p dns|json|csv] [-l LIMIT] [-A after] [-B before] {\n"
-"\t-f |\n"
-"\t[-t type] [-b bailiwick] {\n"
-"\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
-"\t\t-n NAME[/TYPE] |\n"
-"\t\t-i IP[/PFXLEN]\n"
-"\t}\n"
-"}\n"
-"for -f, stdin must contain lines of the following forms:\n"
-"\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
-"\trdata/name/NAME[/TYPE]\n"
-"\trdata/ip/ADDR[/PFXLEN]\n"
-"for -f, output format will be determined by -p, using --\\n framing\n"
-"for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] or rel. %%dw%%dd%%dh%%dm%%ds format\n",
-		program_name);
-	exit(1);
-}
 
 static void
 read_configs(void) {
@@ -460,7 +454,7 @@ read_configs(void) {
 }
 
 static void
-dnsdb_query(const char *command, int limit, present pres,
+dnsdb_query(const char *command, int limit, present_t pres,
 	    time_t after, time_t before)
 {
 	CURL *curl;
@@ -554,11 +548,10 @@ dnsdb_query(const char *command, int limit, present pres,
 		/* libcurl default is to send json to stdout, so if that's
 		 * what we're doing, and we're not sorting, don't override.
 		 */
-		if (pres != NULL || sorted != sort_not) {
-			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-					 dnsdb_writer);
+		if (pres != NULL || sorted != no_sort) {
+			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writer);
 			curl_easy_setopt(curl, CURLOPT_WRITEDATA, pres);
-			dnsdb_writer_init();
+			writer_init();
 		}
 		res = curl_easy_perform(curl);
 		if (res != CURLE_OK)
@@ -568,8 +561,8 @@ dnsdb_query(const char *command, int limit, present pres,
 		curl_slist_free_all(headers);
 		free(url);
 		free(key_header);
-		if (pres != NULL || sorted != sort_not)
-			dnsdb_writer_fini(pres);
+		if (pres != NULL || sorted != no_sort)
+			writer_fini(pres);
 	}
  
 	curl_global_cleanup();
@@ -581,8 +574,14 @@ static FILE *sort_stdin, *sort_stdout;
 static pid_t sort_pid;
 
 static void
-dnsdb_writer_init(void) {
-	if (sorted != sort_not) {
+writer_init(void) {
+	/* sorting involves a subprocess (POSIX /usr/bin/sort), which will by
+	 * definition not output anything until after it receives EOF. this
+	 * means we can pipe both to its stdin and from its stdout, without
+	 * risk of deadlock. it also means a full store-and-forward of the
+	 * result, which increases latency to the first output for our user.
+	 */
+	if (sorted != no_sort) {
 		int p1[2], p2[2];
 
 		if (pipe(p1) < 0 || pipe(p2) < 0) {
@@ -611,7 +610,7 @@ dnsdb_writer_init(void) {
 			*sap++ = (char *)"-k1";
 			*sap++ = (char *)"-k2";
 			*sap++ = (char *)"-n";
-			if (sorted == sort_reverse)
+			if (sorted == reverse_sort)
 				*sap++ = (char *)"-r";
 			*sap++ = NULL;
 			execve("/usr/bin/sort", sort_argv, environ);
@@ -625,14 +624,18 @@ dnsdb_writer_init(void) {
 	}
 }
 
+/* this is the libcurl callback, which is not line-oriented, so we have to
+ * do our own parsing here to pull newline-delimited-json out of the stream
+ * and process it one object at a time.
+ */
 static size_t
-dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
+writer(char *ptr, size_t size, size_t nmemb, void *blob) {
+	present_t pres = (present_t) blob;
 	size_t bytes = size * nmemb;
-	present pres = (present) blob;
 	char *nl;
 
 	if (debug)
-		fprintf(stderr, "dnsdb_writer(%d, %d): %d\n",
+		fprintf(stderr, "writer(%d, %d): %d\n",
 			(int)size, (int)nmemb, (int)bytes);
 
 	writer_buf = realloc(writer_buf, writer_len + bytes);
@@ -641,27 +644,36 @@ dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 
 	while ((nl = memchr(writer_buf, '\n', writer_len)) != NULL) {
 		size_t pre_len, post_len;
-		struct dnsdb_crack rec;
+		cracked_t rec;
 		const char *msg;
 
-		if (dnsdb_writer_error())
+		if (writer_error())
 			return (0);
 		pre_len = nl - writer_buf;
 
-		msg = dnsdb_crack_new(&rec, writer_buf, pre_len);
+		msg = crack_new(&rec, writer_buf, pre_len);
 		if (msg) {
 			puts(msg);
 		} else {
-			time_t first, last;
+			if (sorted != no_sort) {
+				time_t first, last;
 
-			if (rec.time_first != 0 && rec.time_last != 0) {
-				first = rec.time_first;
-				last = rec.time_last;
-			} else {
-				first = rec.zone_first;
-				last = rec.zone_last;
-			}
-			if (sorted != sort_not) {
+				/* POSIX sort is handed two large integers
+				 * at the front of each line (time{first,last})
+				 * which are accessed as -k1 and -k2 on the
+				 * sort command line. we strip them off later
+				 * when reading the result back. the reason
+				 * for all this old-school code is to avoid
+				 * having to store the full result in memory.
+				 */
+				if (rec.time_first != 0 &&
+				    rec.time_last != 0) {
+					first = rec.time_first;
+					last = rec.time_last;
+				} else {
+					first = rec.zone_first;
+					last = rec.zone_last;
+				}
 				fprintf(sort_stdin, "%lu %lu %*.*s\n",
 					(unsigned long)first,
 					(unsigned long)last,
@@ -676,7 +688,7 @@ dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 						writer_buf);
 			} else {
 				(*pres)(&rec, stdout);
-				dnsdb_crack_destroy(&rec);
+				crack_destroy(&rec);
 			}
 		}
 		post_len = (writer_len - pre_len) - 1;
@@ -687,9 +699,9 @@ dnsdb_writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 }
 
 static void
-dnsdb_writer_fini(present pres) {
+writer_fini(present_t pres) {
 	if (writer_buf != NULL) {
-		(void) dnsdb_writer_error();
+		(void) writer_error();
 		free(writer_buf);
 		writer_buf = NULL;
 		if (writer_len != 0)
@@ -697,13 +709,17 @@ dnsdb_writer_fini(present pres) {
 				(int)writer_len);
 		writer_len = 0;
 	}
-	if (sorted != sort_not) {
+	if (sorted != no_sort) {
 		char line[65536];
 		int status;
 
+		/* when sorting, there has been no output yet. gather the
+		 * intermediate representation from the POSIX sort stdout,
+		 * skip over the sort keys we added earlier, and process.
+		 */
 		fclose(sort_stdin);
 		while (fgets(line, sizeof line, sort_stdout) != NULL) {
-			struct dnsdb_crack rec;
+			cracked_t rec;
 			char *nl, *linep;
 			const char *msg;
 
@@ -715,12 +731,14 @@ dnsdb_writer_fini(present pres) {
 			linep = line;
 			/* skip time_first and time_last -- the sort keys. */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr, "no SP found in '%s'\n", line);
+				fprintf(stderr,
+					"no SP found in '%s'\n", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr, "no SP found in '%s'\n", line);
+				fprintf(stderr,
+					"no second SP found in '%s'\n", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
@@ -728,13 +746,13 @@ dnsdb_writer_fini(present pres) {
 				fputs(linep, stdout);
 				continue;
 			}
-			msg = dnsdb_crack_new(&rec, linep, nl - linep);
+			msg = crack_new(&rec, linep, nl - linep);
 			if (msg != NULL) {
 				puts(msg);
 				continue;
 			}
 			(*pres)(&rec, stdout);
-			dnsdb_crack_destroy(&rec);
+			crack_destroy(&rec);
 		}
 		fclose(sort_stdout);
 		if (waitpid(sort_pid, &status, 0) < 0) {
@@ -748,7 +766,7 @@ dnsdb_writer_fini(present pres) {
 }
 
 static int
-dnsdb_writer_error(void) {
+writer_error(void) {
 	if (writer_buf[0] != '\0' && writer_buf[0] != '{') {
 		fprintf(stderr, "API: %-*.*s",
 		       (int)writer_len, (int)writer_len, writer_buf);
@@ -760,7 +778,7 @@ dnsdb_writer_error(void) {
 }
 
 static void
-present_dns(const struct dnsdb_crack *rec, FILE *outf) {
+present_dns(const cracked_t *rec, FILE *outf) {
 	int pflag, ppflag;
 	const char *prefix;
 
@@ -830,16 +848,16 @@ present_dns(const struct dnsdb_crack *rec, FILE *outf) {
 		putc('\n', outf);
 }
 
-static int dnsdb_out_csv_headerp = 0;
-
 static void
-present_csv(const struct dnsdb_crack *rec, FILE *outf) {
-	if (!dnsdb_out_csv_headerp) {
+present_csv(const cracked_t *rec, FILE *outf) {
+	static int csv_headerp = 0;
+
+	if (!csv_headerp) {
 		fprintf(outf,
 			"time_first,time_last,zone_first,zone_last,"
 			"count,bailiwick,"
 			"rrname,rrtype,rdata\n");
-		dnsdb_out_csv_headerp = 1;
+		csv_headerp = 1;
 	}
 
 	if (json_is_array(rec->obj.rdata)) {
@@ -862,7 +880,7 @@ present_csv(const struct dnsdb_crack *rec, FILE *outf) {
 }
 
 static void
-present_csv_line(const struct dnsdb_crack *rec,
+present_csv_line(const cracked_t *rec,
 		 const char *rdata,
 		 FILE *outf)
 {
@@ -901,7 +919,7 @@ present_csv_line(const struct dnsdb_crack *rec,
 }
 
 static const char *
-dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
+crack_new(cracked_t *rec, char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 
@@ -1012,12 +1030,12 @@ dnsdb_crack_new(struct dnsdb_crack *rec, char *buf, size_t len) {
 
  ouch:
 	assert(msg != NULL);
-	dnsdb_crack_destroy(rec);
+	crack_destroy(rec);
 	return (msg);
 }
 
 static void
-dnsdb_crack_destroy(struct dnsdb_crack *rec) {
+crack_destroy(cracked_t *rec) {
 	json_decref(rec->obj.main);
 	if (debug)
 		memset(rec, 0x5a, sizeof *rec);
