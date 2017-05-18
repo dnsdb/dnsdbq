@@ -606,15 +606,17 @@ writer_init(void) {
 			close(p2[0]);
 			close(p2[1]);
 			sap = sort_argv;
-			*sap++ = (char *)"sort";
-			*sap++ = (char *)"-k1";
-			*sap++ = (char *)"-k2";
-			*sap++ = (char *)"-n";
+			*sap++ = strdup("sort");
+			*sap++ = strdup("-k1");
+			*sap++ = strdup("-k2");
+			*sap++ = strdup("-n");
 			if (sorted == reverse_sort)
-				*sap++ = (char *)"-r";
+				*sap++ = strdup("-r");
 			*sap++ = NULL;
 			execve("/usr/bin/sort", sort_argv, environ);
 			perror("execve");
+			for (sap = sort_argv; *sap != NULL; sap++)
+				free(*sap);
 			_exit(1);
 		}
 		close(p1[0]);
