@@ -20,6 +20,8 @@
 #include <jansson.h>
 #include "ns_ttl.h"
 
+extern char **environ;
+
 #ifndef FALSE
 #define FALSE 0
 #endif
@@ -593,7 +595,6 @@ writer_init(void) {
 			exit(1);
 		}
 		if (sort_pid == 0) {
-			extern char **environ;
 			char *sort_argv[6], **sap;
 
 			if (dup2(p1[0], STDIN_FILENO) < 0 ||
