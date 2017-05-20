@@ -61,32 +61,13 @@ static int filter = 0;
 static int verbose = 0;
 static int debug = 0;
 static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
-
-static __attribute__((__noreturn__)) void usage(const char *error) {
-	if (error != NULL)
-		fprintf(stderr, "error: %s\n", error);
-	fprintf(stderr,
-"usage: %s [-vdjsSh] [-p dns|json|csv] [-l LIMIT] [-A after] [-B before] {\n"
-"\t-f |\n"
-"\t[-t type] [-b bailiwick] {\n"
-"\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
-"\t\t-n NAME[/TYPE] |\n"
-"\t\t-i IP[/PFXLEN]\n"
-"\t}\n"
-"}\n"
-"for -f, stdin must contain lines of the following forms:\n"
-"\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
-"\trdata/name/NAME[/TYPE]\n"
-"\trdata/ip/ADDR[/PFXLEN]\n"
-"for -f, output format will be determined by -p, using --\\n framing\n"
-"for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
-"or rel. %%dw%%dd%%dh%%dm%%ds format\n",
-		program_name);
-	exit(1);
-}
+static int curl_cleanup_needed = 0;
+static CURL *curl = NULL;
 
 /* Forward. */
 
+static __attribute__((__noreturn__)) void usage(const char *);
+static __attribute__((noreturn)) void my_exit(int, ...);
 static void read_configs(void);
 static void dnsdb_query(const char *, int, present_t, time_t, time_t);
 static void present_dns(const cracked_t *, FILE *);
@@ -125,14 +106,14 @@ main(int argc, char *argv[]) {
 			if (!time_get(optarg, &after)) {
 				fprintf(stderr, "bad -A timestamp: '%s'\n",
 					optarg);
-				exit(1);
+				my_exit(1, NULL);
 			}
 			break;
 		case 'B':
 			if (!time_get(optarg, &before)) {
 				fprintf(stderr, "bad -B timestamp: '%s'\n",
 					optarg);
-				exit(1);
+				my_exit(1, NULL);
 			}
 			break;
 		case 'r': {
@@ -303,7 +284,7 @@ main(int argc, char *argv[]) {
 	}
 	if (api_key == NULL) {
 		fprintf(stderr, "no API key given\n");
-		exit(1);
+		my_exit(1, NULL);
 	}
 	if (dnsdb_server == NULL) {
 		dnsdb_server = strdup(DNSDB_SERVER);
@@ -349,7 +330,7 @@ main(int argc, char *argv[]) {
 					     name);
 			if (x < 0) {
 				perror("asprintf");
-				exit(1);
+				my_exit(1, NULL);
 			}
 			break;
 		case name_mode:
@@ -361,7 +342,7 @@ main(int argc, char *argv[]) {
 					     name);
 			if (x < 0) {
 				perror("asprintf");
-				exit(1);
+				my_exit(1, NULL);
 			}
 			break;
 		case ip_mode:
@@ -373,32 +354,81 @@ main(int argc, char *argv[]) {
 					     name);
 			if (x < 0) {
 				perror("asprintf");
-				exit(1);
+				my_exit(1, NULL);
 			}
 			break;
 		default:
 			abort();
 		}
-		if (name != NULL)
+		if (name != NULL) {
 			free(name);
-		if (type != NULL)
+			name = NULL;
+		}
+		if (type != NULL) {
 			free(type);
-		if (bailiwick != NULL)
+			type = NULL;
+		}
+		if (bailiwick != NULL) {
 			free(bailiwick);
+			bailiwick = NULL;
+		}
 		dnsdb_query(command, limit, pres, after, before);
 		free(command);
 	}
-	free(api_key);
-	free(dnsdb_server);
-	exit(0);
+	my_exit(0, NULL);
 }
 
 /* Private. */
 
+static __attribute__((__noreturn__)) void usage(const char *error) {
+	if (error != NULL)
+		fprintf(stderr, "error: %s\n", error);
+	fprintf(stderr,
+"usage: %s [-vdjsSh] [-p dns|json|csv] [-l LIMIT] [-A after] [-B before] {\n"
+"\t-f |\n"
+"\t[-t type] [-b bailiwick] {\n"
+"\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
+"\t\t-n NAME[/TYPE] |\n"
+"\t\t-i IP[/PFXLEN]\n"
+"\t}\n"
+"}\n"
+"for -f, stdin must contain lines of the following forms:\n"
+"\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
+"\trdata/name/NAME[/TYPE]\n"
+"\trdata/ip/ADDR[/PFXLEN]\n"
+"for -f, output format will be determined by -p, using --\\n framing\n"
+"for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
+"or rel. %%dw%%dd%%dh%%dm%%ds format\n",
+		program_name);
+	my_exit(1, NULL);
+}
+
+static __attribute__((__noreturn__)) void
+my_exit(int code, ...) {
+	va_list ap;
+	void *p;
+
+	va_start(ap, code);
+	while (p = va_arg(ap, void *), p != NULL)
+		free(p);
+	va_end(ap);
+	free(api_key);
+	api_key = NULL;
+	free(dnsdb_server);
+	dnsdb_server = NULL;
+	if (curl != NULL) {
+		curl_easy_cleanup(curl);
+		curl = NULL;
+	}
+	if (curl_cleanup_needed)
+		curl_global_cleanup();
+	exit(code);
+}
+
 static void
 read_configs(void) {
 	const char * const *conf;
-	const char *cf;
+	char *cf;
 
 	cf = NULL;
 	for (conf = conf_files; *conf != NULL; conf++) {
@@ -425,15 +455,16 @@ read_configs(void) {
 		f = popen(cmd, "r");
 		if (f == NULL) {
 			perror(cmd);
-			exit(1);
+			my_exit(1, NULL);
 		}
 		if (debug)
 			fprintf(stderr, "conf cmd = '%s'\n", cmd);
 		free(cmd);
+		cmd = NULL;
 		while (fgets(line, sizeof line, f) != NULL) {
 			if (strchr(line, '\n') == NULL) {
 				fprintf(stderr, "%s: line too long\n", cf);
-				exit(1);
+				my_exit(1, cf, NULL);
 			}
 			if (debug)
 				fprintf(stderr, "conf line: %s", line);
@@ -448,22 +479,23 @@ read_configs(void) {
 					dnsdb_server = strdup(tok);
 			} else {
 				fprintf(stderr, "%s: line malformed\n", cf);
-				exit(1);
+				my_exit(1, cf, NULL);
 			}
 		}
 		pclose(f);
 	}
+	free(cf);
+	cf = NULL;
 }
 
 static void
 dnsdb_query(const char *command, int limit, present_t pres,
 	    time_t after, time_t before)
 {
-	CURL *curl;
-
 	if (debug)
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
 	curl_global_init(CURL_GLOBAL_DEFAULT);
+	curl_cleanup_needed++;
 	curl = curl_easy_init();
 	if (curl != NULL) {
 		struct curl_slist *headers = NULL;
@@ -475,7 +507,7 @@ dnsdb_query(const char *command, int limit, present_t pres,
 		x = asprintf(&url, "%s/lookup/%s", dnsdb_server, command);
 		if (x < 0) {
 			perror("asprintf");
-			exit(1);
+			my_exit(1, NULL);
 		}
 		if (limit != 0) {
 			char *tmp;
@@ -483,7 +515,7 @@ dnsdb_query(const char *command, int limit, present_t pres,
 			x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, limit);
 			if (x < 0) {
 				perror("asprintf");
-				exit(1);
+				my_exit(1, NULL);
 			}
 			free(url);
 			url = tmp;
@@ -499,7 +531,7 @@ dnsdb_query(const char *command, int limit, present_t pres,
 				     url, sep, (u_long)after, (u_long)before);
 			if (x < 0) {
 				perror("asprintf");
-				exit(1);
+				my_exit(1, NULL);
 			}
 			free(url);
 			url = tmp;
@@ -512,7 +544,7 @@ dnsdb_query(const char *command, int limit, present_t pres,
 				     url, sep, (u_long)after);
 			if (x < 0) {
 				perror("asprintf");
-				exit(1);
+				my_exit(1, NULL);
 			}
 			free(url);
 			url = tmp;
@@ -525,7 +557,7 @@ dnsdb_query(const char *command, int limit, present_t pres,
 				     url, sep, (u_long)before);
 			if (x < 0) {
 				perror("asprintf");
-				exit(1);
+				my_exit(1, NULL);
 			}
 			free(url);
 			url = tmp;
@@ -537,7 +569,7 @@ dnsdb_query(const char *command, int limit, present_t pres,
 		x = asprintf(&key_header, "X-Api-Key: %s", api_key);
 		if (x < 0) {
 			perror("asprintf");
-			exit(1);
+			my_exit(1, NULL);
 		}
 
 		curl_easy_setopt(curl, CURLOPT_URL, url);
@@ -560,14 +592,18 @@ dnsdb_query(const char *command, int limit, present_t pres,
 			fprintf(stderr, "curl_easy_perform() failed: %s\n",
 				curl_easy_strerror(res));
  		curl_easy_cleanup(curl);
+		curl = NULL;
 		curl_slist_free_all(headers);
 		free(url);
+		url = NULL;
 		free(key_header);
+		key_header = NULL;
 		if (pres != NULL || sorted != no_sort)
 			writer_fini(pres);
 	}
  
 	curl_global_cleanup();
+	curl_cleanup_needed = 0;
 }
 
 static char *writer_buf = NULL;
@@ -588,11 +624,11 @@ writer_init(void) {
 
 		if (pipe(p1) < 0 || pipe(p2) < 0) {
 			perror("pipe");
-			exit(1);
+			my_exit(1, NULL);
 		}
 		if ((sort_pid = fork()) < 0) {
 			perror("fork");
-			exit(1);
+			my_exit(1, NULL);
 		}
 		if (sort_pid == 0) {
 			char *sort_argv[6], **sap;
@@ -616,8 +652,10 @@ writer_init(void) {
 			*sap++ = NULL;
 			execve("/usr/bin/sort", sort_argv, environ);
 			perror("execve");
-			for (sap = sort_argv; *sap != NULL; sap++)
+			for (sap = sort_argv; *sap != NULL; sap++) {
 				free(*sap);
+				*sap = NULL;
+			}
 			_exit(1);
 		}
 		close(p1[0]);
@@ -1084,7 +1122,7 @@ escape(char **src) {
 	escaped = curl_escape(*src, strlen(*src));
 	if (escaped == NULL) {
 		fprintf(stderr, "curl_escape(%s) failed\n", *src);
-		exit(1);
+		my_exit(1, NULL);
 	}
 	free(*src);
 	*src = strdup(escaped);
