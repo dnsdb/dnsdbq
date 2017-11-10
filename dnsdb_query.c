@@ -169,10 +169,7 @@ main(int argc, char *argv[]) {
 				usage("-r, -n, or -i can only appear once");
 			assert(name == NULL);
 			mode = ip_mode;
-			if (length == NULL)
-				p = strchr(optarg, '/');
-			else
-				p = NULL;
+			p = strchr(optarg, '/');
 			if (p != NULL) {
 				name = strndup(optarg, p - optarg);
 				length = strdup(p + 1);
