@@ -51,10 +51,10 @@ ns_parse_ttl(const char *src, u_long *dst) {
 		if (islower(ch))
 			ch = toupper(ch);
 		switch (ch) {
-		case 'W':  tmp *= 7;
-		case 'D':  tmp *= 24;
-		case 'H':  tmp *= 60;
-		case 'M':  tmp *= 60;
+		case 'W':  tmp *= 7; __attribute__ ((fallthrough));
+		case 'D':  tmp *= 24; __attribute__ ((fallthrough));
+		case 'H':  tmp *= 60; __attribute__ ((fallthrough));
+		case 'M':  tmp *= 60; __attribute__ ((fallthrough));
 		case 'S':  break;
 		default:   goto einval;
 		}
