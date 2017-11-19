@@ -79,7 +79,7 @@ static void writer_init(void);
 static size_t writer(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(present_t);
 static int writer_error(void);
-static void time_print(time_t x, int, FILE *);
+static void time_print(time_t x, FILE *);
 static int time_get(const char *src, time_t *dst);
 static void escape(char **);
 
@@ -251,12 +251,12 @@ main(int argc, char *argv[]) {
 			fprintf(stderr, "length = '%s'\n", length);
 		if (after != 0) {
 			fprintf(stderr, "after =  ");
-			time_print(after, FALSE, stderr);
+			time_print(after, stderr);
 			putc('\n', stderr);
 		}
 		if (before != 0) {
 			fprintf(stderr, "before = ");
-			time_print(before, FALSE, stderr);
+			time_print(before, stderr);
 			putc('\n', stderr);
 		}
 	}
@@ -825,17 +825,17 @@ present_dns(const cracked_t *rec, FILE *outf) {
 	/* Timestamps. */
 	if (rec->obj.time_first != NULL && rec->obj.time_last != NULL) {
 		fputs(";; record times: ", outf);
-		time_print(rec->time_first, FALSE, outf);
+		time_print(rec->time_first, outf);
 		fputs(" .. ", outf);
-		time_print(rec->time_last, FALSE, outf);
+		time_print(rec->time_last, outf);
 		putc('\n', outf);
 		ppflag++;
 	}
 	if (rec->obj.zone_first != NULL && rec->obj.zone_last != NULL) {
 		fputs(";;   zone times: ", outf);
-		time_print(rec->zone_first, FALSE, outf);
+		time_print(rec->zone_first, outf);
 		fputs(" .. ", outf);
-		time_print(rec->zone_last, FALSE, outf);
+		time_print(rec->zone_last, outf);
 		putc('\n', outf);
 		ppflag++;
 	}
@@ -924,16 +924,16 @@ present_csv_line(const cracked_t *rec,
 {
 	/* Timestamps. */
 	if (rec->obj.time_first != NULL)
-		time_print(rec->time_first, TRUE, outf);
+		time_print(rec->time_first, outf);
 	putc(',', outf);
 	if (rec->obj.time_last != NULL)
-		time_print(rec->time_last, TRUE, outf);
+		time_print(rec->time_last, outf);
 	putc(',', outf);
 	if (rec->obj.zone_first != NULL)
-		time_print(rec->zone_first, TRUE, outf);
+		time_print(rec->zone_first, outf);
 	putc(',', outf);
 	if (rec->obj.zone_last != NULL)
-		time_print(rec->zone_last, TRUE, outf);
+		time_print(rec->zone_last, outf);
 	putc(',', outf);
 
 	/* Count and bailiwick. */
@@ -1080,11 +1080,11 @@ crack_destroy(cracked_t *rec) {
 }
 
 static void
-time_print(time_t x, int rfc3339, FILE *outf) {
+time_print(time_t x, FILE *outf) {
 	struct tm *y = gmtime(&x);
 	char z[99];
 
-	strftime(z, sizeof z, rfc3339 ? "%FT%TZ" : "%F %T", y);
+	strftime(z, sizeof z, "%F %T", y);
 	fputs(z, outf);
 }
 
