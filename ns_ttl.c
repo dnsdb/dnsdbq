@@ -52,21 +52,13 @@ ns_parse_ttl(const char *src, u_long *dst) {
 			ch = toupper(ch);
 		switch (ch) {
 		case 'W':  tmp *= 7;
-#if defined(__GNUC__) && !defined(__clang__)
-			__attribute__ ((fallthrough));
-#endif
+			/* FALLTHROUGH */
 		case 'D':  tmp *= 24;
-#if defined(__GNUC__) && !defined(__clang__)
-			__attribute__ ((fallthrough));
-#endif
+			/* FALLTHROUGH */
 		case 'H':  tmp *= 60;
-#if defined(__GNUC__) && !defined(__clang__)
-			__attribute__ ((fallthrough));
-#endif
+			/* FALLTHROUGH */
 		case 'M':  tmp *= 60;
-#if defined(__GNUC__) && !defined(__clang__)
-			__attribute__ ((fallthrough));
-#endif
+			/* FALLTHROUGH */
 		case 'S':  break;
 		default:   goto einval;
 		}
