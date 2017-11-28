@@ -29,7 +29,6 @@
 .Op Fl p Ar output_type
 .Op Fl r Ar rdata
 .Op Fl t Ar type
-.Op batch_filename
 .Sh DESCRIPTION
 .Nm dnsdb_query
 constructs and issues queries to the Farsight DNSDB and displays responses. It
@@ -91,8 +90,9 @@ or
 .It Fl d
 enable debug mode.
 .It Fl f
-specify batch lookup mode allowing one or more queries to be performed. Queries
-should be specified in a file and each should be of the following format:
+specify batch lookup mode allowing one or more queries to be performed.
+Queries will be read from standard input and are expected to be be in
+one of the following formats:
 
 .Bl -enum -offset indent
 .It
