@@ -44,7 +44,15 @@ typedef struct {
 	json_int_t count;
 } cracked_t;
 
-typedef void (*present_t)(const cracked_t *, FILE *);
+typedef void (*present_t)(const cracked_t *, const char *, size_t, FILE *);
+
+struct reader {
+	struct reader		*next;
+	CURL			*easy;
+	struct curl_slist	*hdrs;
+	char			*url;
+};
+typedef struct reader *reader_t;
 
 static const char * const conf_files[] = {
 	"~/.isc-dnsdb-query.conf",
@@ -54,34 +62,41 @@ static const char * const conf_files[] = {
 	NULL
 };
 
+/* Forward. */
+
+static __attribute__((__noreturn__)) void usage(const char *);
+static __attribute__((noreturn)) void my_exit(int, ...);
+static void read_configs(void);
+static void dnsdb_query(const char *, int, time_t, time_t);
+static void launch_easy(const char *, int, time_t, time_t);
+static void rendezvous(reader_t);
+static void present_json(const cracked_t *, const char *, size_t, FILE *);
+static void present_dns(const cracked_t *, const char *, size_t, FILE *);
+static void present_csv(const cracked_t *, const char *, size_t, FILE *);
+static void present_csv_line(const cracked_t *, const char *, FILE *);
+static const char *crack_new(cracked_t *, char *, size_t);
+static void crack_destroy(cracked_t *);
+static void writer_init(void);
+static size_t writer(char *ptr, size_t size, size_t nmemb, void *blob);
+static void writer_fini(void);
+static int writer_error(void);
+static void time_print(time_t x, FILE *);
+static int time_get(const char *src, time_t *dst);
+static void escape(char **);
+
+/* Private. */
+
 static const char *program_name = NULL;
 static char *api_key = NULL;
+static char *key_header = NULL;
 static char *dnsdb_server = NULL;
 static int filter = 0;
 static int verbose = 0;
 static int debug = 0;
 static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
-static CURL *curl = NULL;
-
-/* Forward. */
-
-static __attribute__((__noreturn__)) void usage(const char *);
-static __attribute__((noreturn)) void my_exit(int, ...);
-static void read_configs(void);
-static void dnsdb_query(const char *, int, present_t, time_t, time_t);
-static void present_dns(const cracked_t *, FILE *);
-static void present_csv(const cracked_t *, FILE *);
-static void present_csv_line(const cracked_t *, const char *, FILE *);
-static const char *crack_new(cracked_t *, char *, size_t);
-static void crack_destroy(cracked_t *);
-static void writer_init(void);
-static size_t writer(char *ptr, size_t size, size_t nmemb, void *blob);
-static void writer_fini(present_t);
-static int writer_error(void);
-static void time_print(time_t x, FILE *);
-static int time_get(const char *src, time_t *dst);
-static void escape(char **);
+static present_t pres = present_dns;
+static reader_t readers = NULL;
 
 /* Public. */
 
@@ -90,8 +105,7 @@ main(int argc, char *argv[]) {
 	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
 	time_t after = 0, before = 0;
-	present_t pres = present_dns;
-	int ch, limit = 0;
+	int ch, limit = 0, loose = 0;
 	const char *val;
 
 	program_name = strrchr(argv[0], '/');
@@ -100,7 +114,7 @@ main(int argc, char *argv[]) {
 	else
 		program_name++;
 
-	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:vdjfsSh")) != -1) {
+	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:vdjfsShL")) != -1) {
 		switch (ch) {
 		case 'A':
 			if (!time_get(optarg, &after)) {
@@ -183,7 +197,7 @@ main(int argc, char *argv[]) {
 			break;
 		case 'p':
 			if (strcmp(optarg, "json") == 0)
-				pres = NULL;
+				pres = present_json;
 			else if (strcmp(optarg, "dns") == 0)
 				pres = present_dns;
 			else if (strcmp(optarg, "csv") == 0)
@@ -212,7 +226,7 @@ main(int argc, char *argv[]) {
 			debug++;
 			break;
 		case 'j':
-			pres = NULL;
+			pres = present_json;
 			break;
 		case 'f':
 			filter++;
@@ -222,6 +236,9 @@ main(int argc, char *argv[]) {
 			break;
 		case 'S':
 			sorted = reverse_sort;
+			break;
+		case 'L':
+			loose++;
 			break;
 		case 'h':
 			usage(NULL);
@@ -240,6 +257,8 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (length != NULL)
 		escape(&length);
+	if (loose && (after == 0 || before == 0))
+		usage("-L only makes sense when both -A and -B are specified");
 	if (debug) {
 		if (name != NULL)
 			fprintf(stderr, "name = '%s'\n", name);
@@ -289,6 +308,10 @@ main(int argc, char *argv[]) {
 			fprintf(stderr, "conf default dnsdb_server = '%s'\n",
 				dnsdb_server);
 	}
+	if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
+		perror("asprintf");
+		my_exit(1, NULL);
+	}
 
 	if (filter) {
 		char command[1000];
@@ -304,7 +327,7 @@ main(int argc, char *argv[]) {
 				continue;
 			}
 			*nl = '\0';
-			dnsdb_query(command, limit, pres, after, before);
+			dnsdb_query(command, limit, after, before);
 			fprintf(stdout, "--\n");
 			fflush(stdout);
 		}
@@ -369,7 +392,7 @@ main(int argc, char *argv[]) {
 			free(bailiwick);
 			bailiwick = NULL;
 		}
-		dnsdb_query(command, limit, pres, after, before);
+		dnsdb_query(command, limit, after, before);
 		free(command);
 	}
 	my_exit(0, NULL);
@@ -405,18 +428,34 @@ my_exit(int code, ...) {
 	va_list ap;
 	void *p;
 
+	/* our varargs are things to be free()'d. */
 	va_start(ap, code);
 	while (p = va_arg(ap, void *), p != NULL)
 		free(p);
 	va_end(ap);
-	free(api_key);
-	api_key = NULL;
-	free(dnsdb_server);
-	dnsdb_server = NULL;
-	if (curl != NULL) {
-		curl_easy_cleanup(curl);
-		curl = NULL;
+
+	/* globals which may have been initialized, are to be free()'d. */
+	if (key_header != NULL) {
+		free(key_header);
+		key_header = NULL;
 	}
+	if (api_key != NULL) {
+		free(api_key);
+		api_key = NULL;
+	}
+	if (dnsdb_server != NULL) {
+		free(dnsdb_server);
+		dnsdb_server = NULL;
+	}
+
+	/* readers which are still known, must be free()'d. */
+	while (readers != NULL) {
+		reader_t next = readers->next;
+		rendezvous(readers);
+		readers = next;
+	}
+
+	/* if curl is operating, it must be shut down. */
 	if (curl_cleanup_needed)
 		curl_global_cleanup();
 	exit(code);
@@ -443,16 +482,21 @@ read_configs(void) {
 	if (*conf != NULL) {
 		char *cmd, *tok, line[1000];
 		FILE *f;
+		int x;
 
-		(void) asprintf(&cmd,
-				". %s;"
-				"echo apikey $APIKEY;"
-				"echo server $DNSDB_SERVER",
-				cf);
+		x = asprintf(&cmd,
+			     ". %s;"
+			     "echo apikey $APIKEY;"
+			     "echo server $DNSDB_SERVER",
+			     cf);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, NULL);
+		}
 		f = popen(cmd, "r");
 		if (f == NULL) {
 			perror(cmd);
-			my_exit(1, NULL);
+			my_exit(1, cmd, NULL);
 		}
 		if (debug)
 			fprintf(stderr, "conf cmd = '%s'\n", cmd);
@@ -486,121 +530,136 @@ read_configs(void) {
 }
 
 static void
-dnsdb_query(const char *command, int limit, present_t pres,
-	    time_t after, time_t before)
-{
+dnsdb_query(const char *command, int limit, time_t after, time_t before) {
 	if (debug)
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 	curl_cleanup_needed++;
-	curl = curl_easy_init();
-	if (curl != NULL) {
-		struct curl_slist *headers = NULL;
-		CURLcode res;
-		char *url = NULL, *key_header = NULL;
-		char sep = '?';
-		int x;
 
-		x = asprintf(&url, "%s/lookup/%s", dnsdb_server, command);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
-		if (limit != 0) {
-			char *tmp;
-
-			x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, limit);
-			if (x < 0) {
-				perror("asprintf");
-				my_exit(1, NULL);
-			}
-			free(url);
-			url = tmp;
-			tmp = NULL;
-			sep = '&';
-		}
-		if (after != 0 && before != 0) {
-			char *tmp;
-
-			x = asprintf(&tmp, "%s%c"
-				     "time_first_after=%lu"
-				     "&time_last_before=%lu",
-				     url, sep, (u_long)after, (u_long)before);
-			if (x < 0) {
-				perror("asprintf");
-				my_exit(1, NULL);
-			}
-			free(url);
-			url = tmp;
-			tmp = NULL;
-			sep = '&';
-		} else if (after != 0) {
-			char *tmp;
-
-			x = asprintf(&tmp, "%s%c" "time_last_after=%lu",
-				     url, sep, (u_long)after);
-			if (x < 0) {
-				perror("asprintf");
-				my_exit(1, NULL);
-			}
-			free(url);
-			url = tmp;
-			tmp = NULL;
-			sep = '&';
-		} else if (before != 0) {
-			char *tmp;
-
-			x = asprintf(&tmp, "%s%c" "time_first_before=%lu",
-				     url, sep, (u_long)before);
-			if (x < 0) {
-				perror("asprintf");
-				my_exit(1, NULL);
-			}
-			free(url);
-			url = tmp;
-			tmp = NULL;
-			sep = '&';
-		}
-		if (verbose)
-			fprintf(filter ? stderr : stdout, "url [%s]\n", url);
-		x = asprintf(&key_header, "X-Api-Key: %s", api_key);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
-
-		curl_easy_setopt(curl, CURLOPT_URL, url);
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-		headers = curl_slist_append(headers, key_header);
-		headers = curl_slist_append(headers,
-					    "Accept: application/json");
-		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-		/* libcurl default is to send json to stdout, so if that's
-		 * what we're doing, and we're not sorting, don't override.
-		 */
-		if (pres != NULL || sorted != no_sort) {
-			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writer);
-			curl_easy_setopt(curl, CURLOPT_WRITEDATA, pres);
-			writer_init();
-		}
-		res = curl_easy_perform(curl);
-		if (res != CURLE_OK)
-			fprintf(stderr, "curl_easy_perform() failed: %s\n",
-				curl_easy_strerror(res));
- 		curl_easy_cleanup(curl);
-		curl = NULL;
-		curl_slist_free_all(headers);
-		free(url);
-		url = NULL;
-		free(key_header);
-		key_header = NULL;
-		if (pres != NULL || sorted != no_sort)
-			writer_fini(pres);
-	}
+	launch_easy(command, limit, after, before);
  
 	curl_global_cleanup();
 	curl_cleanup_needed = 0;
+}
+
+static void
+launch_easy(const char *command, int limit, time_t after, time_t before) {
+	reader_t reader;
+	CURLcode res;
+	char sep;
+	int x;
+
+	reader = malloc(sizeof *reader);
+	if (reader == NULL) {
+		perror("malloc");
+		return;
+	}
+	memset(reader, 0, sizeof *reader);
+	reader->easy = curl_easy_init();
+	if (reader->easy == NULL) {
+		/* an error will have been output by libcurl in this case. */
+		free(reader);
+		return;
+	}
+
+	x = asprintf(&reader->url, "%s/lookup/%s", dnsdb_server, command);
+	if (x < 0) {
+		perror("asprintf");
+		my_exit(1, reader, NULL);
+	}
+	sep = '?';
+	if (limit != 0) {
+		char *tmp;
+
+		x = asprintf(&tmp, "%s%c" "limit=%d", reader->url, sep, limit);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, reader->url, reader, NULL);
+		}
+		free(reader->url);
+		reader->url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (after != 0 && before != 0) {
+		char *tmp;
+
+		x = asprintf(&tmp, "%s%c"
+			     "time_first_after=%lu"
+			     "&time_last_before=%lu",
+			     reader->url, sep, (u_long)after, (u_long)before);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, reader->url, reader, NULL);
+		}
+		free(reader->url);
+		reader->url = tmp;
+		tmp = NULL;
+		sep = '&';
+	} else if (after != 0) {
+		char *tmp;
+
+		x = asprintf(&tmp, "%s%c" "time_last_after=%lu",
+			     reader->url, sep, (u_long)after);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, reader->url, reader, NULL);
+		}
+		free(reader->url);
+		reader->url = tmp;
+		tmp = NULL;
+		sep = '&';
+	} else if (before != 0) {
+		char *tmp;
+
+		x = asprintf(&tmp, "%s%c" "time_first_before=%lu",
+			     reader->url, sep, (u_long)before);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, reader->url, reader, NULL);
+		}
+		free(reader->url);
+		reader->url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (verbose)
+		fprintf(filter ? stderr : stdout, "url [%s]\n", reader->url);
+
+	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
+	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
+	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
+	reader->hdrs = curl_slist_append(reader->hdrs, key_header);
+	reader->hdrs = curl_slist_append(reader->hdrs,
+					 "Accept: application/json");
+	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
+	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer);
+	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
+	writer_init();
+	res = curl_easy_perform(reader->easy);
+	if (res != CURLE_OK)
+		fprintf(stderr, "curl_easy_perform() failed: %s\n",
+			curl_easy_strerror(res));
+	rendezvous(reader);
+	reader = NULL;
+	writer_fini();
+}
+
+static void
+rendezvous(reader_t reader) {
+	if (reader->easy != NULL) {
+		curl_easy_cleanup(reader->easy);
+		reader->easy = NULL;
+	}
+	if (reader->hdrs != NULL) {
+		curl_slist_free_all(reader->hdrs);
+		reader->hdrs = NULL;
+	}
+	if (reader->url != NULL) {
+		free(reader->url);
+		reader->url = NULL;
+	}
+	free(reader);
 }
 
 static char *writer_buf = NULL;
@@ -667,8 +726,9 @@ writer_init(void) {
  * and process it one object at a time.
  */
 static size_t
-writer(char *ptr, size_t size, size_t nmemb, void *blob) {
-	present_t pres = (present_t) blob;
+writer(char *ptr, size_t size, size_t nmemb,
+       void *blob __attribute__ ((unused))) {
+	/*reader_t reader = (reader_t) blob;*/
 	size_t bytes = size * nmemb;
 	char *nl;
 
@@ -725,7 +785,7 @@ writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 						(int)pre_len, (int)pre_len,
 						writer_buf);
 			} else {
-				(*pres)(&rec, stdout);
+				(*pres)(&rec, writer_buf, pre_len, stdout);
 				crack_destroy(&rec);
 			}
 		}
@@ -737,7 +797,7 @@ writer(char *ptr, size_t size, size_t nmemb, void *blob) {
 }
 
 static void
-writer_fini(present_t pres) {
+writer_fini() {
 	if (writer_buf != NULL) {
 		(void) writer_error();
 		free(writer_buf);
@@ -780,16 +840,12 @@ writer_fini(present_t pres) {
 				continue;
 			}
 			linep += strspn(linep, " ");
-			if (pres == NULL) {
-				fputs(linep, stdout);
-				continue;
-			}
 			msg = crack_new(&rec, linep, nl - linep);
 			if (msg != NULL) {
 				puts(msg);
 				continue;
 			}
-			(*pres)(&rec, stdout);
+			(*pres)(&rec, linep, nl - linep, stdout);
 			crack_destroy(&rec);
 		}
 		fclose(sort_stdout);
@@ -816,7 +872,11 @@ writer_error(void) {
 }
 
 static void
-present_dns(const cracked_t *rec, FILE *outf) {
+present_dns(const cracked_t *rec,
+	    const char *jsonbuf __attribute__ ((unused)),
+	    size_t jsonlen __attribute__ ((unused)),
+	    FILE *outf)
+{
 	int pflag, ppflag;
 	const char *prefix;
 
@@ -887,7 +947,21 @@ present_dns(const cracked_t *rec, FILE *outf) {
 }
 
 static void
-present_csv(const cracked_t *rec, FILE *outf) {
+present_json(const cracked_t *rec __attribute__ ((unused)),
+	     const char *jsonbuf,
+	     size_t jsonlen,
+	     FILE *outf)
+{
+	fwrite(jsonbuf, 1, jsonlen, outf);
+	putc('\n', outf);
+}
+
+static void
+present_csv(const cracked_t *rec,
+	    const char *jsonbuf __attribute__ ((unused)),
+	    size_t jsonlen __attribute__ ((unused)),
+	    FILE *outf)
+{
 	static int csv_headerp = 0;
 
 	if (!csv_headerp) {
