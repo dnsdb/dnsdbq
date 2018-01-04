@@ -22,13 +22,6 @@
 
 extern char **environ;
 
-#ifndef FALSE
-#define FALSE 0
-#endif
-#ifndef TRUE
-#define TRUE 1
-#endif
-
 /* Internal. */
 
 #define DNSDB_SERVER "https://api.dnsdb.info"
@@ -54,6 +47,16 @@ struct reader {
 };
 typedef struct reader *reader_t;
 
+struct writer {
+	char *buf;
+	size_t len;
+	FILE *sort_stdin, *sort_stdout;
+	pid_t sort_pid;
+};
+typedef struct writer *writer_t;
+
+/* Constant. */
+
 static const char * const conf_files[] = {
 	"~/.isc-dnsdb-query.conf",
 	"~/.dnsdb-query.conf",
@@ -62,13 +65,16 @@ static const char * const conf_files[] = {
 	NULL
 };
 
+static const char json_header[] = "Accept: application/json";
+
 /* Forward. */
 
-static __attribute__((__noreturn__)) void usage(const char *);
+static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
 static void read_configs(void);
-static void dnsdb_query(const char *, int, time_t, time_t);
-static void launch_easy(const char *, int, time_t, time_t);
+static void dnsdb_query(const char *);
+static reader_t launch(const char *, writer_t);
+static void all_readers(void);
 static void rendezvous(reader_t);
 static void present_json(const cracked_t *, const char *, size_t, FILE *);
 static void present_dns(const cracked_t *, const char *, size_t, FILE *);
@@ -76,10 +82,10 @@ static void present_csv(const cracked_t *, const char *, size_t, FILE *);
 static void present_csv_line(const cracked_t *, const char *, FILE *);
 static const char *crack_new(cracked_t *, char *, size_t);
 static void crack_destroy(cracked_t *);
-static void writer_init(void);
-static size_t writer(char *ptr, size_t size, size_t nmemb, void *blob);
-static void writer_fini(void);
-static int writer_error(void);
+static writer_t writer_init(void);
+static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
+static void writer_fini(writer_t);
+static int writer_error(writer_t);
 static void time_print(time_t x, FILE *);
 static int time_get(const char *src, time_t *dst);
 static void escape(char **);
@@ -97,6 +103,11 @@ static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_dns;
 static reader_t readers = NULL;
+static time_t after = 0;
+static time_t before = 0;
+static int limit = 0;
+static int loose = 0;
+static CURLM *multi = NULL;
 
 /* Public. */
 
@@ -104,9 +115,8 @@ int
 main(int argc, char *argv[]) {
 	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
-	time_t after = 0, before = 0;
-	int ch, limit = 0, loose = 0;
 	const char *val;
+	int ch;
 
 	program_name = strrchr(argv[0], '/');
 	if (program_name == NULL)
@@ -327,7 +337,7 @@ main(int argc, char *argv[]) {
 				continue;
 			}
 			*nl = '\0';
-			dnsdb_query(command, limit, after, before);
+			dnsdb_query(command);
 			fprintf(stdout, "--\n");
 			fflush(stdout);
 		}
@@ -392,15 +402,16 @@ main(int argc, char *argv[]) {
 			free(bailiwick);
 			bailiwick = NULL;
 		}
-		dnsdb_query(command, limit, after, before);
+		dnsdb_query(command);
 		free(command);
+		command = NULL;
 	}
 	my_exit(0, NULL);
 }
 
 /* Private. */
 
-static __attribute__((__noreturn__)) void usage(const char *error) {
+static __attribute__((noreturn)) void usage(const char *error) {
 	if (error != NULL)
 		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
@@ -423,7 +434,7 @@ static __attribute__((__noreturn__)) void usage(const char *error) {
 	my_exit(1, NULL);
 }
 
-static __attribute__((__noreturn__)) void
+static __attribute__((noreturn)) void
 my_exit(int code, ...) {
 	va_list ap;
 	void *p;
@@ -449,13 +460,13 @@ my_exit(int code, ...) {
 	}
 
 	/* readers which are still known, must be free()'d. */
-	while (readers != NULL) {
-		reader_t next = readers->next;
-		rendezvous(readers);
-		readers = next;
-	}
+	all_readers();
 
 	/* if curl is operating, it must be shut down. */
+	if (multi != NULL) {
+		curl_multi_cleanup(multi);
+		multi = NULL;
+	}
 	if (curl_cleanup_needed)
 		curl_global_cleanup();
 	exit(code);
@@ -530,36 +541,83 @@ read_configs(void) {
 }
 
 static void
-dnsdb_query(const char *command, int limit, time_t after, time_t before) {
+dnsdb_query(const char *command) {
+	writer_t writer;
+	reader_t reader;
+	CURLMcode res;
+	CURLMsg *msg;
+	int still;
+
 	if (debug)
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 	curl_cleanup_needed++;
+	multi = curl_multi_init();
+	if (multi == NULL) {
+		fprintf(stderr, "curl_multi_init() failed\n");
+		my_exit(1, NULL);
+	}
 
-	launch_easy(command, limit, after, before);
+	writer = writer_init();
+	reader = launch(command, writer);
+	res = curl_multi_add_handle(multi, reader->easy);
+	if (res != CURLM_OK) {
+		fprintf(stderr, "curl_multi_add_handle() failed: %s\n",
+			curl_multi_strerror(res));
+		writer_fini(writer);
+		rendezvous(reader);
+		my_exit(1, NULL);
+	}
+	reader->next = readers;
+	readers = reader;
+	
+	/* let libcurl run until there are no jobs remaining. */
+	while (curl_multi_perform(multi, &still) == CURLM_OK && still > 0) {
+		curl_multi_wait(multi, NULL, 0, 0, NULL);
+	}
+	/* pull out all the response codes. */
+	while ((msg = curl_multi_info_read(multi, &still)) != NULL) {
+		long rcode;
+		char *url;
+
+		if (msg->msg != CURLMSG_DONE)
+			continue;
+		curl_easy_getinfo(msg->easy_handle,
+				  CURLINFO_RESPONSE_CODE, &rcode);
+		if (rcode != 200) {
+			curl_easy_getinfo(msg->easy_handle,
+					  CURLINFO_EFFECTIVE_URL, &url);
+			fprintf(stderr, "libcurl: %ld (%s)\n", rcode, url);
+		}
+	}
+
+	all_readers();
+
+	writer_fini(writer);
+	writer = NULL;
  
+	curl_multi_cleanup(multi);
+	multi = NULL;
 	curl_global_cleanup();
 	curl_cleanup_needed = 0;
 }
 
-static void
-launch_easy(const char *command, int limit, time_t after, time_t before) {
+static reader_t
+launch(const char *command, writer_t writer) {
 	reader_t reader;
-	CURLcode res;
 	char sep;
 	int x;
 
 	reader = malloc(sizeof *reader);
 	if (reader == NULL) {
 		perror("malloc");
-		return;
+		my_exit(1, NULL);
 	}
 	memset(reader, 0, sizeof *reader);
 	reader->easy = curl_easy_init();
 	if (reader->easy == NULL) {
 		/* an error will have been output by libcurl in this case. */
-		free(reader);
-		return;
+		my_exit(1, reader, NULL);
 	}
 
 	x = asprintf(&reader->url, "%s/lookup/%s", dnsdb_server, command);
@@ -630,24 +688,26 @@ launch_easy(const char *command, int limit, time_t after, time_t before) {
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
 	reader->hdrs = curl_slist_append(reader->hdrs, key_header);
-	reader->hdrs = curl_slist_append(reader->hdrs,
-					 "Accept: application/json");
+	reader->hdrs = curl_slist_append(reader->hdrs, json_header);
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
-	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer);
-	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
-	writer_init();
-	res = curl_easy_perform(reader->easy);
-	if (res != CURLE_OK)
-		fprintf(stderr, "curl_easy_perform() failed: %s\n",
-			curl_easy_strerror(res));
-	rendezvous(reader);
-	reader = NULL;
-	writer_fini();
+	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
+	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, writer);
+	return (reader);
+}
+
+static void
+all_readers(void) {
+	while (readers != NULL) {
+		reader_t next = readers->next;
+		rendezvous(readers);
+		readers = next;
+	}
 }
 
 static void
 rendezvous(reader_t reader) {
 	if (reader->easy != NULL) {
+		curl_multi_remove_handle(multi, reader->easy);
 		curl_easy_cleanup(reader->easy);
 		reader->easy = NULL;
 	}
@@ -662,31 +722,36 @@ rendezvous(reader_t reader) {
 	free(reader);
 }
 
-static char *writer_buf = NULL;
-static size_t writer_len = 0;
-static FILE *sort_stdin, *sort_stdout;
-static pid_t sort_pid;
-
-static void
+static writer_t
 writer_init(void) {
-	/* sorting involves a subprocess (POSIX /usr/bin/sort), which will by
-	 * definition not output anything until after it receives EOF. this
-	 * means we can pipe both to its stdin and from its stdout, without
-	 * risk of deadlock. it also means a full store-and-forward of the
-	 * result, which increases latency to the first output for our user.
-	 */
+	writer_t writer;
+
+	writer = malloc(sizeof *writer);
+	if (writer == NULL) {
+		perror("malloc");
+		my_exit(1, NULL);
+	}
+	memset(writer, 0, sizeof *writer);
+
 	if (sorted != no_sort) {
+		/* sorting involves a subprocess (POSIX /usr/bin/sort), which
+		 * will by definition not output anything until after it
+		 * receives EOF. this means we can pipe both to its stdin and
+		 * from its stdout, without risk of deadlock. it also means a
+		 * full store-and-forward of the result, which increases
+		 * latency to the first output for our user.
+		 */
 		int p1[2], p2[2];
 
 		if (pipe(p1) < 0 || pipe(p2) < 0) {
 			perror("pipe");
 			my_exit(1, NULL);
 		}
-		if ((sort_pid = fork()) < 0) {
+		if ((writer->sort_pid = fork()) < 0) {
 			perror("fork");
 			my_exit(1, NULL);
 		}
-		if (sort_pid == 0) {
+		if (writer->sort_pid == 0) {
 			char *sort_argv[6], **sap;
 
 			if (dup2(p1[0], STDIN_FILENO) < 0 ||
@@ -715,10 +780,11 @@ writer_init(void) {
 			_exit(1);
 		}
 		close(p1[0]);
-		sort_stdin = fdopen(p1[1], "w");
-		sort_stdout = fdopen(p2[0], "r");
+		writer->sort_stdin = fdopen(p1[1], "w");
+		writer->sort_stdout = fdopen(p2[0], "r");
 		close(p2[1]);
 	}
+	return (writer);
 }
 
 /* this is the libcurl callback, which is not line-oriented, so we have to
@@ -726,9 +792,8 @@ writer_init(void) {
  * and process it one object at a time.
  */
 static size_t
-writer(char *ptr, size_t size, size_t nmemb,
-       void *blob __attribute__ ((unused))) {
-	/*reader_t reader = (reader_t) blob;*/
+writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
+	writer_t writer = (writer_t) blob;
 	size_t bytes = size * nmemb;
 	char *nl;
 
@@ -736,20 +801,20 @@ writer(char *ptr, size_t size, size_t nmemb,
 		fprintf(stderr, "writer(%d, %d): %d\n",
 			(int)size, (int)nmemb, (int)bytes);
 
-	writer_buf = realloc(writer_buf, writer_len + bytes);
-	memcpy(writer_buf + writer_len, ptr, bytes);
-	writer_len += bytes;
+	writer->buf = realloc(writer->buf, writer->len + bytes);
+	memcpy(writer->buf + writer->len, ptr, bytes);
+	writer->len += bytes;
 
-	while ((nl = memchr(writer_buf, '\n', writer_len)) != NULL) {
+	while ((nl = memchr(writer->buf, '\n', writer->len)) != NULL) {
 		size_t pre_len, post_len;
 		cracked_t rec;
 		const char *msg;
 
-		if (writer_error())
+		if (writer_error(writer))
 			return (0);
-		pre_len = nl - writer_buf;
+		pre_len = nl - writer->buf;
 
-		msg = crack_new(&rec, writer_buf, pre_len);
+		msg = crack_new(&rec, writer->buf, pre_len);
 		if (msg) {
 			puts(msg);
 		} else {
@@ -772,40 +837,40 @@ writer(char *ptr, size_t size, size_t nmemb,
 					first = rec.zone_first;
 					last = rec.zone_last;
 				}
-				fprintf(sort_stdin, "%lu %lu %*.*s\n",
+				fprintf(writer->sort_stdin, "%lu %lu %*.*s\n",
 					(unsigned long)first,
 					(unsigned long)last,
 					(int)pre_len, (int)pre_len,
-					writer_buf);
+					writer->buf);
 				if (debug)
 					fprintf(stderr,
 						"sort_stdin: %lu %lu %*.*s\n",
 						(unsigned long)first,
 						(unsigned long)last,
 						(int)pre_len, (int)pre_len,
-						writer_buf);
+						writer->buf);
 			} else {
-				(*pres)(&rec, writer_buf, pre_len, stdout);
+				(*pres)(&rec, writer->buf, pre_len, stdout);
 				crack_destroy(&rec);
 			}
 		}
-		post_len = (writer_len - pre_len) - 1;
-		memmove(writer_buf, nl + 1, post_len);
-		writer_len = post_len;
+		post_len = (writer->len - pre_len) - 1;
+		memmove(writer->buf, nl + 1, post_len);
+		writer->len = post_len;
 	}
 	return (bytes);
 }
 
 static void
-writer_fini() {
-	if (writer_buf != NULL) {
-		(void) writer_error();
-		free(writer_buf);
-		writer_buf = NULL;
-		if (writer_len != 0)
+writer_fini(writer_t writer) {
+	if (writer->buf != NULL) {
+		(void) writer_error(writer);
+		free(writer->buf);
+		writer->buf = NULL;
+		if (writer->len != 0)
 			fprintf(stderr, "stranding %d octets!\n",
-				(int)writer_len);
-		writer_len = 0;
+				(int)writer->len);
+		writer->len = 0;
 	}
 	if (sorted != no_sort) {
 		char line[65536];
@@ -815,11 +880,11 @@ writer_fini() {
 		 * intermediate representation from the POSIX sort stdout,
 		 * skip over the sort keys we added earlier, and process.
 		 */
-		fclose(sort_stdin);
-		while (fgets(line, sizeof line, sort_stdout) != NULL) {
-			cracked_t rec;
+		fclose(writer->sort_stdin);
+		while (fgets(line, sizeof line, writer->sort_stdout) != NULL) {
 			char *nl, *linep;
 			const char *msg;
+			cracked_t rec;
 
 			if ((nl = strchr(line, '\n')) == NULL) {
 				fprintf(stderr, "no \\n found in '%s'\n",
@@ -848,8 +913,8 @@ writer_fini() {
 			(*pres)(&rec, linep, nl - linep, stdout);
 			crack_destroy(&rec);
 		}
-		fclose(sort_stdout);
-		if (waitpid(sort_pid, &status, 0) < 0) {
+		fclose(writer->sort_stdout);
+		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
 			if (status != 0)
@@ -857,15 +922,16 @@ writer_fini() {
 					status);
 		}
 	}
+	free(writer);
 }
 
 static int
-writer_error(void) {
-	if (writer_buf[0] != '\0' && writer_buf[0] != '{') {
+writer_error(writer_t writer) {
+	if (writer->buf[0] != '\0' && writer->buf[0] != '{') {
 		fprintf(stderr, "API: %-*.*s",
-		       (int)writer_len, (int)writer_len, writer_buf);
-		writer_buf[0] = '\0';
-		writer_len = 0;
+		       (int)writer->len, (int)writer->len, writer->buf);
+		writer->buf[0] = '\0';
+		writer->len = 0;
 		return (1);
 	}
 	return (0);

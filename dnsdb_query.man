@@ -19,7 +19,7 @@
 .Nm dnsdb_query
 .Nd DNSDB query tool
 .Sh SYNOPSIS
-.Op Fl dfhjv
+.Op Fl dfhjvsShL
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -170,6 +170,15 @@ is an even number of hexadecimal digits specifying a raw octet string.
 
 .It Fl v
 enable verbose mode.
+.It Fl h
+display help text.
+.It Fl s
+sort output in date-time order.
+.It Fl S
+sort output in reverse date-time order.
+.It Fl L
+when -A and -B are used together, select all overlapping database tuples,
+rather than only totally enveloped database tuples.
 .El
 .Sh EXAMPLES
 
