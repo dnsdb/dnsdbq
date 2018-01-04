@@ -30,7 +30,8 @@ typedef struct {
 	struct {
 		json_t *main,
 			*time_first, *time_last, *zone_first, *zone_last,
-			*count, *bailiwick, *rrname, *rrtype, *rdata;
+			*bailiwick, *rrname, *rrtype, *rdata,
+			*count;
 	} obj;
 	time_t time_first, time_last, zone_first, zone_last;
 	const char *bailiwick, *rrname, *rrtype, *rdata;
@@ -48,12 +49,12 @@ struct reader {
 typedef struct reader *reader_t;
 
 struct writer {
-	char *buf;
-	size_t len;
-	FILE *sort_stdin, *sort_stdout;
-	pid_t sort_pid;
+	char			*buf;
+	size_t			len;
+	FILE			*sort_stdin;
+	FILE			*sort_stdout;
+	pid_t			sort_pid;
 };
-typedef struct writer *writer_t;
 
 /* Constant. */
 
@@ -72,8 +73,10 @@ static const char json_header[] = "Accept: application/json";
 static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
 static void read_configs(void);
+static void make_curl(void);
+static void unmake_curl(void);
 static void dnsdb_query(const char *);
-static reader_t launch(const char *, writer_t);
+static void launch(const char *, time_t, time_t, time_t, time_t);
 static void all_readers(void);
 static void rendezvous(reader_t);
 static void present_json(const cracked_t *, const char *, size_t, FILE *);
@@ -82,10 +85,11 @@ static void present_csv(const cracked_t *, const char *, size_t, FILE *);
 static void present_csv_line(const cracked_t *, const char *, FILE *);
 static const char *crack_new(cracked_t *, char *, size_t);
 static void crack_destroy(cracked_t *);
-static writer_t writer_init(void);
+static int timecmp(time_t, time_t);
+static void writer_init(void);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
-static void writer_fini(writer_t);
-static int writer_error(writer_t);
+static void writer_fini(void);
+static int writer_error(void);
 static void time_print(time_t x, FILE *);
 static int time_get(const char *src, time_t *dst);
 static void escape(char **);
@@ -96,10 +100,11 @@ static const char *program_name = NULL;
 static char *api_key = NULL;
 static char *key_header = NULL;
 static char *dnsdb_server = NULL;
-static int filter = 0;
+static int batch = 0;
 static int verbose = 0;
 static int debug = 0;
 static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
+static enum { filter_none, filter_overlap } filter = filter_none;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_dns;
 static reader_t readers = NULL;
@@ -108,6 +113,8 @@ static time_t before = 0;
 static int limit = 0;
 static int loose = 0;
 static CURLM *multi = NULL;
+static time_t startup;
+static struct writer writer;
 
 /* Public. */
 
@@ -119,6 +126,7 @@ main(int argc, char *argv[]) {
 	int ch;
 
 	program_name = strrchr(argv[0], '/');
+	startup = time(NULL);
 	if (program_name == NULL)
 		program_name = argv[0];
 	else
@@ -216,14 +224,14 @@ main(int argc, char *argv[]) {
 				usage("-p must specify json, dns, or csv");
 			break;
 		case 't':
-			if (filter)
+			if (batch)
 				usage("can't mix -t with -f");
 			if (type != NULL)
 				free(type);
 			type = strdup(optarg);
 			break;
 		case 'b':
-			if (filter)
+			if (batch)
 				usage("can't mix -b with -f");
 			if (bailiwick != NULL)
 				free(bailiwick);
@@ -239,7 +247,7 @@ main(int argc, char *argv[]) {
 			pres = present_json;
 			break;
 		case 'f':
-			filter++;
+			batch++;
 			break;
 		case 's':
 			sorted = normal_sort;
@@ -267,8 +275,6 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (length != NULL)
 		escape(&length);
-	if (loose && (after == 0 || before == 0))
-		usage("-L only makes sense when both -A and -B are specified");
 	if (debug) {
 		if (name != NULL)
 			fprintf(stderr, "name = '%s'\n", name);
@@ -323,16 +329,17 @@ main(int argc, char *argv[]) {
 		my_exit(1, NULL);
 	}
 
-	if (filter) {
+	if (batch) {
 		char command[1000];
 
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -f");
+		make_curl();
 		while (fgets(command, sizeof command, stdin) != NULL) {
 			char *nl = strchr(command, '\n');
 
 			if (nl == NULL) {
-				fprintf(stderr, "filter line too long: %s\n",
+				fprintf(stderr, "batch line too long: %s\n",
 					command);
 				continue;
 			}
@@ -341,6 +348,7 @@ main(int argc, char *argv[]) {
 			fprintf(stdout, "--\n");
 			fflush(stdout);
 		}
+		unmake_curl();
 	} else {
 		char *command;
 
@@ -402,9 +410,11 @@ main(int argc, char *argv[]) {
 			free(bailiwick);
 			bailiwick = NULL;
 		}
+		make_curl();
 		dnsdb_query(command);
 		free(command);
 		command = NULL;
+		unmake_curl();
 	}
 	my_exit(0, NULL);
 }
@@ -463,12 +473,8 @@ my_exit(int code, ...) {
 	all_readers();
 
 	/* if curl is operating, it must be shut down. */
-	if (multi != NULL) {
-		curl_multi_cleanup(multi);
-		multi = NULL;
-	}
-	if (curl_cleanup_needed)
-		curl_global_cleanup();
+	unmake_curl();
+
 	exit(code);
 }
 
@@ -541,15 +547,7 @@ read_configs(void) {
 }
 
 static void
-dnsdb_query(const char *command) {
-	writer_t writer;
-	reader_t reader;
-	CURLMcode res;
-	CURLMsg *msg;
-	int still;
-
-	if (debug)
-		fprintf(stderr, "dnsdb_query(%s)\n", command);
+make_curl(void) {
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 	curl_cleanup_needed++;
 	multi = curl_multi_init();
@@ -557,25 +555,77 @@ dnsdb_query(const char *command) {
 		fprintf(stderr, "curl_multi_init() failed\n");
 		my_exit(1, NULL);
 	}
+}
 
-	writer = writer_init();
-	reader = launch(command, writer);
-	res = curl_multi_add_handle(multi, reader->easy);
-	if (res != CURLM_OK) {
-		fprintf(stderr, "curl_multi_add_handle() failed: %s\n",
-			curl_multi_strerror(res));
-		writer_fini(writer);
-		rendezvous(reader);
-		my_exit(1, NULL);
+static void
+unmake_curl(void) {
+	if (multi != NULL) {
+		curl_multi_cleanup(multi);
+		multi = NULL;
 	}
-	reader->next = readers;
-	readers = reader;
+	if (curl_cleanup_needed) {
+		curl_global_cleanup();
+		curl_cleanup_needed = 0;
+	}
+}
+
+static void
+dnsdb_query(const char *command) {
+	CURLMsg *msg;
+	int still;
+
+	if (debug)
+		fprintf(stderr, "dnsdb_query(%s)\n", command);
+
+	/* start a writer, which might be format functions, or POSIX sort. */
+	writer_init();
+
+	/* figure out from time fencing which job(s) we'll be starting.
+	 *
+	 * the 4-tuple is: first_after, first_before, last_after, last_before
+	 */
+	if (after != 0 && before != 0) {
+		if (!loose) {
+			/* each db tuple must be enveloped by time fence. */
+			launch(command, after, 0, 0, before);
+		} else {
+			/* we need tuples that end after fence start... */
+			launch(command, 0, 0, after, 0);
+			/* ...and that begin before the time fence end. */
+			launch(command, 0, before, 0, 0);
+			/* and we will filter on the receiving side to
+			 * reduce this to just things that either:
+			 * ...(start within), or (end within), or
+			 * ...(start before and end after).
+			 */
+			filter = filter_overlap;
+		}
+	} else if (after != 0) {
+		if (!loose) {
+			/* each db tuple must begin after the fence-start. */
+			launch(command, after, 0, 0, 0);
+		} else {
+			/* each db tuple must end after the fence-start. */
+			launch(command, 0, 0, after, 0);
+		}
+	} else if (before != 0) {
+		if (!loose) {
+			/* each db tuple must end before the fence-end. */
+			launch(command, 0, 0, 0, before);
+		} else {
+			/* each db tuple must begin before the fence-end. */
+			launch(command, 0, before, 0, 0);
+		}
+	} else {
+		/* no time fencing. */
+		launch(command, 0, 0, 0, 0);
+	}
 	
 	/* let libcurl run until there are no jobs remaining. */
 	while (curl_multi_perform(multi, &still) == CURLM_OK && still > 0) {
 		curl_multi_wait(multi, NULL, 0, 0, NULL);
 	}
-	/* pull out all the response codes. */
+	/* pull out all the response codes, die suddenly on any failure.. */
 	while ((msg = curl_multi_info_read(multi, &still)) != NULL) {
 		long rcode;
 		char *url;
@@ -590,21 +640,20 @@ dnsdb_query(const char *command) {
 			fprintf(stderr, "libcurl: %ld (%s)\n", rcode, url);
 		}
 	}
-
+	/* shut down and reclaim all the curl jobs. */
 	all_readers();
 
-	writer_fini(writer);
-	writer = NULL;
- 
-	curl_multi_cleanup(multi);
-	multi = NULL;
-	curl_global_cleanup();
-	curl_cleanup_needed = 0;
+	/* stop the writer, which might involve reading POSIX sort's output. */
+	writer_fini();
 }
 
-static reader_t
-launch(const char *command, writer_t writer) {
+static void
+launch(const char *command,
+       time_t first_after, time_t first_before,
+       time_t last_after, time_t last_before)
+{
 	reader_t reader;
+	CURLMcode res;
 	char sep;
 	int x;
 
@@ -639,13 +688,11 @@ launch(const char *command, writer_t writer) {
 		tmp = NULL;
 		sep = '&';
 	}
-	if (after != 0 && before != 0) {
+	if (first_after != 0) {
 		char *tmp;
 
-		x = asprintf(&tmp, "%s%c"
-			     "time_first_after=%lu"
-			     "&time_last_before=%lu",
-			     reader->url, sep, (u_long)after, (u_long)before);
+		x = asprintf(&tmp, "%s%c" "time_first_after=%lu",
+			     reader->url, sep, (u_long)first_after);
 		if (x < 0) {
 			perror("asprintf");
 			my_exit(1, reader->url, reader, NULL);
@@ -654,24 +701,40 @@ launch(const char *command, writer_t writer) {
 		reader->url = tmp;
 		tmp = NULL;
 		sep = '&';
-	} else if (after != 0) {
-		char *tmp;
-
-		x = asprintf(&tmp, "%s%c" "time_last_after=%lu",
-			     reader->url, sep, (u_long)after);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, reader->url, reader, NULL);
-		}
-		free(reader->url);
-		reader->url = tmp;
-		tmp = NULL;
-		sep = '&';
-	} else if (before != 0) {
+	}
+	if (first_before != 0) {
 		char *tmp;
 
 		x = asprintf(&tmp, "%s%c" "time_first_before=%lu",
-			     reader->url, sep, (u_long)before);
+			     reader->url, sep, (u_long)first_before);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, reader->url, reader, NULL);
+		}
+		free(reader->url);
+		reader->url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (last_after != 0) {
+		char *tmp;
+
+		x = asprintf(&tmp, "%s%c" "time_last_after=%lu",
+			     reader->url, sep, (u_long)last_after);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, reader->url, reader, NULL);
+		}
+		free(reader->url);
+		reader->url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (last_before != 0) {
+		char *tmp;
+
+		x = asprintf(&tmp, "%s%c" "time_last_before=%lu",
+			     reader->url, sep, (u_long)last_before);
 		if (x < 0) {
 			perror("asprintf");
 			my_exit(1, reader->url, reader, NULL);
@@ -682,7 +745,7 @@ launch(const char *command, writer_t writer) {
 		sep = '&';
 	}
 	if (verbose)
-		fprintf(filter ? stderr : stdout, "url [%s]\n", reader->url);
+		fprintf(batch ? stderr : stdout, "url [%s]\n", reader->url);
 
 	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
@@ -691,8 +754,18 @@ launch(const char *command, writer_t writer) {
 	reader->hdrs = curl_slist_append(reader->hdrs, json_header);
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
-	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, writer);
-	return (reader);
+	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, NULL);
+
+	res = curl_multi_add_handle(multi, reader->easy);
+	if (res != CURLM_OK) {
+		fprintf(stderr, "curl_multi_add_handle() failed: %s\n",
+			curl_multi_strerror(res));
+		writer_fini();
+		rendezvous(reader);
+		my_exit(1, NULL);
+	}
+	reader->next = readers;
+	readers = reader;
 }
 
 static void
@@ -722,16 +795,9 @@ rendezvous(reader_t reader) {
 	free(reader);
 }
 
-static writer_t
+static void
 writer_init(void) {
-	writer_t writer;
-
-	writer = malloc(sizeof *writer);
-	if (writer == NULL) {
-		perror("malloc");
-		my_exit(1, NULL);
-	}
-	memset(writer, 0, sizeof *writer);
+	memset(&writer, 0, sizeof writer);
 
 	if (sorted != no_sort) {
 		/* sorting involves a subprocess (POSIX /usr/bin/sort), which
@@ -747,11 +813,11 @@ writer_init(void) {
 			perror("pipe");
 			my_exit(1, NULL);
 		}
-		if ((writer->sort_pid = fork()) < 0) {
+		if ((writer.sort_pid = fork()) < 0) {
 			perror("fork");
 			my_exit(1, NULL);
 		}
-		if (writer->sort_pid == 0) {
+		if (writer.sort_pid == 0) {
 			char *sort_argv[6], **sap;
 
 			if (dup2(p1[0], STDIN_FILENO) < 0 ||
@@ -780,11 +846,10 @@ writer_init(void) {
 			_exit(1);
 		}
 		close(p1[0]);
-		writer->sort_stdin = fdopen(p1[1], "w");
-		writer->sort_stdout = fdopen(p2[0], "r");
+		writer.sort_stdin = fdopen(p1[1], "w");
+		writer.sort_stdout = fdopen(p2[0], "r");
 		close(p2[1]);
 	}
-	return (writer);
 }
 
 /* this is the libcurl callback, which is not line-oriented, so we have to
@@ -792,8 +857,9 @@ writer_init(void) {
  * and process it one object at a time.
  */
 static size_t
-writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
-	writer_t writer = (writer_t) blob;
+writer_func(char *ptr, size_t size, size_t nmemb,
+	    void *blob __attribute__((unused)))
+{
 	size_t bytes = size * nmemb;
 	char *nl;
 
@@ -801,76 +867,101 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		fprintf(stderr, "writer(%d, %d): %d\n",
 			(int)size, (int)nmemb, (int)bytes);
 
-	writer->buf = realloc(writer->buf, writer->len + bytes);
-	memcpy(writer->buf + writer->len, ptr, bytes);
-	writer->len += bytes;
+	writer.buf = realloc(writer.buf, writer.len + bytes);
+	memcpy(writer.buf + writer.len, ptr, bytes);
+	writer.len += bytes;
 
-	while ((nl = memchr(writer->buf, '\n', writer->len)) != NULL) {
+	while ((nl = memchr(writer.buf, '\n', writer.len)) != NULL) {
 		size_t pre_len, post_len;
-		cracked_t rec;
+		time_t first, last;
 		const char *msg;
+		cracked_t rec;
 
-		if (writer_error(writer))
+		if (writer_error())
 			return (0);
-		pre_len = nl - writer->buf;
+		pre_len = nl - writer.buf;
 
-		msg = crack_new(&rec, writer->buf, pre_len);
+		msg = crack_new(&rec, writer.buf, pre_len);
 		if (msg) {
 			puts(msg);
-		} else {
-			if (sorted != no_sort) {
-				time_t first, last;
+			goto next;
+		}
 
-				/* POSIX sort is handed two large integers
-				 * at the front of each line (time{first,last})
-				 * which are accessed as -k1 and -k2 on the
-				 * sort command line. we strip them off later
-				 * when reading the result back. the reason
-				 * for all this old-school code is to avoid
-				 * having to store the full result in memory.
-				 */
-				if (rec.time_first != 0 &&
-				    rec.time_last != 0) {
-					first = rec.time_first;
-					last = rec.time_last;
-				} else {
-					first = rec.zone_first;
-					last = rec.zone_last;
-				}
-				fprintf(writer->sort_stdin, "%lu %lu %*.*s\n",
+		/* there are two sets of timestamps in a tuple. we prefer
+		 * the on-the-wire times to the zone times, when possible.
+		 */
+		if (rec.time_first != 0 && rec.time_last != 0) {
+			first = rec.time_first;
+			last = rec.time_last;
+		} else {
+			first = rec.zone_first;
+			last = rec.zone_last;
+		}
+
+		/* time fencing can in some cases (-A + -B + -L) require
+		 * asking the server for more than we really want, and so
+		 * we have to winnow it down upon receipt.
+		 */
+		if (filter == filter_overlap && after != 0 && before != 0) {
+			/* reduce results to just things that either:
+			 * ...(start within), or (end within), or
+			 * ...(start before and end after).
+			 */
+			int first_vs_before = timecmp(first, before);
+			int first_vs_after = timecmp(first, after);
+			int last_vs_before = timecmp(last, before);
+			int last_vs_after = timecmp(last, after);
+			if ((first_vs_after >= 0 && first_vs_before <= 0) ||
+			    (last_vs_after >= 0 && last_vs_before <= 0) ||
+			    (first_vs_after <= 0 && last_vs_before >= 0))
+				/* select! */;
+			else
+				goto next;
+		}
+
+		if (sorted != no_sort) {
+			/* POSIX sort is handed two large integers
+			 * at the front of each line (time{first,last})
+			 * which are accessed as -k1 and -k2 on the
+			 * sort command line. we strip them off later
+			 * when reading the result back. the reason
+			 * for all this old-school code is to avoid
+			 * having to store the full result in memory.
+			 */
+			fprintf(writer.sort_stdin, "%lu %lu %*.*s\n",
+				(unsigned long)first,
+				(unsigned long)last,
+				(int)pre_len, (int)pre_len,
+				writer.buf);
+			if (debug)
+				fprintf(stderr,
+					"sort_stdin: %lu %lu %*.*s\n",
 					(unsigned long)first,
 					(unsigned long)last,
 					(int)pre_len, (int)pre_len,
-					writer->buf);
-				if (debug)
-					fprintf(stderr,
-						"sort_stdin: %lu %lu %*.*s\n",
-						(unsigned long)first,
-						(unsigned long)last,
-						(int)pre_len, (int)pre_len,
-						writer->buf);
-			} else {
-				(*pres)(&rec, writer->buf, pre_len, stdout);
-				crack_destroy(&rec);
-			}
+					writer.buf);
+		} else {
+			(*pres)(&rec, writer.buf, pre_len, stdout);
 		}
-		post_len = (writer->len - pre_len) - 1;
-		memmove(writer->buf, nl + 1, post_len);
-		writer->len = post_len;
+ next:
+		crack_destroy(&rec);
+		post_len = (writer.len - pre_len) - 1;
+		memmove(writer.buf, nl + 1, post_len);
+		writer.len = post_len;
 	}
 	return (bytes);
 }
 
 static void
-writer_fini(writer_t writer) {
-	if (writer->buf != NULL) {
-		(void) writer_error(writer);
-		free(writer->buf);
-		writer->buf = NULL;
-		if (writer->len != 0)
+writer_fini(void) {
+	if (writer.buf != NULL) {
+		(void) writer_error();
+		free(writer.buf);
+		writer.buf = NULL;
+		if (writer.len != 0)
 			fprintf(stderr, "stranding %d octets!\n",
-				(int)writer->len);
-		writer->len = 0;
+				(int)writer.len);
+		writer.len = 0;
 	}
 	if (sorted != no_sort) {
 		char line[65536];
@@ -880,8 +971,8 @@ writer_fini(writer_t writer) {
 		 * intermediate representation from the POSIX sort stdout,
 		 * skip over the sort keys we added earlier, and process.
 		 */
-		fclose(writer->sort_stdin);
-		while (fgets(line, sizeof line, writer->sort_stdout) != NULL) {
+		fclose(writer.sort_stdin);
+		while (fgets(line, sizeof line, writer.sort_stdout) != NULL) {
 			char *nl, *linep;
 			const char *msg;
 			cracked_t rec;
@@ -913,8 +1004,8 @@ writer_fini(writer_t writer) {
 			(*pres)(&rec, linep, nl - linep, stdout);
 			crack_destroy(&rec);
 		}
-		fclose(writer->sort_stdout);
-		if (waitpid(writer->sort_pid, &status, 0) < 0) {
+		fclose(writer.sort_stdout);
+		if (waitpid(writer.sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
 			if (status != 0)
@@ -922,16 +1013,16 @@ writer_fini(writer_t writer) {
 					status);
 		}
 	}
-	free(writer);
+	memset(&writer, 0, sizeof writer);
 }
 
 static int
-writer_error(writer_t writer) {
-	if (writer->buf[0] != '\0' && writer->buf[0] != '{') {
+writer_error(void) {
+	if (writer.buf[0] != '\0' && writer.buf[0] != '{') {
 		fprintf(stderr, "API: %-*.*s",
-		       (int)writer->len, (int)writer->len, writer->buf);
-		writer->buf[0] = '\0';
-		writer->len = 0;
+		       (int)writer.len, (int)writer.len, writer.buf);
+		writer.buf[0] = '\0';
+		writer.len = 0;
 		return (1);
 	}
 	return (0);
@@ -1219,29 +1310,48 @@ crack_destroy(cracked_t *rec) {
 		memset(rec, 0x5a, sizeof *rec);
 }
 
+static int
+timecmp(time_t a, time_t b) {
+	if (a < 0)
+		a += startup;
+	if (b < 0)
+		b += startup;
+	if (a < b)
+		return (-1);
+	if (b > a)
+		return (1);
+	return (0);
+}
+
 static void
 time_print(time_t x, FILE *outf) {
-	struct tm *y = gmtime(&x);
-	char z[99];
+	if (x < 0) {
+		/* should maybe be able to reverse the ns_ttl encoding? */
+		fprintf(outf, "%ld", (long)x);
+	} else {
+		struct tm *y = gmtime(&x);
+		char z[99];
 
-	strftime(z, sizeof z, "%F %T", y);
-	fputs(z, outf);
+		strftime(z, sizeof z, "%F %T", y);
+		fputs(z, outf);
+	}
 }
 
 static int
 time_get(const char *src, time_t *dst) {
-	char *endptr;
+	char *ep;
 	struct tm tt;
 	u_long t;
 
-	if (strptime(src, "%Y-%m-%d %H:%M:%S", &tt) != NULL ||
-	    strptime(src, "%Y-%m-%d", &tt) != NULL)
+	memset(&tt, 0, sizeof tt);
+	if (((ep = strptime(src, "%F %T", &tt)) != NULL && *ep == '\0') ||
+	    ((ep = strptime(src, "%F", &tt)) != NULL && *ep == '\0'))
 	{
-		*dst = (u_long) mktime(&tt);
+		*dst = (u_long) mktime(&tt) - timezone;
 		return (1);
 	}
-	t = strtoul(src, &endptr, 10);
-	if (*src != '\0' && *endptr == '\0') {
+	t = strtoul(src, &ep, 10);
+	if (*src != '\0' && *ep == '\0') {
 		*dst = (time_t) t;
 		return (1);
 	}
