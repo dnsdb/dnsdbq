@@ -446,21 +446,23 @@ static __attribute__((noreturn)) void usage(const char *error) {
 	if (error != NULL)
 		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
-"usage: %s [-vdjsSh] [-p dns|json|csv] [-l LIMIT] [-A after] [-B before] {\n"
-"\t-f |\n"
-"\t[-t type] [-b bailiwick] {\n"
-"\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
-"\t\t-n NAME[/TYPE] |\n"
-"\t\t-i IP[/PFXLEN]\n"
+"usage: %s [-vdjsShL] [-p dns|json|csv]\n"
+"\t[-l LIMIT] [-A after] [-B before] {\n"
+"\t\t-f |\n"
+"\t\t[-t type] [-b bailiwick] {\n"
+"\t\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
+"\t\t\t-n NAME[/TYPE] |\n"
+"\t\t\t-i IP[/PFXLEN]\n"
+"\t\t}\n"
 "\t}\n"
-"}\n"
 "for -f, stdin must contain lines of the following forms:\n"
 "\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
 "\trdata/name/NAME[/TYPE]\n"
 "\trdata/ip/ADDR[/PFXLEN]\n"
 "for -f, output format will be determined by -p, using --\\n framing\n"
 "for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
-"or rel. %%dw%%dd%%dh%%dm%%ds format\n",
+"or rel. %%dw%%dd%%dh%%dm%%ds format;\n"
+"-L to get loose (inclusive) time matching\n",
 		program_name);
 	my_exit(1, NULL);
 }
