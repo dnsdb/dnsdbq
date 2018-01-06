@@ -178,7 +178,8 @@ sort output in date-time order.
 sort output in reverse date-time order.
 .It Fl L
 when -A and -B are used together, select all overlapping database tuples,
-rather than only totally enveloped database tuples.
+rather than only totally enveloped database tuples; if -A or -B is used
+alone, select on partial period overlap, rather than full period overlap.
 .El
 .Sh EXAMPLES
 

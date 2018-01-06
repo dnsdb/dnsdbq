@@ -461,8 +461,8 @@ static __attribute__((noreturn)) void usage(const char *error) {
 "\trdata/ip/ADDR[/PFXLEN]\n"
 "for -f, output format will be determined by -p, using --\\n framing\n"
 "for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
-"or rel. %%dw%%dd%%dh%%dm%%ds format;\n"
-"-L to get loose (inclusive) time matching\n",
+		"or rel. %%dw%%dd%%dh%%dm%%ds format\n"
+"use -L to get loose (inclusive) time matching\n",
 		program_name);
 	my_exit(1, NULL);
 }
