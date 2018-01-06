@@ -5,8 +5,12 @@
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
 
+/* gettimeofday() does not appear on linux without this. */
+#define _BSD_SOURCE
+
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/time.h>
 
 #include <assert.h>
 #include <stdio.h>
@@ -116,7 +120,8 @@ static time_t before = 0;
 static int limit = 0;
 static int loose = 0;
 static CURLM *multi = NULL;
-static time_t startup;
+static struct timeval now;
+static struct timezone here;
 static struct writer writer;
 
 /* Public. */
@@ -129,7 +134,7 @@ main(int argc, char *argv[]) {
 	int ch;
 
 	program_name = strrchr(argv[0], '/');
-	startup = time(NULL);
+	gettimeofday(&now, &here);
 	if (program_name == NULL)
 		program_name = argv[0];
 	else
@@ -1372,7 +1377,7 @@ tuple_unmake(dnsdb_tuple_t tup) {
 static time_t
 abstime(time_t t) {
 	if (t < 0)
-		t += startup;
+		t += now.tv_sec;
 	return (t);
 }
 
@@ -1411,7 +1416,7 @@ time_get(const char *src, time_t *dst) {
 	if (((ep = strptime(src, "%F %T", &tt)) != NULL && *ep == '\0') ||
 	    ((ep = strptime(src, "%F", &tt)) != NULL && *ep == '\0'))
 	{
-		*dst = (u_long) mktime(&tt) - timezone;
+		*dst = (u_long) mktime(&tt) - here.tz_minuteswest;
 		return (1);
 	}
 	t = strtoul(src, &ep, 10);
