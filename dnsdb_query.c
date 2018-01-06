@@ -1,4 +1,4 @@
-/* Copyright (C) 2014-2017, Farsight Security, Inc. No rights reserved. */
+/* Copyright (C) 2014-2018, Farsight Security, Inc. No rights reserved. */
 
 /* External. */
 
@@ -26,31 +26,34 @@ extern char **environ;
 
 #define DNSDB_SERVER "https://api.dnsdb.info"
 
-typedef struct {
-	struct {
-		json_t *main,
+struct dnsdb_json {
+	json_t		*main,
 			*time_first, *time_last, *zone_first, *zone_last,
 			*bailiwick, *rrname, *rrtype, *rdata,
 			*count;
-	} obj;
-	time_t time_first, time_last, zone_first, zone_last;
-	const char *bailiwick, *rrname, *rrtype, *rdata;
-	json_int_t count;
-} cracked_t;
+};
 
-typedef void (*present_t)(const cracked_t *, const char *, size_t, FILE *);
+struct dnsdb_tuple {
+	struct dnsdb_json  obj;
+	time_t		time_first, time_last, zone_first, zone_last;
+	const char	*bailiwick, *rrname, *rrtype, *rdata;
+	json_int_t	count;
+};
+typedef struct dnsdb_tuple *dnsdb_tuple_t;
+
+typedef void (*present_t)(const dnsdb_tuple_t, const char *, size_t, FILE *);
 
 struct reader {
 	struct reader		*next;
 	CURL			*easy;
 	struct curl_slist	*hdrs;
 	char			*url;
+	char			*buf;
+	size_t			len;
 };
 typedef struct reader *reader_t;
 
 struct writer {
-	char			*buf;
-	size_t			len;
 	FILE			*sort_stdin;
 	FILE			*sort_stdout;
 	pid_t			sort_pid;
@@ -79,17 +82,17 @@ static void dnsdb_query(const char *);
 static void launch(const char *, time_t, time_t, time_t, time_t);
 static void all_readers(void);
 static void rendezvous(reader_t);
-static void present_json(const cracked_t *, const char *, size_t, FILE *);
-static void present_dns(const cracked_t *, const char *, size_t, FILE *);
-static void present_csv(const cracked_t *, const char *, size_t, FILE *);
-static void present_csv_line(const cracked_t *, const char *, FILE *);
-static const char *crack_new(cracked_t *, char *, size_t);
-static void crack_destroy(cracked_t *);
+static void present_json(const dnsdb_tuple_t, const char *, size_t, FILE *);
+static void present_dns(const dnsdb_tuple_t, const char *, size_t, FILE *);
+static void present_csv(const dnsdb_tuple_t, const char *, size_t, FILE *);
+static void present_csv_line(const dnsdb_tuple_t, const char *, FILE *);
+static const char *tuple_make(dnsdb_tuple_t, char *, size_t);
+static void tuple_unmake(dnsdb_tuple_t);
 static int timecmp(time_t, time_t);
 static void writer_init(void);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(void);
-static int writer_error(void);
+static int reader_error(reader_t);
 static void time_print(time_t x, FILE *);
 static int time_get(const char *src, time_t *dst);
 static void escape(char **);
@@ -101,7 +104,7 @@ static char *api_key = NULL;
 static char *key_header = NULL;
 static char *dnsdb_server = NULL;
 static int batch = 0;
-static int verbose = 0;
+static int dry_run = 0;
 static int debug = 0;
 static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
 static enum { filter_none, filter_overlap } filter = filter_none;
@@ -238,7 +241,7 @@ main(int argc, char *argv[]) {
 			bailiwick = strdup(optarg);
 			break;
 		case 'v':
-			verbose++;
+			dry_run++;
 			break;
 		case 'd':
 			debug++;
@@ -275,7 +278,7 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (length != NULL)
 		escape(&length);
-	if (debug) {
+	if (debug > 0) {
 		if (name != NULL)
 			fprintf(stderr, "name = '%s'\n", name);
 		if (type != NULL)
@@ -285,12 +288,12 @@ main(int argc, char *argv[]) {
 		if (length != NULL)
 			fprintf(stderr, "length = '%s'\n", length);
 		if (after != 0) {
-			fprintf(stderr, "after =  ");
+			fprintf(stderr, "after = %ld : ", (long)after);
 			time_print(after, stderr);
 			putc('\n', stderr);
 		}
 		if (before != 0) {
-			fprintf(stderr, "before = ");
+			fprintf(stderr, "before = %ld : ", (long)before);
 			time_print(before, stderr);
 			putc('\n', stderr);
 		}
@@ -302,7 +305,7 @@ main(int argc, char *argv[]) {
 		if (api_key != NULL)
 			free(api_key);
 		api_key = strdup(val);
-		if (debug)
+		if (debug > 0)
 			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
 	}
 	val = getenv("DNSDB_SERVER");
@@ -310,7 +313,7 @@ main(int argc, char *argv[]) {
 		if (dnsdb_server != NULL)
 			free(dnsdb_server);
 		dnsdb_server = strdup(val);
-		if (debug)
+		if (debug > 0)
 			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
 				dnsdb_server);
 	}
@@ -320,13 +323,26 @@ main(int argc, char *argv[]) {
 	}
 	if (dnsdb_server == NULL) {
 		dnsdb_server = strdup(DNSDB_SERVER);
-		if (debug)
+		if (debug > 0)
 			fprintf(stderr, "conf default dnsdb_server = '%s'\n",
 				dnsdb_server);
 	}
 	if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
 		perror("asprintf");
 		my_exit(1, NULL);
+	}
+
+	if (after != 0 && before != 0) {
+		if (after > 0 && before > 0 && after > before) {
+			fprintf(stderr,
+				"-A -B requires after <= before\n");
+			my_exit(1, NULL);
+		}
+		if (loose && sorted == no_sort) {
+			fprintf(stderr,
+				"-A -B -L requires -s or -S for dedup\n");
+			my_exit(1, NULL);
+		}
 	}
 
 	if (batch) {
@@ -491,7 +507,7 @@ read_configs(void) {
 		cf = strdup(we.we_wordv[0]);
 		wordfree(&we);
 		if (access(cf, R_OK) == 0) {
-			if (debug)
+			if (debug > 0)
 				fprintf(stderr, "conf found: '%s'\n", cf);
 			break;
 		}
@@ -515,7 +531,7 @@ read_configs(void) {
 			perror(cmd);
 			my_exit(1, cmd, NULL);
 		}
-		if (debug)
+		if (debug > 0)
 			fprintf(stderr, "conf cmd = '%s'\n", cmd);
 		free(cmd);
 		cmd = NULL;
@@ -524,7 +540,7 @@ read_configs(void) {
 				fprintf(stderr, "%s: line too long\n", cf);
 				my_exit(1, cf, NULL);
 			}
-			if (debug)
+			if (debug > 0)
 				fprintf(stderr, "conf line: %s", line);
 			tok = strtok(line, "\040\012");
 			if (tok != NULL && strcmp(tok, "apikey") == 0) {
@@ -574,7 +590,7 @@ dnsdb_query(const char *command) {
 	CURLMsg *msg;
 	int still;
 
-	if (debug)
+	if (debug > 0)
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
 
 	/* start a writer, which might be format functions, or POSIX sort. */
@@ -593,8 +609,8 @@ dnsdb_query(const char *command) {
 			launch(command, 0, 0, after, 0);
 			/* ...and that begin before the time fence end. */
 			launch(command, 0, before, 0, 0);
-			/* and we will filter on the receiving side to
-			 * reduce this to just things that either:
+			/* and we will filter in reader_func() to
+			 * select only those tuples which either:
 			 * ...(start within), or (end within), or
 			 * ...(start before and end after).
 			 */
@@ -744,8 +760,8 @@ launch(const char *command,
 		tmp = NULL;
 		sep = '&';
 	}
-	if (verbose)
-		fprintf(batch ? stderr : stdout, "url [%s]\n", reader->url);
+	if (debug > 0)
+		fprintf(stderr, "url [%s]\n", reader->url);
 
 	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
@@ -754,7 +770,7 @@ launch(const char *command,
 	reader->hdrs = curl_slist_append(reader->hdrs, json_header);
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
-	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, NULL);
+	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
 
 	res = curl_multi_add_handle(multi, reader->easy);
 	if (res != CURLM_OK) {
@@ -800,12 +816,13 @@ writer_init(void) {
 	memset(&writer, 0, sizeof writer);
 
 	if (sorted != no_sort) {
-		/* sorting involves a subprocess (POSIX /usr/bin/sort), which
-		 * will by definition not output anything until after it
-		 * receives EOF. this means we can pipe both to its stdin and
-		 * from its stdout, without risk of deadlock. it also means a
-		 * full store-and-forward of the result, which increases
-		 * latency to the first output for our user.
+		/* sorting involves a subprocess (POSIX /usr/bin/sort),
+		 * which will by definition not output anything until
+		 * after it receives EOF. this means we can pipe both
+		 * to its stdin and from its stdout, without risk of
+		 * deadlock. it also means a full store-and-forward of
+		 * the result, which increases latency to the first
+		 * output for our user.
 		 */
 		int p1[2], p2[2];
 
@@ -818,7 +835,7 @@ writer_init(void) {
 			my_exit(1, NULL);
 		}
 		if (writer.sort_pid == 0) {
-			char *sort_argv[6], **sap;
+			char *sort_argv[7], **sap;
 
 			if (dup2(p1[0], STDIN_FILENO) < 0 ||
 			    dup2(p2[1], STDOUT_FILENO) < 0) {
@@ -834,9 +851,11 @@ writer_init(void) {
 			*sap++ = strdup("-k1");
 			*sap++ = strdup("-k2");
 			*sap++ = strdup("-n");
+			*sap++ = strdup("-u");
 			if (sorted == reverse_sort)
 				*sap++ = strdup("-r");
 			*sap++ = NULL;
+			putenv(strdup("LC_ALL=C"));
 			execve("/usr/bin/sort", sort_argv, environ);
 			perror("execve");
 			for (sap = sort_argv; *sap != NULL; sap++) {
@@ -857,31 +876,30 @@ writer_init(void) {
  * and process it one object at a time.
  */
 static size_t
-writer_func(char *ptr, size_t size, size_t nmemb,
-	    void *blob __attribute__((unused)))
-{
+writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
+	reader_t reader = (reader_t) blob;
 	size_t bytes = size * nmemb;
 	char *nl;
 
-	if (debug)
+	if (debug > 2)
 		fprintf(stderr, "writer(%d, %d): %d\n",
 			(int)size, (int)nmemb, (int)bytes);
 
-	writer.buf = realloc(writer.buf, writer.len + bytes);
-	memcpy(writer.buf + writer.len, ptr, bytes);
-	writer.len += bytes;
+	reader->buf = realloc(reader->buf, reader->len + bytes);
+	memcpy(reader->buf + reader->len, ptr, bytes);
+	reader->len += bytes;
 
-	while ((nl = memchr(writer.buf, '\n', writer.len)) != NULL) {
+	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
 		size_t pre_len, post_len;
 		time_t first, last;
 		const char *msg;
-		cracked_t rec;
+		struct dnsdb_tuple tup;
 
-		if (writer_error())
+		if (reader_error(reader))
 			return (0);
-		pre_len = nl - writer.buf;
+		pre_len = nl - reader->buf;
 
-		msg = crack_new(&rec, writer.buf, pre_len);
+		msg = tuple_make(&tup, reader->buf, pre_len);
 		if (msg) {
 			puts(msg);
 			goto next;
@@ -890,12 +908,12 @@ writer_func(char *ptr, size_t size, size_t nmemb,
 		/* there are two sets of timestamps in a tuple. we prefer
 		 * the on-the-wire times to the zone times, when possible.
 		 */
-		if (rec.time_first != 0 && rec.time_last != 0) {
-			first = rec.time_first;
-			last = rec.time_last;
+		if (tup.time_first != 0 && tup.time_last != 0) {
+			first = tup.time_first;
+			last = tup.time_last;
 		} else {
-			first = rec.zone_first;
-			last = rec.zone_last;
+			first = tup.zone_first;
+			last = tup.zone_last;
 		}
 
 		/* time fencing can in some cases (-A + -B + -L) require
@@ -903,6 +921,8 @@ writer_func(char *ptr, size_t size, size_t nmemb,
 		 * we have to winnow it down upon receipt.
 		 */
 		if (filter == filter_overlap && after != 0 && before != 0) {
+			const char *why;
+
 			/* reduce results to just things that either:
 			 * ...(start within), or (end within), or
 			 * ...(start before and end after).
@@ -911,17 +931,45 @@ writer_func(char *ptr, size_t size, size_t nmemb,
 			int first_vs_after = timecmp(first, after);
 			int last_vs_before = timecmp(last, before);
 			int last_vs_after = timecmp(last, after);
-			if ((first_vs_after >= 0 && first_vs_before <= 0) ||
-			    (last_vs_after >= 0 && last_vs_before <= 0) ||
-			    (first_vs_after <= 0 && last_vs_before >= 0))
-				/* select! */;
-			else
+			if (debug > 1) {
+				fprintf(stderr, "filtering-- "
+					"FvB %d FvA %d LvB %d LvA %d: ",
+					first_vs_before, first_vs_after,
+					last_vs_before, last_vs_after);
+			}
+			why = NULL;
+			if (first_vs_after >= 0 && first_vs_before <= 0)
+				why = "F within A..B";
+			if (last_vs_after >= 0 && last_vs_before <= 0)
+				why = "L within A..B";
+			if (first_vs_after <= 0 && last_vs_before >= 0)
+				why = "F..L contains A..B";
+			if (why != NULL) {
+				if (debug > 1)
+					fprintf(stderr, "selected! %s\n", why);
+				if (debug > 2) {
+					fputs("\tF..L =", stderr);
+					time_print(first, stderr);
+					fputs(" .. ", stderr);
+					time_print(last, stderr);
+					fputc('\n', stderr);
+
+					fputs("\tA..B =", stderr);
+					time_print(after, stderr);
+					fputs(" .. ", stderr);
+					time_print(before, stderr);
+					fputc('\n', stderr);
+				}
+			} else {
+				if (debug > 1)
+					fprintf(stderr, "skipped.\n");
 				goto next;
+			}
 		}
 
 		if (sorted != no_sort) {
-			/* POSIX sort is handed two large integers
-			 * at the front of each line (time{first,last})
+			/* POSIX sort is given two large integers at
+			 * the front of each line (time{first,last})
 			 * which are accessed as -k1 and -k2 on the
 			 * sort command line. we strip them off later
 			 * when reading the result back. the reason
@@ -932,36 +980,34 @@ writer_func(char *ptr, size_t size, size_t nmemb,
 				(unsigned long)first,
 				(unsigned long)last,
 				(int)pre_len, (int)pre_len,
-				writer.buf);
-			if (debug)
-				fprintf(stderr,
-					"sort_stdin: %lu %lu %*.*s\n",
-					(unsigned long)first,
-					(unsigned long)last,
-					(int)pre_len, (int)pre_len,
-					writer.buf);
+				reader->buf);
 		} else {
-			(*pres)(&rec, writer.buf, pre_len, stdout);
+			(*pres)(&tup, reader->buf, pre_len, stdout);
 		}
  next:
-		crack_destroy(&rec);
-		post_len = (writer.len - pre_len) - 1;
-		memmove(writer.buf, nl + 1, post_len);
-		writer.len = post_len;
+		tuple_unmake(&tup);
+		post_len = (reader->len - pre_len) - 1;
+		memmove(reader->buf, nl + 1, post_len);
+		reader->len = post_len;
 	}
 	return (bytes);
 }
 
 static void
 writer_fini(void) {
-	if (writer.buf != NULL) {
-		(void) writer_error();
-		free(writer.buf);
-		writer.buf = NULL;
-		if (writer.len != 0)
+	reader_t reader;
+
+	for (reader = readers; reader != NULL; reader = reader->next) {
+		if (reader->buf != NULL) {
+			(void) reader_error(reader);
+			free(reader->buf);
+			reader->buf = NULL;
+		}
+		if (reader->len != 0) {
 			fprintf(stderr, "stranding %d octets!\n",
-				(int)writer.len);
-		writer.len = 0;
+				(int)reader->len);
+			reader->len = 0;
+		}
 	}
 	if (sorted != no_sort) {
 		char line[65536];
@@ -975,7 +1021,7 @@ writer_fini(void) {
 		while (fgets(line, sizeof line, writer.sort_stdout) != NULL) {
 			char *nl, *linep;
 			const char *msg;
-			cracked_t rec;
+			struct dnsdb_tuple tup;
 
 			if ((nl = strchr(line, '\n')) == NULL) {
 				fprintf(stderr, "no \\n found in '%s'\n",
@@ -996,13 +1042,13 @@ writer_fini(void) {
 				continue;
 			}
 			linep += strspn(linep, " ");
-			msg = crack_new(&rec, linep, nl - linep);
+			msg = tuple_make(&tup, linep, nl - linep);
 			if (msg != NULL) {
 				puts(msg);
 				continue;
 			}
-			(*pres)(&rec, linep, nl - linep, stdout);
-			crack_destroy(&rec);
+			(*pres)(&tup, linep, nl - linep, stdout);
+			tuple_unmake(&tup);
 		}
 		fclose(writer.sort_stdout);
 		if (waitpid(writer.sort_pid, &status, 0) < 0) {
@@ -1017,19 +1063,19 @@ writer_fini(void) {
 }
 
 static int
-writer_error(void) {
-	if (writer.buf[0] != '\0' && writer.buf[0] != '{') {
+reader_error(reader_t reader) {
+	if (reader->buf[0] != '\0' && reader->buf[0] != '{') {
 		fprintf(stderr, "API: %-*.*s",
-		       (int)writer.len, (int)writer.len, writer.buf);
-		writer.buf[0] = '\0';
-		writer.len = 0;
+		       (int)reader->len, (int)reader->len, reader->buf);
+		reader->buf[0] = '\0';
+		reader->len = 0;
 		return (1);
 	}
 	return (0);
 }
 
 static void
-present_dns(const cracked_t *rec,
+present_dns(const dnsdb_tuple_t tup,
 	    const char *jsonbuf __attribute__ ((unused)),
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
@@ -1040,19 +1086,19 @@ present_dns(const cracked_t *rec,
 	ppflag = 0;
 
 	/* Timestamps. */
-	if (rec->obj.time_first != NULL && rec->obj.time_last != NULL) {
+	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
 		fputs(";; record times: ", outf);
-		time_print(rec->time_first, outf);
+		time_print(tup->time_first, outf);
 		fputs(" .. ", outf);
-		time_print(rec->time_last, outf);
+		time_print(tup->time_last, outf);
 		putc('\n', outf);
 		ppflag++;
 	}
-	if (rec->obj.zone_first != NULL && rec->obj.zone_last != NULL) {
+	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
 		fputs(";;   zone times: ", outf);
-		time_print(rec->zone_first, outf);
+		time_print(tup->zone_first, outf);
 		fputs(" .. ", outf);
-		time_print(rec->zone_last, outf);
+		time_print(tup->zone_last, outf);
 		putc('\n', outf);
 		ppflag++;
 	}
@@ -1060,14 +1106,14 @@ present_dns(const cracked_t *rec,
 	/* Count and Bailiwick. */
 	prefix = ";;";
 	pflag = 0;
-	if (rec->obj.count != NULL) {
-		fprintf(outf, "%s count: %lld", prefix, (long long)rec->count);
+	if (tup->obj.count != NULL) {
+		fprintf(outf, "%s count: %lld", prefix, (long long)tup->count);
 		prefix = ";";
 		pflag++;
 		ppflag++;
 	}
-	if (rec->obj.bailiwick != NULL) {
-		fprintf(outf, "%s bailiwick: %s", prefix, rec->bailiwick);
+	if (tup->obj.bailiwick != NULL) {
+		fprintf(outf, "%s bailiwick: %s", prefix, tup->bailiwick);
 		prefix = ";";
 		pflag++;
 		ppflag++;
@@ -1076,12 +1122,12 @@ present_dns(const cracked_t *rec,
 		putc('\n', outf);
 
 	/* Records. */
-	if (json_is_array(rec->obj.rdata)) {
+	if (json_is_array(tup->obj.rdata)) {
 		size_t slot, nslots;
 
-		nslots = json_array_size(rec->obj.rdata);
+		nslots = json_array_size(tup->obj.rdata);
 		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(rec->obj.rdata, slot);
+			json_t *rr = json_array_get(tup->obj.rdata, slot);
 			const char *rdata = NULL;
 
 			if (json_is_string(rr))
@@ -1089,12 +1135,12 @@ present_dns(const cracked_t *rec,
 			else
 				rdata = "[bad value]";
 			fprintf(outf, "%s  %s  %s\n",
-				rec->rrname, rec->rrtype, rdata);
+				tup->rrname, tup->rrtype, rdata);
 			ppflag++;
 		}
 	} else {
 		fprintf(outf, "%s  %s  %s\n",
-			rec->rrname, rec->rrtype, rec->rdata);
+			tup->rrname, tup->rrtype, tup->rdata);
 		ppflag++;
 	}
 
@@ -1104,7 +1150,7 @@ present_dns(const cracked_t *rec,
 }
 
 static void
-present_json(const cracked_t *rec __attribute__ ((unused)),
+present_json(const dnsdb_tuple_t tup __attribute__ ((unused)),
 	     const char *jsonbuf,
 	     size_t jsonlen,
 	     FILE *outf)
@@ -1114,7 +1160,7 @@ present_json(const cracked_t *rec __attribute__ ((unused)),
 }
 
 static void
-present_csv(const cracked_t *rec,
+present_csv(const dnsdb_tuple_t tup,
 	    const char *jsonbuf __attribute__ ((unused)),
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
@@ -1129,165 +1175,176 @@ present_csv(const cracked_t *rec,
 		csv_headerp = 1;
 	}
 
-	if (json_is_array(rec->obj.rdata)) {
+	if (json_is_array(tup->obj.rdata)) {
 		size_t slot, nslots;
 
-		nslots = json_array_size(rec->obj.rdata);
+		nslots = json_array_size(tup->obj.rdata);
 		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(rec->obj.rdata, slot);
+			json_t *rr = json_array_get(tup->obj.rdata, slot);
 			const char *rdata = NULL;
 
 			if (json_is_string(rr))
 				rdata = json_string_value(rr);
 			else
 				rdata = "[bad value]";
-			present_csv_line(rec, rdata, outf);
+			present_csv_line(tup, rdata, outf);
 		}
 	} else {
-		present_csv_line(rec, rec->rdata, outf);
+		present_csv_line(tup, tup->rdata, outf);
 	}
 }
 
 static void
-present_csv_line(const cracked_t *rec,
+present_csv_line(const dnsdb_tuple_t tup,
 		 const char *rdata,
 		 FILE *outf)
 {
 	/* Timestamps. */
-	if (rec->obj.time_first != NULL)
-		time_print(rec->time_first, outf);
+	if (tup->obj.time_first != NULL) {
+		putc('"', outf);
+		time_print(tup->time_first, outf);
+		putc('"', outf);
+	}
 	putc(',', outf);
-	if (rec->obj.time_last != NULL)
-		time_print(rec->time_last, outf);
+	if (tup->obj.time_last != NULL) {
+		putc('"', outf);
+		time_print(tup->time_last, outf);
+		putc('"', outf);
+	}
 	putc(',', outf);
-	if (rec->obj.zone_first != NULL)
-		time_print(rec->zone_first, outf);
+	if (tup->obj.zone_first != NULL) {
+		putc('"', outf);
+		time_print(tup->zone_first, outf);
+		putc('"', outf);
+	}
 	putc(',', outf);
-	if (rec->obj.zone_last != NULL)
-		time_print(rec->zone_last, outf);
+	if (tup->obj.zone_last != NULL) {
+		putc('"', outf);
+		time_print(tup->zone_last, outf);
+		putc('"', outf);
+	}
 	putc(',', outf);
 
 	/* Count and bailiwick. */
-	if (rec->obj.count != NULL)
-		fprintf(outf, "%lld", (long long) rec->count);
+	if (tup->obj.count != NULL)
+		fprintf(outf, "%lld", (long long) tup->count);
 	putc(',', outf);
-	if (rec->obj.bailiwick != NULL)
-		fprintf(outf, "\"%s\"", rec->bailiwick);
+	if (tup->obj.bailiwick != NULL)
+		fprintf(outf, "\"%s\"", tup->bailiwick);
 	putc(',', outf);
 
 	/* Records. */
-	if (rec->obj.rrname != NULL)
-		fprintf(outf, "\"%s\"", rec->rrname);
+	if (tup->obj.rrname != NULL)
+		fprintf(outf, "\"%s\"", tup->rrname);
 	putc(',', outf);
-	if (rec->obj.rrtype != NULL)
-		fprintf(outf, "\"%s\"", rec->rrtype);
+	if (tup->obj.rrtype != NULL)
+		fprintf(outf, "\"%s\"", tup->rrtype);
 	putc(',', outf);
-	if (rec->obj.rdata != NULL)
+	if (tup->obj.rdata != NULL)
 		fprintf(outf, "\"%s\"", rdata);
 	putc('\n', outf);
 }
 
 static const char *
-crack_new(cracked_t *rec, char *buf, size_t len) {
+tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 
-	memset(rec, 0, sizeof *rec);
-	if (debug)
+	memset(tup, 0, sizeof *tup);
+	if (debug > 2)
 		fprintf(stderr, "[%d] '%-*.*s'\n",
 			(int)len, (int)len, (int)len, buf);
-	rec->obj.main = json_loadb(buf, len, 0, &error);
-	if (rec->obj.main == NULL) {
+	tup->obj.main = json_loadb(buf, len, 0, &error);
+	if (tup->obj.main == NULL) {
 		fprintf(stderr, "%d:%d: %s %s\n",
 		       error.line, error.column,
 		       error.text, error.source);
 		abort();
 	}
-	if (debug) {
-		fputs("---\n", stderr);
-		json_dumpf(rec->obj.main, stderr, JSON_INDENT(2));
-		fputs("\n===\n", stderr);
+	if (debug > 3) {
+		json_dumpf(tup->obj.main, stderr, JSON_INDENT(2));
+		fputc('\n', stderr);
 	}
 
 	/* Timestamps. */
-	rec->obj.zone_first = json_object_get(rec->obj.main,
+	tup->obj.zone_first = json_object_get(tup->obj.main,
 					      "zone_time_first");
-	if (rec->obj.zone_first != NULL) {
-		if (!json_is_integer(rec->obj.zone_first)) {
+	if (tup->obj.zone_first != NULL) {
+		if (!json_is_integer(tup->obj.zone_first)) {
 			msg = "zone_time_first must be an integer";
 			goto ouch;
 		}
-		rec->zone_first = (time_t)
-			json_integer_value(rec->obj.zone_first);
+		tup->zone_first = (time_t)
+			json_integer_value(tup->obj.zone_first);
 	}
-	rec->obj.zone_last = json_object_get(rec->obj.main, "zone_time_last");
-	if (rec->obj.zone_last != NULL) {
-		if (!json_is_integer(rec->obj.zone_last)) {
+	tup->obj.zone_last = json_object_get(tup->obj.main, "zone_time_last");
+	if (tup->obj.zone_last != NULL) {
+		if (!json_is_integer(tup->obj.zone_last)) {
 			msg = "zone_time_last must be an integer";
 			goto ouch;
 		}
-		rec->zone_last = (time_t)
-			json_integer_value(rec->obj.zone_last);
+		tup->zone_last = (time_t)
+			json_integer_value(tup->obj.zone_last);
 	}
-	rec->obj.time_first = json_object_get(rec->obj.main, "time_first");
-	if (rec->obj.time_first != NULL) {
-		if (!json_is_integer(rec->obj.time_first)) {
+	tup->obj.time_first = json_object_get(tup->obj.main, "time_first");
+	if (tup->obj.time_first != NULL) {
+		if (!json_is_integer(tup->obj.time_first)) {
 			msg = "time_first must be an integer";
 			goto ouch;
 		}
-		rec->time_first = (time_t)
-			json_integer_value(rec->obj.time_first);
+		tup->time_first = (time_t)
+			json_integer_value(tup->obj.time_first);
 	}
-	rec->obj.time_last = json_object_get(rec->obj.main, "time_last");
-	if (rec->obj.time_last != NULL) {
-		if (!json_is_integer(rec->obj.time_last)) {
+	tup->obj.time_last = json_object_get(tup->obj.main, "time_last");
+	if (tup->obj.time_last != NULL) {
+		if (!json_is_integer(tup->obj.time_last)) {
 			msg = "time_last must be an integer";
 			goto ouch;
 		}
-		rec->time_last = (time_t)
-			json_integer_value(rec->obj.time_last);
+		tup->time_last = (time_t)
+			json_integer_value(tup->obj.time_last);
 	}
 
 	/* Count and Bailiwick. */
-	rec->obj.count = json_object_get(rec->obj.main, "count");
-	if (rec->obj.count != NULL) {
-		if (!json_is_integer(rec->obj.count)) {
+	tup->obj.count = json_object_get(tup->obj.main, "count");
+	if (tup->obj.count != NULL) {
+		if (!json_is_integer(tup->obj.count)) {
 			msg = "count must be an integer";
 			goto ouch;
 		}
-		rec->count = json_integer_value(rec->obj.count);
+		tup->count = json_integer_value(tup->obj.count);
 	}
-	rec->obj.bailiwick = json_object_get(rec->obj.main, "bailiwick");
-	if (rec->obj.bailiwick != NULL) {
-		if (!json_is_string(rec->obj.bailiwick)) {
+	tup->obj.bailiwick = json_object_get(tup->obj.main, "bailiwick");
+	if (tup->obj.bailiwick != NULL) {
+		if (!json_is_string(tup->obj.bailiwick)) {
 			msg = "bailiwick must be a string";
 			goto ouch;
 		}
-		rec->bailiwick = json_string_value(rec->obj.bailiwick);
+		tup->bailiwick = json_string_value(tup->obj.bailiwick);
 	}
 
 	/* Records. */
-	rec->obj.rrname = json_object_get(rec->obj.main, "rrname");
-	if (rec->obj.rrname != NULL) {
-		if (!json_is_string(rec->obj.rrname)) {
+	tup->obj.rrname = json_object_get(tup->obj.main, "rrname");
+	if (tup->obj.rrname != NULL) {
+		if (!json_is_string(tup->obj.rrname)) {
 			msg = "rrname must be a string";
 			goto ouch;
 		}
-		rec->rrname = json_string_value(rec->obj.rrname);
+		tup->rrname = json_string_value(tup->obj.rrname);
 	}
-	rec->obj.rrtype = json_object_get(rec->obj.main, "rrtype");
-	if (rec->obj.rrtype != NULL) {
-		if (!json_is_string(rec->obj.rrtype)) {
+	tup->obj.rrtype = json_object_get(tup->obj.main, "rrtype");
+	if (tup->obj.rrtype != NULL) {
+		if (!json_is_string(tup->obj.rrtype)) {
 			msg = "rrtype must be a string";
 			goto ouch;
 		}
-		rec->rrtype = json_string_value(rec->obj.rrtype);
+		tup->rrtype = json_string_value(tup->obj.rrtype);
 	}
-	rec->obj.rdata = json_object_get(rec->obj.main, "rdata");
-	if (rec->obj.rdata != NULL) {
-		if (json_is_string(rec->obj.rdata)) {
-			rec->rdata = json_string_value(rec->obj.rdata);
-		} else if (!json_is_array(rec->obj.rdata)) {
+	tup->obj.rdata = json_object_get(tup->obj.main, "rdata");
+	if (tup->obj.rdata != NULL) {
+		if (json_is_string(tup->obj.rdata)) {
+			tup->rdata = json_string_value(tup->obj.rdata);
+		} else if (!json_is_array(tup->obj.rdata)) {
 			msg = "rdata must be a string or array";
 			goto ouch;
 		}
@@ -1299,26 +1356,33 @@ crack_new(cracked_t *rec, char *buf, size_t len) {
 
  ouch:
 	assert(msg != NULL);
-	crack_destroy(rec);
+	tuple_unmake(tup);
 	return (msg);
 }
 
 static void
-crack_destroy(cracked_t *rec) {
-	json_decref(rec->obj.main);
-	if (debug)
-		memset(rec, 0x5a, sizeof *rec);
+tuple_unmake(dnsdb_tuple_t tup) {
+	json_decref(tup->obj.main);
+	if (debug > 0)
+		memset(tup, 0x5a, sizeof *tup);
+	else
+		memset(tup, 0, sizeof *tup);
+}
+
+static time_t
+abstime(time_t t) {
+	if (t < 0)
+		t += startup;
+	return (t);
 }
 
 static int
 timecmp(time_t a, time_t b) {
-	if (a < 0)
-		a += startup;
-	if (b < 0)
-		b += startup;
-	if (a < b)
+	time_t abs_a = abstime(a), abs_b = abstime(b);
+
+	if (abs_a < abs_b)
 		return (-1);
-	if (b > a)
+	if (abs_a > abs_b)
 		return (1);
 	return (0);
 }
@@ -1339,9 +1403,9 @@ time_print(time_t x, FILE *outf) {
 
 static int
 time_get(const char *src, time_t *dst) {
-	char *ep;
 	struct tm tt;
 	u_long t;
+	char *ep;
 
 	memset(&tt, 0, sizeof tt);
 	if (((ep = strptime(src, "%F %T", &tt)) != NULL && *ep == '\0') ||
