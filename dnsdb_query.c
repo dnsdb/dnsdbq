@@ -302,6 +302,8 @@ main(int argc, char *argv[]) {
 			time_print(before, stderr);
 			putc('\n', stderr);
 		}
+		if (limit != 0)
+			fprintf(stderr, "limit = %d\n", limit);
 	}
 
 	read_configs();
@@ -698,7 +700,10 @@ launch(const char *command,
 		my_exit(1, reader, NULL);
 	}
 	sep = '?';
-	if (limit != 0) {
+	/* only say ?limit= if it was specified and we aren't sorting. if we
+	 * are sorting, we'll implement this on the output of the sort.
+	 */
+	if (limit != 0 && sorted == no_sort) {
 		char *tmp;
 
 		x = asprintf(&tmp, "%s%c" "limit=%d", reader->url, sep, limit);
@@ -1018,17 +1023,17 @@ writer_fini(void) {
 	}
 	if (sorted != no_sort) {
 		char line[65536];
-		int status;
+		int status, count;
 
 		/* when sorting, there has been no output yet. gather the
 		 * intermediate representation from the POSIX sort stdout,
 		 * skip over the sort keys we added earlier, and process.
 		 */
 		fclose(writer.sort_stdin);
+		count = 0;
 		while (fgets(line, sizeof line, writer.sort_stdout) != NULL) {
 			char *nl, *linep;
 			const char *msg;
-			struct dnsdb_tuple tup;
 
 			if ((nl = strchr(line, '\n')) == NULL) {
 				fprintf(stderr, "no \\n found in '%s'\n",
@@ -1049,13 +1054,18 @@ writer_fini(void) {
 				continue;
 			}
 			linep += strspn(linep, " ");
-			msg = tuple_make(&tup, linep, nl - linep);
-			if (msg != NULL) {
-				puts(msg);
-				continue;
+			count++;
+			if (limit == 0 || count <= limit) {
+				struct dnsdb_tuple tup;
+
+				msg = tuple_make(&tup, linep, nl - linep);
+				if (msg != NULL) {
+					puts(msg);
+					continue;
+				}
+				(*pres)(&tup, linep, nl - linep, stdout);
+				tuple_unmake(&tup);
 			}
-			(*pres)(&tup, linep, nl - linep, stdout);
-			tuple_unmake(&tup);
 		}
 		fclose(writer.sort_stdout);
 		if (waitpid(writer.sort_pid, &status, 0) < 0) {
