@@ -13,6 +13,7 @@
 #include <sys/time.h>
 
 #include <assert.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -90,6 +91,7 @@ static void dnsdb_query(const char *);
 static void launch(const char *, time_t, time_t, time_t, time_t);
 static void all_readers(void);
 static void rendezvous(reader_t);
+static void ruminate_json(int);
 static void present_json(const dnsdb_tuple_t, const char *, size_t, FILE *);
 static void present_dns(const dnsdb_tuple_t, const char *, size_t, FILE *);
 static void present_csv(const dnsdb_tuple_t, const char *, size_t, FILE *);
@@ -136,7 +138,7 @@ main(int argc, char *argv[]) {
 	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
 	const char *val;
-	int ch;
+	int json_fd, ch;
 
 	program_name = strrchr(argv[0], '/');
 	gettimeofday(&now, &here);
@@ -145,7 +147,8 @@ main(int argc, char *argv[]) {
 	else
 		program_name++;
 
-	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:k:vdjfsShL"))
+	json_fd = -1;
+	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:k:J:vdjfsShL"))
 	       != -1)
 	{
 		switch (ch) {
@@ -239,15 +242,11 @@ main(int argc, char *argv[]) {
 				usage("-p must specify json, dns, or csv");
 			break;
 		case 't':
-			if (batch)
-				usage("can't mix -t with -f");
 			if (type != NULL)
 				free(type);
 			type = strdup(optarg);
 			break;
 		case 'b':
-			if (batch)
-				usage("can't mix -b with -f");
 			if (bailiwick != NULL)
 				free(bailiwick);
 			bailiwick = strdup(optarg);
@@ -276,6 +275,13 @@ main(int argc, char *argv[]) {
 			}
 			break;
 		    }
+		case 'J':
+			json_fd = open(optarg, O_RDONLY);
+			if (json_fd < 0) {
+				perror(optarg);
+				my_exit(1, NULL);
+			}
+			break;
 		case 'v':
 			dry_run++;
 			break;
@@ -337,6 +343,24 @@ main(int argc, char *argv[]) {
 			fprintf(stderr, "limit = %d\n", limit);
 	}
 
+	if (after != 0 && before != 0) {
+		if (after > 0 && before > 0 && after > before) {
+			fprintf(stderr,
+				"-A -B requires after <= before\n");
+			my_exit(1, NULL);
+		}
+		if (loose && sorted == no_sort) {
+			fprintf(stderr,
+				"-A -B -L requires -s or -S for dedup\n");
+			my_exit(1, NULL);
+		}
+	}
+
+	if (nkeys > 0 && sorted == no_sort) {
+		fprintf(stderr, "using -k without -s or -S makes no sense.\n");
+		my_exit(1, NULL);
+	}
+
 	read_configs();
 	val = getenv(env_api_key);
 	if (val != NULL) {
@@ -370,29 +394,22 @@ main(int argc, char *argv[]) {
 		my_exit(1, NULL);
 	}
 
-	if (after != 0 && before != 0) {
-		if (after > 0 && before > 0 && after > before) {
-			fprintf(stderr,
-				"-A -B requires after <= before\n");
-			my_exit(1, NULL);
-		}
-		if (loose && sorted == no_sort) {
-			fprintf(stderr,
-				"-A -B -L requires -s or -S for dedup\n");
-			my_exit(1, NULL);
-		}
-	}
-
-	if (nkeys > 0 && sorted == no_sort) {
-		fprintf(stderr, "using -k without -s or -S makes no sense.\n");
-		my_exit(1, NULL);
-	}
-
-	if (batch) {
+	if (json_fd != -1) {
+		if (mode != no_mode)
+			usage("can't mix -n, -r, or -i with -J");
+		if (batch)
+			usage("can't mix -b with -J");
+		ruminate_json(json_fd);
+		close(json_fd);
+	} else if (batch) {
 		char command[1000];
 
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -f");
+		if (bailiwick != NULL)
+			usage("can't mix -b with -f");
+		if (type != NULL)
+			usage("can't mix -t with -f");
 		make_curl();
 		while (fgets(command, sizeof command, stdin) != NULL) {
 			char *nl = strchr(command, '\n');
@@ -487,6 +504,7 @@ static __attribute__((noreturn)) void usage(const char *error) {
 "usage: %s [-vdjsShL] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
 "\t[-l LIMIT] [-A after] [-B before] {\n"
 "\t\t-f |\n"
+"\t\t-J inputfile |\n"
 "\t\t[-t type] [-b bailiwick] {\n"
 "\t\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
 "\t\t\t-n NAME[/TYPE] |\n"
@@ -498,6 +516,7 @@ static __attribute__((noreturn)) void usage(const char *error) {
 "\trdata/name/NAME[/TYPE]\n"
 "\trdata/ip/ADDR[/PFXLEN]\n"
 "for -f, output format will be determined by -p, using --\\n framing\n"
+"for -J, input format is newline-separated JSON, as for -j output\n"
 "for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
 		"or rel. %%dw%%dd%%dh%%dm%%ds format\n"
 "use -v for a dry run, and one or more of -d for debugging output.\n"
@@ -861,6 +880,20 @@ rendezvous(reader_t reader) {
 		reader->url = NULL;
 	}
 	free(reader);
+}
+
+static void
+ruminate_json(int json_fd) {
+	struct reader reader;
+	char buf[65536];
+	ssize_t len;
+
+	writer_init();
+	memset(&reader, 0, sizeof reader);
+	while ((len = read(json_fd, buf, sizeof buf)) > 0) {
+		writer_func(buf, 1, len, &reader);
+	}
+	writer_fini();
 }
 
 static void

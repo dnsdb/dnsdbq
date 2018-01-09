@@ -30,6 +30,7 @@
 .Op Fl p Ar output_type
 .Op Fl r Ar rdata
 .Op Fl t Ar type
+.Op Fl J Ar input_file
 .Sh DESCRIPTION
 .Nm dnsdb_query
 constructs and issues queries to the Farsight DNSDB and displays responses. It
@@ -169,6 +170,10 @@ The
 .Ic value
 is an even number of hexadecimal digits specifying a raw octet string.
 .El
+.It Fl J Ar input_file
+opens input_file and reads newline-separated JSON objects therefrom, in
+preference to -f (batch mode) or -r, -n, or -i (query mode). This can be
+used to reprocess the output from a prior invocation which used -j (-p json).
 .It Fl v
 enable "dry run" mode, often used in conjunction with -d (debug).
 .It Fl h
