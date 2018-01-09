@@ -431,7 +431,8 @@ main(int argc, char *argv[]) {
 		switch (mode) {
 			int x;
 		case no_mode:
-			usage("must specify -r, -n, or -i unless -f is used");
+			usage("must specify -r, -n, or -i"
+			      "unless -f or -J is used");
 		case rdata_mode:
 			if (type != NULL && bailiwick != NULL)
 				x = asprintf(&command, "rrset/name/%s/%s/%s",
