@@ -464,7 +464,11 @@ static __attribute__((noreturn)) void usage(const char *error) {
 "for -f, output format will be determined by -p, using --\\n framing\n"
 "for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
 		"or rel. %%dw%%dd%%dh%%dm%%ds format\n"
-"use -L to get loose (inclusive) time matching\n",
+"use -v for a dry run, and one or more of -d for debugging output.\n"
+"use -j as a synonym for -p json.\n"
+"use -s to sort in ascending order, or -S for descending order.\n"
+"use -h to reliably display this helpful text.\n"
+"use -L to get loose (inclusive) time matching for -A and -B\n",
 		program_name);
 	my_exit(1, NULL);
 }
