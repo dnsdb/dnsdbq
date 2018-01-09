@@ -26,9 +26,7 @@
 
 extern char **environ;
 
-/* Internal. */
-
-#define DNSDB_SERVER "https://api.dnsdb.info"
+/* Types. */
 
 struct dnsdb_json {
 	json_t		*main,
@@ -63,7 +61,7 @@ struct writer {
 	pid_t			sort_pid;
 };
 
-/* Constant. */
+/* Constants. */
 
 static const char * const conf_files[] = {
 	"~/.isc-dnsdb-query.conf",
@@ -73,7 +71,13 @@ static const char * const conf_files[] = {
 	NULL
 };
 
+static const char path_sort[] = "/usr/bin/sort";
 static const char json_header[] = "Accept: application/json";
+static const char default_server[] = "https://api.dnsdb.info";
+static const char env_api_key[] = "DNSDB_API_KEY";
+static const char env_dnsdb_server[] = "DNSDB_SERVER";
+
+#define	MAX_KEYS 3
 
 /* Forward. */
 
@@ -123,6 +127,7 @@ static CURLM *multi = NULL;
 static struct timeval now;
 static struct timezone here;
 static struct writer writer;
+static int nkeys, keys[MAX_KEYS];
 
 /* Public. */
 
@@ -140,7 +145,9 @@ main(int argc, char *argv[]) {
 	else
 		program_name++;
 
-	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:vdjfsShL")) != -1) {
+	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:k:vdjfsShL"))
+	       != -1)
+	{
 		switch (ch) {
 		case 'A':
 			if (!time_get(optarg, &after)) {
@@ -245,6 +252,30 @@ main(int argc, char *argv[]) {
 				free(bailiwick);
 			bailiwick = strdup(optarg);
 			break;
+		case 'k': {
+			const char *tok;
+
+			nkeys = 0;
+			for (tok = strtok(optarg, ",");
+			     tok != NULL;
+			     tok = strtok(NULL, ","))
+			{
+				int key = 0;
+
+				if (nkeys == MAX_KEYS)
+					usage("too many -k options given.");
+				if (strcasecmp(tok, "first") == 0)
+					key = 1;
+				else if (strcasecmp(tok, "last") == 0)
+					key = 2;
+				else if (strcasecmp(tok, "count") == 0)
+					key = 3;
+				else
+					usage("-k !< {first,last,count}");
+				keys[nkeys++] = key;
+			}
+			break;
+		    }
 		case 'v':
 			dry_run++;
 			break;
@@ -307,7 +338,7 @@ main(int argc, char *argv[]) {
 	}
 
 	read_configs();
-	val = getenv("DNSDB_API_KEY");
+	val = getenv(env_api_key);
 	if (val != NULL) {
 		if (api_key != NULL)
 			free(api_key);
@@ -315,7 +346,7 @@ main(int argc, char *argv[]) {
 		if (debug > 0)
 			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
 	}
-	val = getenv("DNSDB_SERVER");
+	val = getenv(env_dnsdb_server);
 	if (val != NULL) {
 		if (dnsdb_server != NULL)
 			free(dnsdb_server);
@@ -329,7 +360,7 @@ main(int argc, char *argv[]) {
 		my_exit(1, NULL);
 	}
 	if (dnsdb_server == NULL) {
-		dnsdb_server = strdup(DNSDB_SERVER);
+		dnsdb_server = strdup(default_server);
 		if (debug > 0)
 			fprintf(stderr, "conf default dnsdb_server = '%s'\n",
 				dnsdb_server);
@@ -350,6 +381,11 @@ main(int argc, char *argv[]) {
 				"-A -B -L requires -s or -S for dedup\n");
 			my_exit(1, NULL);
 		}
+	}
+
+	if (nkeys > 0 && sorted == no_sort) {
+		fprintf(stderr, "using -k without -s or -S makes no sense.\n");
+		my_exit(1, NULL);
 	}
 
 	if (batch) {
@@ -448,7 +484,7 @@ static __attribute__((noreturn)) void usage(const char *error) {
 	if (error != NULL)
 		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
-"usage: %s [-vdjsShL] [-p dns|json|csv]\n"
+"usage: %s [-vdjsShL] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
 "\t[-l LIMIT] [-A after] [-B before] {\n"
 "\t\t-f |\n"
 "\t\t[-t type] [-b bailiwick] {\n"
@@ -832,7 +868,7 @@ writer_init(void) {
 	memset(&writer, 0, sizeof writer);
 
 	if (sorted != no_sort) {
-		/* sorting involves a subprocess (POSIX /usr/bin/sort),
+		/* sorting involves a subprocess (POSIX sort(1) command),
 		 * which will by definition not output anything until
 		 * after it receives EOF. this means we can pipe both
 		 * to its stdin and from its stdout, without risk of
@@ -851,7 +887,8 @@ writer_init(void) {
 			my_exit(1, NULL);
 		}
 		if (writer.sort_pid == 0) {
-			char *sort_argv[7], **sap;
+			char *sort_argv[5+MAX_KEYS], **sap;
+			int n;
 
 			if (dup2(p1[0], STDIN_FILENO) < 0 ||
 			    dup2(p2[1], STDOUT_FILENO) < 0) {
@@ -864,15 +901,29 @@ writer_init(void) {
 			close(p2[1]);
 			sap = sort_argv;
 			*sap++ = strdup("sort");
-			*sap++ = strdup("-k1");
-			*sap++ = strdup("-k2");
+			for (n = 0; n < nkeys; n++) {
+				char *karg = NULL;
+				int x = asprintf(&karg, "-k%d", keys[n]);
+
+				if (x < 0) {
+					perror("asprintf");
+					_exit(1);
+				}
+				*sap++ = karg;
+			}
 			*sap++ = strdup("-n");
 			*sap++ = strdup("-u");
 			if (sorted == reverse_sort)
 				*sap++ = strdup("-r");
 			*sap++ = NULL;
 			putenv(strdup("LC_ALL=C"));
-			execve("/usr/bin/sort", sort_argv, environ);
+			if (debug > 0) {
+				fprintf(stderr, "\"%s\" args:", path_sort);
+				for (sap = sort_argv; *sap != NULL; sap++)
+					fprintf(stderr, " [%s]", *sap);
+				fputc('\n', stderr);
+			}
+			execve(path_sort, sort_argv, environ);
 			perror("execve");
 			for (sap = sort_argv; *sap != NULL; sap++) {
 				free(*sap);
@@ -984,17 +1035,18 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 
 		if (sorted != no_sort) {
-			/* POSIX sort is given two large integers at
-			 * the front of each line (time{first,last})
-			 * which are accessed as -k1 and -k2 on the
+			/* POSIX sort is given three integers at the
+			 * front of each line (first, last, count)
+			 * which are accessed as -k1, -k2 or -k3 on the
 			 * sort command line. we strip them off later
 			 * when reading the result back. the reason
 			 * for all this old-school code is to avoid
 			 * having to store the full result in memory.
 			 */
-			fprintf(writer.sort_stdin, "%lu %lu %*.*s\n",
+			fprintf(writer.sort_stdin, "%lu %lu %lu %*.*s\n",
 				(unsigned long)first,
 				(unsigned long)last,
+				(unsigned long)tup.count,
 				(int)pre_len, (int)pre_len,
 				reader->buf);
 		} else {
@@ -1038,6 +1090,7 @@ writer_fini(void) {
 		while (fgets(line, sizeof line, writer.sort_stdout) != NULL) {
 			char *nl, *linep;
 			const char *msg;
+			struct dnsdb_tuple tup;
 
 			if ((nl = strchr(line, '\n')) == NULL) {
 				fprintf(stderr, "no \\n found in '%s'\n",
@@ -1045,7 +1098,7 @@ writer_fini(void) {
 				continue;
 			}
 			linep = line;
-			/* skip time_first and time_last -- the sort keys. */
+			/* skip first, last, and count -- the sort keys. */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"no SP found in '%s'\n", line);
@@ -1058,18 +1111,22 @@ writer_fini(void) {
 				continue;
 			}
 			linep += strspn(linep, " ");
-			count++;
-			if (limit == 0 || count <= limit) {
-				struct dnsdb_tuple tup;
-
-				msg = tuple_make(&tup, linep, nl - linep);
-				if (msg != NULL) {
-					puts(msg);
-					continue;
-				}
-				(*pres)(&tup, linep, nl - linep, stdout);
-				tuple_unmake(&tup);
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr,
+					"no third SP found in '%s'\n", line);
+				continue;
 			}
+			linep += strspn(linep, " ");
+			msg = tuple_make(&tup, linep, nl - linep);
+			if (msg != NULL) {
+				puts(msg);
+				continue;
+			}
+			(*pres)(&tup, linep, nl - linep, stdout);
+			tuple_unmake(&tup);
+			count++;
+			if (limit != 0 && count > limit)
+				break;
 		}
 		fclose(writer.sort_stdout);
 		if (waitpid(writer.sort_pid, &status, 0) < 0) {

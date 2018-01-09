@@ -26,6 +26,7 @@
 .Op Fl i Ar ip
 .Op Fl l Ar limit
 .Op Fl n Ar name
+.Op Fl k Ar sort_fields
 .Op Fl p Ar output_type
 .Op Fl r Ar rdata
 .Op Fl t Ar type
@@ -128,6 +129,8 @@ clamp the number of responses to
 specify
 .Ic rdata
 name ("right-hand side") query.
+.It Fl k Ar sort_fields
+when sorting with -s or -S, selects sort fields (first, last, and/or count).
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
