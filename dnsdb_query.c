@@ -1125,7 +1125,7 @@ writer_fini(void) {
 			(*pres)(&tup, linep, nl - linep, stdout);
 			tuple_unmake(&tup);
 			count++;
-			if (limit != 0 && count > limit)
+			if (limit != 0 && count == limit)
 				break;
 		}
 		fclose(writer.sort_stdout);
