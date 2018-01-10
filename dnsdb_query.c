@@ -726,6 +726,10 @@ dnsdb_query(const char *command) {
 			curl_easy_getinfo(msg->easy_handle,
 					  CURLINFO_EFFECTIVE_URL, &url);
 			fprintf(stderr, "libcurl: %ld (%s)\n", rcode, url);
+			if (rcode == 404)
+				fprintf(stderr, "please note: 404 usually "
+					"just means that no records matched "
+					"the search\n");
 		}
 	}
 	/* shut down and reclaim all the curl jobs. */
