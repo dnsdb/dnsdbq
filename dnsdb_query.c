@@ -1003,7 +1003,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		msg = tuple_make(&tup, reader->buf, pre_len);
 		if (msg) {
 			puts(msg);
-			goto next;
+			goto more;
 		}
 
 		/* there are two sets of timestamps in a tuple. we prefer
@@ -1088,6 +1088,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
  next:
 		tuple_unmake(&tup);
+ more:
 		post_len = (reader->len - pre_len) - 1;
 		memmove(reader->buf, nl + 1, post_len);
 		reader->len = post_len;
