@@ -117,7 +117,6 @@ static int batch = 0;
 static int dry_run = 0;
 static int debug = 0;
 static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
-static enum { filter_none, filter_overlap } filter = filter_none;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_dns;
 static reader_t readers = NULL;
@@ -524,7 +523,7 @@ static __attribute__((noreturn)) void usage(const char *error) {
 "use -j as a synonym for -p json.\n"
 "use -s to sort in ascending order, or -S for descending order.\n"
 "use -h to reliably display this helpful text.\n"
-"use -L to get loose (inclusive) time matching for -A and -B\n",
+"use -L to get loose (inclusive/overlapping) time matching for -A and -B\n",
 		program_name);
 	my_exit(1, NULL);
 }
@@ -683,7 +682,6 @@ dnsdb_query(const char *command) {
 			 * ...(start within), or (end within), or
 			 * ...(start before and end after).
 			 */
-			filter = filter_overlap;
 		}
 	} else if (after != 0) {
 		if (!loose) {
@@ -991,10 +989,12 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	reader->len += bytes;
 
 	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
+		int first_vs_before, first_vs_after,
+			last_vs_before, last_vs_after;
 		size_t pre_len, post_len;
-		time_t first, last;
-		const char *msg;
 		struct dnsdb_tuple tup;
+		const char *msg, *why;
+		time_t first, last;
 
 		if (reader_error(reader))
 			return (0);
@@ -1017,55 +1017,84 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			last = tup.zone_last;
 		}
 
+		first_vs_before = timecmp(first, before);
+		first_vs_after = timecmp(first, after);
+		last_vs_before = timecmp(last, before);
+		last_vs_after = timecmp(last, after);
+		if (debug > 1) {
+			fprintf(stderr, "filtering-- "
+				"FvB %d FvA %d LvB %d LvA %d: ",
+				first_vs_before, first_vs_after,
+				last_vs_before, last_vs_after);
+		}
+		why = NULL;
+
 		/* time fencing can in some cases (-A + -B + -L) require
 		 * asking the server for more than we really want, and so
-		 * we have to winnow it down upon receipt.
+		 * we have to winnow it down upon receipt. see also -J.
 		 */
-		if (filter == filter_overlap && after != 0 && before != 0) {
-			const char *why;
-
-			/* reduce results to just things that either:
-			 * ...(start within), or (end within), or
-			 * ...(start before and end after).
-			 */
-			int first_vs_before = timecmp(first, before);
-			int first_vs_after = timecmp(first, after);
-			int last_vs_before = timecmp(last, before);
-			int last_vs_after = timecmp(last, after);
-			if (debug > 1) {
-				fprintf(stderr, "filtering-- "
-					"FvB %d FvA %d LvB %d LvA %d: ",
-					first_vs_before, first_vs_after,
-					last_vs_before, last_vs_after);
-			}
-			why = NULL;
-			if (first_vs_after >= 0 && first_vs_before <= 0)
-				why = "F within A..B";
-			if (last_vs_after >= 0 && last_vs_before <= 0)
-				why = "L within A..B";
-			if (first_vs_after <= 0 && last_vs_before >= 0)
-				why = "F..L contains A..B";
-			if (why != NULL) {
-				if (debug > 1)
-					fprintf(stderr, "selected! %s\n", why);
-				if (debug > 2) {
-					fputs("\tF..L =", stderr);
-					time_print(first, stderr);
-					fputs(" .. ", stderr);
-					time_print(last, stderr);
-					fputc('\n', stderr);
-
-					fputs("\tA..B =", stderr);
-					time_print(after, stderr);
-					fputs(" .. ", stderr);
-					time_print(before, stderr);
-					fputc('\n', stderr);
-				}
+		if (after != 0 && before != 0) {
+			if (!loose) {
+				/* reduce results to just "surrounded". */
+				if (first_vs_after >= 0 &&
+				    last_vs_before <= 0)
+					why = "F..L within A..B";
 			} else {
-				if (debug > 1)
-					fprintf(stderr, "skipped.\n");
-				goto next;
+				/* reduce results to just things that either:
+				 * ...(start within), ...or (end within),
+				 * ...or (start before and end after).
+				 */
+				if (first_vs_after >= 0 &&
+				    first_vs_before <= 0)
+					why = "F within A..B";
+				if (last_vs_after >= 0 && last_vs_before <= 0)
+					why = "L within A..B";
+				if (first_vs_after <= 0 && last_vs_before >= 0)
+					why = "F..L contains A..B";
 			}
+		} else if (after != 0) {
+			if (!loose) {
+				/* tuple must begin after this mark. */
+				if (first_vs_after >= 0)
+					why = "F after A";
+			} else {
+				/* tuple must end after this mark. */
+				if (last_vs_after >= 0)
+					why = "L after A";
+			}
+		} else if (before != 0) {
+			if (!loose) {
+				/* tuple must end before this mark. */
+				if (last_vs_before <= 0)
+					why = "L before B";
+			} else {
+				/* tuple must begin before this mark. */
+				if (first_vs_before <= 0)
+					why = "F before B";
+			}
+		} else {
+			why = "unfiltered";
+		}
+
+		if (why != NULL) {
+			if (debug > 1)
+				fprintf(stderr, "selected! %s\n", why);
+			if (debug > 2) {
+				fputs("\tF..L =", stderr);
+				time_print(first, stderr);
+				fputs(" .. ", stderr);
+				time_print(last, stderr);
+				fputc('\n', stderr);
+				fputs("\tA..B =", stderr);
+				time_print(after, stderr);
+				fputs(" .. ", stderr);
+				time_print(before, stderr);
+				fputc('\n', stderr);
+			}
+		} else {
+			if (debug > 1)
+				fprintf(stderr, "skipped.\n");
+			goto next;
 		}
 
 		if (sorted != no_sort) {
