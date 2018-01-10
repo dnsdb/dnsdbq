@@ -275,7 +275,10 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'J':
-			json_fd = open(optarg, O_RDONLY);
+			if (strcmp(optarg, "-") == 0)
+				json_fd = STDIN_FILENO;
+			else
+				json_fd = open(optarg, O_RDONLY);
 			if (json_fd < 0) {
 				perror(optarg);
 				my_exit(1, NULL);
@@ -311,6 +314,8 @@ main(int argc, char *argv[]) {
 	}
 	argc -= optind;
 	argv += optind;
+	if (argc != 0)
+		usage("there are no non-option arguments to this program");
 	if (name != NULL)
 		escape(&name);
 	if (type != NULL)
