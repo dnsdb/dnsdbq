@@ -8,6 +8,9 @@
 /* gettimeofday() does not appear on linux without this. */
 #define _BSD_SOURCE
 
+/* modern glibc will complain about the above if it doesn't see this. */
+#define _DEFAULT_SOURCE
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
