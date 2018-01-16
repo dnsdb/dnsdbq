@@ -126,7 +126,7 @@ static reader_t readers = NULL;
 static time_t after = 0;
 static time_t before = 0;
 static int limit = 0;
-static int loose = 0;
+static int complete = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static struct timezone here;
@@ -305,8 +305,8 @@ main(int argc, char *argv[]) {
 		case 'S':
 			sorted = reverse_sort;
 			break;
-		case 'L':
-			loose++;
+		case 'c':
+			complete++;
 			break;
 		case 'h':
 			usage(NULL);
@@ -356,9 +356,10 @@ main(int argc, char *argv[]) {
 				"-A -B requires after <= before\n");
 			my_exit(1, NULL);
 		}
-		if (loose && sorted == no_sort) {
+		if (sorted == no_sort && !complete) {
 			fprintf(stderr,
-				"-A -B -L requires -s or -S for dedup\n");
+				"-A -B requires -s or -S for dedup"
+				"or -c for completeness.\n");
 			my_exit(1, NULL);
 		}
 	}
@@ -509,7 +510,7 @@ static __attribute__((noreturn)) void usage(const char *error) {
 	if (error != NULL)
 		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
-"usage: %s [-vdjsShL] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
+"usage: %s [-vdjsShc] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
 "\t[-l LIMIT] [-A after] [-B before] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
@@ -531,7 +532,7 @@ static __attribute__((noreturn)) void usage(const char *error) {
 "use -j as a synonym for -p json.\n"
 "use -s to sort in ascending order, or -S for descending order.\n"
 "use -h to reliably display this helpful text.\n"
-"use -L to get loose (inclusive/overlapping) time matching for -A and -B\n",
+"use -c to get complete (vs. partial) time matching for -A and -B\n",
 		program_name);
 	my_exit(1, NULL);
 }
@@ -677,7 +678,7 @@ dnsdb_query(const char *command) {
 	 * the 4-tuple is: first_after, first_before, last_after, last_before
 	 */
 	if (after != 0 && before != 0) {
-		if (!loose) {
+		if (complete) {
 			/* each db tuple must be enveloped by time fence. */
 			launch(command, after, 0, 0, before);
 		} else {
@@ -692,7 +693,7 @@ dnsdb_query(const char *command) {
 			 */
 		}
 	} else if (after != 0) {
-		if (!loose) {
+		if (complete) {
 			/* each db tuple must begin after the fence-start. */
 			launch(command, after, 0, 0, 0);
 		} else {
@@ -700,7 +701,7 @@ dnsdb_query(const char *command) {
 			launch(command, 0, 0, after, 0);
 		}
 	} else if (before != 0) {
-		if (!loose) {
+		if (complete) {
 			/* each db tuple must end before the fence-end. */
 			launch(command, 0, 0, 0, before);
 		} else {
@@ -1041,12 +1042,12 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 		why = NULL;
 
-		/* time fencing can in some cases (-A + -B + -L) require
+		/* time fencing can in some cases (-A & -B w/o -c) require
 		 * asking the server for more than we really want, and so
-		 * we have to winnow it down upon receipt. see also -J.
+		 * we have to winnow it down upon receipt. (see also -J.)
 		 */
 		if (after != 0 && before != 0) {
-			if (!loose) {
+			if (complete) {
 				/* reduce results to just "surrounded". */
 				if (first_vs_after >= 0 &&
 				    last_vs_before <= 0)
@@ -1065,7 +1066,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					why = "F..L contains A..B";
 			}
 		} else if (after != 0) {
-			if (!loose) {
+			if (complete) {
 				/* tuple must begin after this mark. */
 				if (first_vs_after >= 0)
 					why = "F after A";
@@ -1075,7 +1076,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					why = "L after A";
 			}
 		} else if (before != 0) {
-			if (!loose) {
+			if (complete) {
 				/* tuple must end before this mark. */
 				if (last_vs_before <= 0)
 					why = "L before B";

@@ -19,7 +19,7 @@
 .Nm dnsdb_query
 .Nd DNSDB query tool
 .Sh SYNOPSIS
-.Op Fl dfhjvsShL
+.Op Fl dfhjvsShc
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -182,10 +182,10 @@ display help text.
 sort output in date-time order.
 .It Fl S
 sort output in reverse date-time order.
-.It Fl L
-when -A and -B are used together, select all overlapping database tuples,
-rather than only totally enveloped database tuples; if -A or -B is used
-alone, select on partial period overlap, rather than full period overlap.
+.It Fl c
+by default, -A and -B (separately or together) will select partial
+overlaps of database tuples and time search criteria. To match only
+complete overlaps, add the -c ("completeness") command line option.
 .El
 .Sh EXAMPLES
 
