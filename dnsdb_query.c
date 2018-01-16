@@ -150,7 +150,7 @@ main(int argc, char *argv[]) {
 		program_name++;
 
 	json_fd = -1;
-	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:k:J:vdjfsShL"))
+	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:k:J:vdjfsShc"))
 	       != -1)
 	{
 		switch (ch) {
