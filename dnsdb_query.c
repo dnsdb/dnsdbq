@@ -358,9 +358,9 @@ main(int argc, char *argv[]) {
 		}
 		if (sorted == no_sort && !complete) {
 			fprintf(stderr,
-				"-A -B requires -s or -S for dedup"
-				"or -c for completeness.\n");
-			my_exit(1, NULL);
+				"-A and -B w/o -c requires sorting for dedup, "
+				"so turning on -S here.\n");
+			sorted = reverse_sort;
 		}
 	}
 
