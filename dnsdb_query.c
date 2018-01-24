@@ -17,6 +17,7 @@
 
 #include <assert.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -116,9 +117,9 @@ static const char *program_name = NULL;
 static char *api_key = NULL;
 static char *key_header = NULL;
 static char *dnsdb_server = NULL;
-static int batch = 0;
-static int dry_run = 0;
-static int debug = 0;
+static bool batch = false;
+static bool complete = false;
+static int debuglev = 0;
 static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_dns;
@@ -126,7 +127,6 @@ static reader_t readers = NULL;
 static time_t after = 0;
 static time_t before = 0;
 static int limit = 0;
-static int complete = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static struct timezone here;
@@ -150,7 +150,7 @@ main(int argc, char *argv[]) {
 		program_name++;
 
 	json_fd = -1;
-	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:k:J:vdjfsShc"))
+	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:k:J:djfsShc"))
 	       != -1)
 	{
 		switch (ch) {
@@ -287,17 +287,14 @@ main(int argc, char *argv[]) {
 				my_exit(1, NULL);
 			}
 			break;
-		case 'v':
-			dry_run++;
-			break;
 		case 'd':
-			debug++;
+			debuglev++;
 			break;
 		case 'j':
 			pres = present_json;
 			break;
 		case 'f':
-			batch++;
+			batch = true;
 			break;
 		case 's':
 			sorted = normal_sort;
@@ -306,7 +303,7 @@ main(int argc, char *argv[]) {
 			sorted = reverse_sort;
 			break;
 		case 'c':
-			complete++;
+			complete = true;
 			break;
 		case 'h':
 			usage(NULL);
@@ -327,7 +324,7 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (length != NULL)
 		escape(&length);
-	if (debug > 0) {
+	if (debuglev > 0) {
 		if (name != NULL)
 			fprintf(stderr, "name = '%s'\n", name);
 		if (type != NULL)
@@ -375,7 +372,7 @@ main(int argc, char *argv[]) {
 		if (api_key != NULL)
 			free(api_key);
 		api_key = strdup(val);
-		if (debug > 0)
+		if (debuglev > 0)
 			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
 	}
 	val = getenv(env_dnsdb_server);
@@ -383,7 +380,7 @@ main(int argc, char *argv[]) {
 		if (dnsdb_server != NULL)
 			free(dnsdb_server);
 		dnsdb_server = strdup(val);
-		if (debug > 0)
+		if (debuglev > 0)
 			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
 				dnsdb_server);
 	}
@@ -393,7 +390,7 @@ main(int argc, char *argv[]) {
 	}
 	if (dnsdb_server == NULL) {
 		dnsdb_server = strdup(default_server);
-		if (debug > 0)
+		if (debuglev > 0)
 			fprintf(stderr, "conf default dnsdb_server = '%s'\n",
 				dnsdb_server);
 	}
@@ -528,7 +525,6 @@ static __attribute__((noreturn)) void usage(const char *error) {
 "for -J, input format is newline-separated JSON, as for -j output\n"
 "for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
 		"or rel. %%dw%%dd%%dh%%dm%%ds format\n"
-"use -v for a dry run, and one or more of -d for debugging output.\n"
 "use -j as a synonym for -p json.\n"
 "use -s to sort in ascending order, or -S for descending order.\n"
 "use -h to reliably display this helpful text.\n"
@@ -584,7 +580,7 @@ read_configs(void) {
 		cf = strdup(we.we_wordv[0]);
 		wordfree(&we);
 		if (access(cf, R_OK) == 0) {
-			if (debug > 0)
+			if (debuglev > 0)
 				fprintf(stderr, "conf found: '%s'\n", cf);
 			break;
 		}
@@ -608,7 +604,7 @@ read_configs(void) {
 			perror(cmd);
 			my_exit(1, cmd, NULL);
 		}
-		if (debug > 0)
+		if (debuglev > 0)
 			fprintf(stderr, "conf cmd = '%s'\n", cmd);
 		free(cmd);
 		cmd = NULL;
@@ -617,7 +613,7 @@ read_configs(void) {
 				fprintf(stderr, "%s: line too long\n", cf);
 				my_exit(1, cf, NULL);
 			}
-			if (debug > 0)
+			if (debuglev > 0)
 				fprintf(stderr, "conf line: %s", line);
 			tok = strtok(line, "\040\012");
 			if (tok != NULL && strcmp(tok, "apikey") == 0) {
@@ -667,7 +663,7 @@ dnsdb_query(const char *command) {
 	CURLMsg *msg;
 	int still;
 
-	if (debug > 0)
+	if (debuglev > 0)
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
 
 	/* start a writer, which might be format functions, or POSIX sort. */
@@ -843,7 +839,7 @@ launch(const char *command,
 		tmp = NULL;
 		sep = '&';
 	}
-	if (debug > 0)
+	if (debuglev > 0)
 		fprintf(stderr, "url [%s]\n", reader->url);
 
 	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
@@ -962,7 +958,7 @@ writer_init(void) {
 				*sap++ = strdup("-r");
 			*sap++ = NULL;
 			putenv(strdup("LC_ALL=C"));
-			if (debug > 0) {
+			if (debuglev > 0) {
 				fprintf(stderr, "\"%s\" args:", path_sort);
 				for (sap = sort_argv; *sap != NULL; sap++)
 					fprintf(stderr, " [%s]", *sap);
@@ -993,7 +989,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	size_t bytes = size * nmemb;
 	char *nl;
 
-	if (debug > 2)
+	if (debuglev > 2)
 		fprintf(stderr, "writer(%d, %d): %d\n",
 			(int)size, (int)nmemb, (int)bytes);
 
@@ -1034,7 +1030,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		first_vs_after = timecmp(first, after);
 		last_vs_before = timecmp(last, before);
 		last_vs_after = timecmp(last, after);
-		if (debug > 1) {
+		if (debuglev > 1) {
 			fprintf(stderr, "filtering-- "
 				"FvB %d FvA %d LvB %d LvA %d: ",
 				first_vs_before, first_vs_after,
@@ -1090,9 +1086,9 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 
 		if (why != NULL) {
-			if (debug > 1)
+			if (debuglev > 1)
 				fprintf(stderr, "selected! %s\n", why);
-			if (debug > 2) {
+			if (debuglev > 2) {
 				fputs("\tF..L =", stderr);
 				time_print(first, stderr);
 				fputs(" .. ", stderr);
@@ -1105,7 +1101,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				fputc('\n', stderr);
 			}
 		} else {
-			if (debug > 1)
+			if (debuglev > 1)
 				fprintf(stderr, "skipped.\n");
 			goto next;
 		}
@@ -1235,10 +1231,10 @@ present_dns(const dnsdb_tuple_t tup,
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
 {
-	int pflag, ppflag;
+	bool pflag, ppflag;
 	const char *prefix;
 
-	ppflag = 0;
+	ppflag = false;
 
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
@@ -1247,7 +1243,7 @@ present_dns(const dnsdb_tuple_t tup,
 		fputs(" .. ", outf);
 		time_print(tup->time_last, outf);
 		putc('\n', outf);
-		ppflag++;
+		ppflag = true;
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
 		fputs(";;   zone times: ", outf);
@@ -1255,23 +1251,23 @@ present_dns(const dnsdb_tuple_t tup,
 		fputs(" .. ", outf);
 		time_print(tup->zone_last, outf);
 		putc('\n', outf);
-		ppflag++;
+		ppflag = true;
 	}
 
 	/* Count and Bailiwick. */
 	prefix = ";;";
-	pflag = 0;
+	pflag = false;
 	if (tup->obj.count != NULL) {
 		fprintf(outf, "%s count: %lld", prefix, (long long)tup->count);
 		prefix = ";";
-		pflag++;
-		ppflag++;
+		pflag = true;
+		ppflag = true;
 	}
 	if (tup->obj.bailiwick != NULL) {
 		fprintf(outf, "%s bailiwick: %s", prefix, tup->bailiwick);
 		prefix = ";";
-		pflag++;
-		ppflag++;
+		pflag = true;
+		ppflag = true;
 	}
 	if (pflag)
 		putc('\n', outf);
@@ -1291,12 +1287,12 @@ present_dns(const dnsdb_tuple_t tup,
 				rdata = "[bad value]";
 			fprintf(outf, "%s  %s  %s\n",
 				tup->rrname, tup->rrtype, rdata);
-			ppflag++;
+			ppflag = true;
 		}
 	} else {
 		fprintf(outf, "%s  %s  %s\n",
 			tup->rrname, tup->rrtype, tup->rdata);
-		ppflag++;
+		ppflag = true;
 	}
 
 	/* Cleanup. */
@@ -1320,14 +1316,14 @@ present_csv(const dnsdb_tuple_t tup,
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
 {
-	static int csv_headerp = 0;
+	static bool csv_headerp = false;
 
 	if (!csv_headerp) {
 		fprintf(outf,
 			"time_first,time_last,zone_first,zone_last,"
 			"count,bailiwick,"
 			"rrname,rrtype,rdata\n");
-		csv_headerp = 1;
+		csv_headerp = true;
 	}
 
 	if (json_is_array(tup->obj.rdata)) {
@@ -1406,7 +1402,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 	json_error_t error;
 
 	memset(tup, 0, sizeof *tup);
-	if (debug > 2)
+	if (debuglev > 2)
 		fprintf(stderr, "[%d] '%-*.*s'\n",
 			(int)len, (int)len, (int)len, buf);
 	tup->obj.main = json_loadb(buf, len, 0, &error);
@@ -1416,7 +1412,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 		       error.text, error.source);
 		abort();
 	}
-	if (debug > 3) {
+	if (debuglev > 3) {
 		json_dumpf(tup->obj.main, stderr, JSON_INDENT(2));
 		fputc('\n', stderr);
 	}
@@ -1518,7 +1514,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 static void
 tuple_unmake(dnsdb_tuple_t tup) {
 	json_decref(tup->obj.main);
-	if (debug > 0)
+	if (debuglev > 0)
 		memset(tup, 0x5a, sizeof *tup);
 	else
 		memset(tup, 0, sizeof *tup);

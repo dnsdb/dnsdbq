@@ -19,7 +19,7 @@
 .Nm dnsdb_query
 .Nd DNSDB query tool
 .Sh SYNOPSIS
-.Op Fl dfhjvsShc
+.Op Fl dfhjsShc
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -174,8 +174,6 @@ is an even number of hexadecimal digits specifying a raw octet string.
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be
 used to reprocess the output from a prior invocation which used -j (-p json).
-.It Fl v
-enable "dry run" mode, often used in conjunction with -d (debug).
 .It Fl h
 display help text.
 .It Fl s
