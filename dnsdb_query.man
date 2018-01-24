@@ -275,10 +275,10 @@ configuration file which should contain the user's apikey and server URL.
 .Bl -offset indent
 .It
 .Ic APIKEY :
-contains the user's apikey (APIKEY=foo)
+contains the user's apikey (no default)
 .It
-.Ic SERVER :
-contains the URL of the DNSDB API server (SERVER=https://api.dnsdb.info)
+.Ic DNSDB_SERVER :
+contains the URL of the DNSDB API server (default is https://api.dnsdb.info)
 .El
 .El
 .Sh ENVIRONMENT VARIABLES
