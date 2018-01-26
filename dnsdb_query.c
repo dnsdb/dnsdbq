@@ -523,7 +523,7 @@ static __attribute__((noreturn)) void usage(const char *error) {
 "\trdata/ip/ADDR[/PFXLEN]\n"
 "for -f, output format will be determined by -p, using --\\n framing\n"
 "for -J, input format is newline-separated JSON, as for -j output\n"
-"for -A and -B, use abs. YYYY-DD-MM[ HH:MM:SS] "
+"for -A and -B, use abs. YYYY-MM-DD[ HH:MM:SS] "
 		"or rel. %%dw%%dd%%dh%%dm%%ds format\n"
 "use -j as a synonym for -p json.\n"
 "use -s to sort in ascending order, or -S for descending order.\n"

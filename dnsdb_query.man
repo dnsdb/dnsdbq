@@ -53,7 +53,7 @@ with DNSDB.
 Specify a "time_first_after" timestamp. Only results first seen by the Farsight
 sensor network on or after this date will be emitted. Expects timestamp to be
 of the absolute form:
-.Ic YYYY-DD-MM[ HH:MM:SS]
+.Ic YYYY-MM-DD[ HH:MM:SS]
 or the relative form:
 .Ic %dw%dd%dh%dm%ds .
 Examples are below.
@@ -62,7 +62,7 @@ Specify a "time_first_before" timestamp. Only results first seen by the
 Farsight sensor network on or before this date will be emitted. Expects
 timestamp to be of
 the absolute form:
-.Ic YYYY-DD-MM[ HH:MM:SS]
+.Ic YYYY-MM-DD[ HH:MM:SS]
 or the relative form:
 .Ic %dw%dd%dh%dm%ds .
 Examples are below.
