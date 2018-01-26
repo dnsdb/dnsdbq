@@ -353,7 +353,7 @@ main(int argc, char *argv[]) {
 				"-A -B requires after <= before\n");
 			my_exit(1, NULL);
 		}
-		if (sorted == no_sort && !complete) {
+		if (sorted == no_sort && json_fd == -1 && !complete) {
 			fprintf(stderr,
 				"-A and -B w/o -c requires sorting for dedup, "
 				"so turning on -S here.\n");
@@ -998,11 +998,9 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	reader->len += bytes;
 
 	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
-		int first_vs_before, first_vs_after,
-			last_vs_before, last_vs_after;
 		size_t pre_len, post_len;
 		struct dnsdb_tuple tup;
-		const char *msg, *why;
+		const char *msg, *whynot;
 		time_t first, last;
 
 		if (reader_error(reader))
@@ -1025,86 +1023,74 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			first = tup.zone_first;
 			last = tup.zone_last;
 		}
-
-		first_vs_before = timecmp(first, before);
-		first_vs_after = timecmp(first, after);
-		last_vs_before = timecmp(last, before);
-		last_vs_after = timecmp(last, after);
-		if (debuglev > 1) {
-			fprintf(stderr, "filtering-- "
-				"FvB %d FvA %d LvB %d LvA %d: ",
-				first_vs_before, first_vs_after,
-				last_vs_before, last_vs_after);
-		}
-		why = NULL;
+		whynot = NULL;
+		if (debuglev > 1)
+			fprintf(stderr, "filtering-- ");
 
 		/* time fencing can in some cases (-A & -B w/o -c) require
 		 * asking the server for more than we really want, and so
 		 * we have to winnow it down upon receipt. (see also -J.)
 		 */
-		if (after != 0 && before != 0) {
+		if (after != 0) {
+			int first_vs_after, last_vs_after;
+
+			first_vs_after = timecmp(first, after);
+			last_vs_after = timecmp(last, after);
+			if (debuglev > 1)
+				fprintf(stderr, "FvA %d LvA %d: ",
+					first_vs_after, last_vs_after);
+
 			if (complete) {
-				/* reduce results to just "surrounded". */
-				if (first_vs_after >= 0 &&
-				    last_vs_before <= 0)
-					why = "F..L within A..B";
+				if (first_vs_after < 0) {
+					whynot = "first is too early";
+				}
 			} else {
-				/* reduce results to just things that either:
-				 * ...(start within), ...or (end within),
-				 * ...or (start before and end after).
-				 */
-				if (first_vs_after >= 0 &&
-				    first_vs_before <= 0)
-					why = "F within A..B";
-				if (last_vs_after >= 0 && last_vs_before <= 0)
-					why = "L within A..B";
-				if (first_vs_after <= 0 && last_vs_before >= 0)
-					why = "F..L contains A..B";
+				if (last_vs_after < 0) {
+					whynot = "last is too early";
+				}
 			}
-		} else if (after != 0) {
+		}
+		if (before != 0) {
+			int first_vs_before, last_vs_before;
+
+			first_vs_before = timecmp(first, before);
+			last_vs_before = timecmp(last, before);
+			if (debuglev > 1)
+				fprintf(stderr, "FvB %d LvB %d: ",
+					first_vs_before, last_vs_before);
+
 			if (complete) {
-				/* tuple must begin after this mark. */
-				if (first_vs_after >= 0)
-					why = "F after A";
+				if (last_vs_before > 0) {
+					whynot = "last is too late";
+				}
 			} else {
-				/* tuple must end after this mark. */
-				if (last_vs_after >= 0)
-					why = "L after A";
+				if (first_vs_before > 0) {
+					whynot = "first is too late";
+				}
 			}
-		} else if (before != 0) {
-			if (complete) {
-				/* tuple must end before this mark. */
-				if (last_vs_before <= 0)
-					why = "L before B";
-			} else {
-				/* tuple must begin before this mark. */
-				if (first_vs_before <= 0)
-					why = "F before B";
-			}
-		} else {
-			why = "unfiltered";
 		}
 
-		if (why != NULL) {
+		if (whynot == NULL) {
 			if (debuglev > 1)
-				fprintf(stderr, "selected! %s\n", why);
-			if (debuglev > 2) {
-				fputs("\tF..L =", stderr);
-				time_print(first, stderr);
-				fputs(" .. ", stderr);
-				time_print(last, stderr);
-				fputc('\n', stderr);
-				fputs("\tA..B =", stderr);
-				time_print(after, stderr);
-				fputs(" .. ", stderr);
-				time_print(before, stderr);
-				fputc('\n', stderr);
-			}
+				fprintf(stderr, "selected!\n");
 		} else {
 			if (debuglev > 1)
-				fprintf(stderr, "skipped.\n");
-			goto next;
+				fprintf(stderr, "skipped (%s).\n", whynot);
 		}
+		if (debuglev > 2) {
+			fputs("\tF..L =", stderr);
+			time_print(first, stderr);
+			fputs(" .. ", stderr);
+			time_print(last, stderr);
+			fputc('\n', stderr);
+			fputs("\tA..B =", stderr);
+			time_print(after, stderr);
+			fputs(" .. ", stderr);
+			time_print(before, stderr);
+			fputc('\n', stderr);
+		}
+		if (whynot != NULL)
+			goto next;
 
 		if (sorted != no_sort) {
 			/* POSIX sort is given three integers at the
@@ -1543,6 +1529,8 @@ time_print(time_t x, FILE *outf) {
 	if (x < 0) {
 		/* should maybe be able to reverse the ns_ttl encoding? */
 		fprintf(outf, "%ld", (long)x);
+	} else if (x == 0) {
+		fputs("0", outf);
 	} else {
 		struct tm *y = gmtime(&x);
 		char z[99];
