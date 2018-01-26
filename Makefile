@@ -12,16 +12,24 @@ CWARN   +=-Werror
 
 CDEBUG = -g
 CFLAGS += $(CDEBUG) $(CWARN)
-DNSDB_QUERY_OBJ = dnsdb_query.o ns_ttl.o
 
-all: dnsdb_query
+TOOL = dnsdb_query
+TOOL_OBJ = $(TOOL).o ns_ttl.o
+
+all: $(TOOL)
+
+install: all
+	rm -f /usr/local/bin/$(TOOL)
+	cp $(TOOL) /usr/local/bin/$(TOOL)
+	rm -f /usr/local/share/man/man1/$(TOOL).1
+	cp $(TOOL).man /usr/local/share/man/man1/$(TOOL).1
 
 clean:
-	rm -f dnsdb_query
-	rm -f $(DNSDB_QUERY_OBJ)
+	rm -f $(TOOL)
+	rm -f $(TOOL_OBJ)
 
-dnsdb_query: $(DNSDB_QUERY_OBJ) Makefile
-	$(CC) -o dnsdb_query $(DNSDB_QUERY_OBJ) $(CURLLIBS) $(JANSLIBS)
+dnsdb_query: $(TOOL_OBJ) Makefile
+	$(CC) -o $(TOOL) $(TOOL_OBJ) $(CURLLIBS) $(JANSLIBS)
 
 .c.o:
 	$(CC) $(CFLAGS) $(CURLINCL) $(JANSINCL) -c $<
