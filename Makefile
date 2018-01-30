@@ -13,7 +13,7 @@ CWARN   +=-Werror
 CDEBUG = -g
 CFLAGS += $(CDEBUG) $(CWARN)
 
-TOOL = dnsdb_query
+TOOL = dnsdbq
 TOOL_OBJ = $(TOOL).o ns_ttl.o
 
 all: $(TOOL)
@@ -28,7 +28,7 @@ clean:
 	rm -f $(TOOL)
 	rm -f $(TOOL_OBJ)
 
-dnsdb_query: $(TOOL_OBJ) Makefile
+dnsdbq: $(TOOL_OBJ) Makefile
 	$(CC) -o $(TOOL) $(TOOL_OBJ) $(CURLLIBS) $(JANSLIBS)
 
 .c.o:
