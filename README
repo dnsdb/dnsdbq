@@ -38,9 +38,9 @@ DNSDB Usage:
 	make
 	setenv DNSDB_API_KEY xyz			(FreeBSD, csh)
 	DNSDB_API_KEY='xyz'; export DNSDB_API_KEY	(Linux, bash)
-	./dnsdb_query -r vix.com/ns
-	./dnsdb_query -n \*.vix.com/ns
-	./dnsdb_query -i 24.104.150.0,24
+	./dnsdbq -r vix.com/ns
+	./dnsdbq -n \*.vix.com/ns
+	./dnsdbq -i 24.104.150.0,24
 
 Not implemented:
 	long option names
@@ -53,6 +53,6 @@ Usage notes:
 	If your rrname, bailiwick or rdata contains the '/' character you
 	will need to specify -t and/or -b options on the command line, e.g.:
 	
-	./dnsdb_query -t ptr -r 1.0/1.0.168.192.in-addr.arpa
+	./dnsdbq -t ptr -r 1.0/1.0.168.192.in-addr.arpa
 	
 	Note that this is currently order-dependent (-t and -b must be first).
