@@ -20,8 +20,10 @@ all: $(TOOL)
 
 install: all
 	rm -f /usr/local/bin/$(TOOL)
+	mkdir -p /usr/local/bin
 	cp $(TOOL) /usr/local/bin/$(TOOL)
 	rm -f /usr/local/share/man/man1/$(TOOL).1
+	mkdir -p /usr/local/share/man/man1
 	cp $(TOOL).man /usr/local/share/man/man1/$(TOOL).1
 
 clean:
