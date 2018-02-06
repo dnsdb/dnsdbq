@@ -1078,12 +1078,12 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				fprintf(stderr, "skipped (%s).\n", whynot);
 		}
 		if (debuglev > 2) {
-			fputs("\tF..L =", stderr);
+			fputs("\tF..L = ", stderr);
 			time_print(first, stderr);
 			fputs(" .. ", stderr);
 			time_print(last, stderr);
 			fputc('\n', stderr);
-			fputs("\tA..B =", stderr);
+			fputs("\tA..B = ", stderr);
 			time_print(after, stderr);
 			fputs(" .. ", stderr);
 			time_print(before, stderr);
