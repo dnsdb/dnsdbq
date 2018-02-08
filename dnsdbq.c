@@ -96,17 +96,18 @@ static void launch(const char *, time_t, time_t, time_t, time_t);
 static void all_readers(void);
 static void rendezvous(reader_t);
 static void ruminate_json(int);
-static void present_json(const dnsdb_tuple_t, const char *, size_t, FILE *);
-static void present_dns(const dnsdb_tuple_t, const char *, size_t, FILE *);
-static void present_csv(const dnsdb_tuple_t, const char *, size_t, FILE *);
-static void present_csv_line(const dnsdb_tuple_t, const char *, FILE *);
-static const char *tuple_make(dnsdb_tuple_t, char *, size_t);
-static void tuple_unmake(dnsdb_tuple_t);
-static int timecmp(time_t, time_t);
 static void writer_init(void);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(void);
 static int reader_error(reader_t);
+static void present_dns(const dnsdb_tuple_t, const char *, size_t, FILE *);
+static void present_json(const dnsdb_tuple_t, const char *, size_t, FILE *);
+static void present_csv(const dnsdb_tuple_t, const char *, size_t, FILE *);
+static void present_csv_line(const dnsdb_tuple_t, const char *, FILE *);
+static const char *tuple_make(dnsdb_tuple_t, char *, size_t);
+static void tuple_unmake(dnsdb_tuple_t);
+static time_t abstime(time_t);
+static int timecmp(time_t, time_t);
 static void time_print(time_t x, FILE *);
 static int time_get(const char *src, time_t *dst);
 static void escape(char **);
@@ -120,7 +121,7 @@ static char *dnsdb_server = NULL;
 static bool batch = false;
 static bool complete = false;
 static int debuglev = 0;
-static enum { no_sort, normal_sort, reverse_sort } sorted = no_sort;
+static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_dns;
 static reader_t readers = NULL;
@@ -140,18 +141,18 @@ main(int argc, char *argv[]) {
 	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
 	const char *val;
-	int json_fd, ch;
+	int json_fd = -1;
+	int ch;
 
-	program_name = strrchr(argv[0], '/');
 	gettimeofday(&now, &here);
+	program_name = strrchr(argv[0], '/');
 	if (program_name == NULL)
 		program_name = argv[0];
 	else
 		program_name++;
 
-	json_fd = -1;
-	while ((ch = getopt(argc, argv, "A:B:r:n:i:l:p:t:b:k:J:djfsShc"))
-	       != -1)
+	while ((ch = getopt(argc, argv,
+			    "A:B:r:n:i:l:p:t:b:k:J:djfsShc")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -350,7 +351,7 @@ main(int argc, char *argv[]) {
 	if (after != 0 && before != 0) {
 		if (after > 0 && before > 0 && after > before) {
 			fprintf(stderr,
-				"-A -B requires after <= before\n");
+				"-A -B requires after <= before (for now)\n");
 			my_exit(1, NULL);
 		}
 		if (sorted == no_sort && json_fd == -1 && !complete) {
@@ -503,7 +504,10 @@ main(int argc, char *argv[]) {
 
 /* Private. */
 
-static __attribute__((noreturn)) void usage(const char *error) {
+/* usage -- display a usage error message, brief usage help text; then exit.
+ */
+static __attribute__((noreturn)) void
+usage(const char *error) {
 	if (error != NULL)
 		fprintf(stderr, "error: %s\n", error);
 	fprintf(stderr,
@@ -533,6 +537,8 @@ static __attribute__((noreturn)) void usage(const char *error) {
 	my_exit(1, NULL);
 }
 
+/* my_exit -- free() the heap objects supplied as arguments, then exit.
+ */
 static __attribute__((noreturn)) void
 my_exit(int code, ...) {
 	va_list ap;
@@ -567,6 +573,8 @@ my_exit(int code, ...) {
 	exit(code);
 }
 
+/* read_configs -- try to find a config file in static path, then parse it.
+ */
 static void
 read_configs(void) {
 	const char * const *conf;
@@ -635,6 +643,8 @@ read_configs(void) {
 	cf = NULL;
 }
 
+/* make_curl -- perform global initializations of libcurl.
+ */
 static void
 make_curl(void) {
 	curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -646,6 +656,8 @@ make_curl(void) {
 	}
 }
 
+/* unmake_curl -- clean up and discard libcurl's global state.
+ */
 static void
 unmake_curl(void) {
 	if (multi != NULL) {
@@ -658,6 +670,8 @@ unmake_curl(void) {
 	}
 }
 
+/* dnsdb_query -- launch one or more libcurl jobs to fulfill this DNSDB query.
+ */
 static void
 dnsdb_query(const char *command) {
 	CURLMsg *msg;
@@ -739,6 +753,8 @@ dnsdb_query(const char *command) {
 	writer_fini();
 }
 
+/* launch -- actually launch a libcurl job, given a command and time fences.
+ */
 static void
 launch(const char *command,
        time_t first_after, time_t first_before,
@@ -863,6 +879,8 @@ launch(const char *command,
 	readers = reader;
 }
 
+/* all_readers -- reap all the readers.
+ */
 static void
 all_readers(void) {
 	while (readers != NULL) {
@@ -872,6 +890,8 @@ all_readers(void) {
 	}
 }
 
+/* rendezvous -- reap one reader.
+ */
 static void
 rendezvous(reader_t reader) {
 	if (reader->easy != NULL) {
@@ -890,6 +910,8 @@ rendezvous(reader_t reader) {
 	free(reader);
 }
 
+/* ruminate_json -- process a json file from the filesys rather than the API.
+ */
 static void
 ruminate_json(int json_fd) {
 	struct reader reader;
@@ -904,6 +926,8 @@ ruminate_json(int json_fd) {
 	writer_fini();
 }
 
+/* writer_init -- instantiate a writer, which may involve forking a "sort".
+ */
 static void
 writer_init(void) {
 	memset(&writer, 0, sizeof writer);
@@ -936,10 +960,8 @@ writer_init(void) {
 				perror("dup2");
 				_exit(1);
 			}
-			close(p1[0]);
-			close(p1[1]);
-			close(p2[0]);
-			close(p2[1]);
+			close(p1[0]); close(p1[1]);
+			close(p2[0]); close(p2[1]);
 			sap = sort_argv;
 			*sap++ = strdup("sort");
 			for (n = 0; n < nkeys; n++) {
@@ -979,9 +1001,7 @@ writer_init(void) {
 	}
 }
 
-/* this is the libcurl callback, which is not line-oriented, so we have to
- * do our own parsing here to pull newline-delimited-json out of the stream
- * and process it one object at a time.
+/* writer_func -- process a block of json text, from filesys or API socket.
  */
 static size_t
 writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
@@ -1120,6 +1140,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	return (bytes);
 }
 
+/* writer_fini -- stop a writer's readers, and perhaps execute a "sort".
+ */
 static void
 writer_fini(void) {
 	reader_t reader;
@@ -1199,6 +1221,8 @@ writer_fini(void) {
 	memset(&writer, 0, sizeof writer);
 }
 
+/* reader_error -- if the response body isn't a json blob, print as error.
+ */
 static int
 reader_error(reader_t reader) {
 	if (reader->buf[0] != '\0' && reader->buf[0] != '{') {
@@ -1211,6 +1235,8 @@ reader_error(reader_t reader) {
 	return (0);
 }
 
+/* present_dns -- render one dnsdb tuple in "dig" style ascii text.
+ */
 static void
 present_dns(const dnsdb_tuple_t tup,
 	    const char *jsonbuf __attribute__ ((unused)),
@@ -1286,6 +1312,8 @@ present_dns(const dnsdb_tuple_t tup,
 		putc('\n', outf);
 }
 
+/* present_json -- render one DNSDB tuple as newline-separated JSON.
+ */
 static void
 present_json(const dnsdb_tuple_t tup __attribute__ ((unused)),
 	     const char *jsonbuf,
@@ -1296,6 +1324,8 @@ present_json(const dnsdb_tuple_t tup __attribute__ ((unused)),
 	putc('\n', outf);
 }
 
+/* present_csv -- render one DNSDB tuple as comma-separated values (CSV).
+ */
 static void
 present_csv(const dnsdb_tuple_t tup,
 	    const char *jsonbuf __attribute__ ((unused)),
@@ -1331,6 +1361,8 @@ present_csv(const dnsdb_tuple_t tup,
 	}
 }
 
+/* present_csv_line -- display a CSV for one rdatum out of an rrset.
+ */
 static void
 present_csv_line(const dnsdb_tuple_t tup,
 		 const char *rdata,
@@ -1382,6 +1414,8 @@ present_csv_line(const dnsdb_tuple_t tup,
 	putc('\n', outf);
 }
 
+/* tuple_make -- create one DNSDB tuple object out of a JSON object.
+ */
 static const char *
 tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 	const char *msg = NULL;
@@ -1497,6 +1531,8 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 	return (msg);
 }
 
+/* tuple_unmake -- deallocate the heap storage associated with one tuple.
+ */
 static void
 tuple_unmake(dnsdb_tuple_t tup) {
 	json_decref(tup->obj.main);
@@ -1506,6 +1542,8 @@ tuple_unmake(dnsdb_tuple_t tup) {
 		memset(tup, 0, sizeof *tup);
 }
 
+/* abstime -- make a relative timestamp absolute.
+ */
 static time_t
 abstime(time_t t) {
 	if (t < 0)
@@ -1513,6 +1551,8 @@ abstime(time_t t) {
 	return (t);
 }
 
+/* timecmp -- compare two absolute timestamps, give -1, 0, or 1.
+ */
 static int
 timecmp(time_t a, time_t b) {
 	time_t abs_a = abstime(a), abs_b = abstime(b);
@@ -1524,10 +1564,12 @@ timecmp(time_t a, time_t b) {
 	return (0);
 }
 
+/* time_print -- format one (possibly relative) timestamp.
+ */
 static void
 time_print(time_t x, FILE *outf) {
 	if (x < 0) {
-		/* should maybe be able to reverse the ns_ttl encoding? */
+		/* XXX should be able to reverse the ns_ttl encoding? */
 		fprintf(outf, "%ld", (long)x);
 	} else if (x == 0) {
 		fputs("0", outf);
@@ -1540,6 +1582,8 @@ time_print(time_t x, FILE *outf) {
 	}
 }
 
+/* time_get -- parse and return one (possibly relative) timestamp.
+ */
 static int
 time_get(const char *src, time_t *dst) {
 	struct tm tt;
@@ -1565,6 +1609,8 @@ time_get(const char *src, time_t *dst) {
 	return (0);
 }
 
+/* escape -- HTML-encode a string, in place.
+ */
 static void
 escape(char **src) {
 	char *escaped;
