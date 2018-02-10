@@ -115,6 +115,7 @@ static writer_t writer_init(u_long, u_long);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(writer_t);
 static int reader_error(reader_t);
+static void io_engine(int);
 static void present_dns(const dnsdb_tuple_t, const char *, size_t, FILE *);
 static void present_json(const dnsdb_tuple_t, const char *, size_t, FILE *);
 static void present_csv(const dnsdb_tuple_t, const char *, size_t, FILE *);
@@ -723,8 +724,6 @@ unmake_curl(void) {
 static void
 dnsdb_query(const char *command, u_long after, u_long before) {
 	writer_t writer;
-	CURLMsg *msg;
-	int still;
 
 	if (debuglev > 0)
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
@@ -732,32 +731,12 @@ dnsdb_query(const char *command, u_long after, u_long before) {
 	/* start a writer, which might be format functions, or POSIX sort. */
 	writer = writer_init(after, before);
 
-	/* start one or more readers on that writer. */
+	/* start a small finite number of readers on that writer. */
 	query_launcher(command, writer, after, before);
 	
-	/* let libcurl run until there are no jobs remaining. */
-	while (curl_multi_perform(multi, &still) == CURLM_OK && still > 0) {
-		curl_multi_wait(multi, NULL, 0, 0, NULL);
-	}
-	/* pull out all the response codes, die suddenly on any failure.. */
-	while ((msg = curl_multi_info_read(multi, &still)) != NULL) {
-		long rcode;
-		char *url;
+	/* run all jobs to completion. */
+	io_engine(0);
 
-		if (msg->msg != CURLMSG_DONE)
-			continue;
-		curl_easy_getinfo(msg->easy_handle,
-				  CURLINFO_RESPONSE_CODE, &rcode);
-		if (rcode != 200) {
-			curl_easy_getinfo(msg->easy_handle,
-					  CURLINFO_EFFECTIVE_URL, &url);
-			fprintf(stderr, "libcurl: %ld (%s)\n", rcode, url);
-			if (rcode == 404)
-				fprintf(stderr, "please note: 404 usually "
-					"just means that no records matched "
-					"the search\n");
-		}
-	}
 	/* stop the writer, which might involve reading POSIX sort's output. */
 	writer_fini(writer);
 	writer = NULL;
@@ -1322,7 +1301,43 @@ writer_fini(writer_t writer) {
 	free(writer);
 }
 
+/* io_engine -- let libcurl run until there are few enough outstanding jobs.
+ */
+static void
+io_engine(int jobs) {
+	CURLMsg *msg;
+	int still;
+
+	/* let libcurl run while there are too many jobs remaining. */
+	still = 0;
+	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs)
+		curl_multi_wait(multi, NULL, 0, 0, NULL);
+
+	/* pull out all the response codes, die suddenly on any failure.. */
+	still = 0;
+	while ((msg = curl_multi_info_read(multi, &still)) != NULL) {
+		long rcode;
+		char *url;
+
+		if (msg->msg != CURLMSG_DONE)
+			continue;
+		curl_easy_getinfo(msg->easy_handle,
+				  CURLINFO_RESPONSE_CODE, &rcode);
+		if (rcode != 200) {
+			curl_easy_getinfo(msg->easy_handle,
+					  CURLINFO_EFFECTIVE_URL, &url);
+			fprintf(stderr, "libcurl: %ld (%s)\n", rcode, url);
+			if (rcode == 404)
+				fprintf(stderr, "please note: 404 usually "
+					"just means that no records matched "
+					"the search\n");
+		}
+	}
+}
+
 /* reader_error -- if the response body isn't a json blob, print as error.
+ *
+ * design critique: this is incredibly fragile and bogus.
  */
 static int
 reader_error(reader_t reader) {
