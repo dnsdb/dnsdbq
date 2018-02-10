@@ -10,8 +10,9 @@ CWARN =-W -Wall -Wextra -Wcast-qual -Wpointer-arith -Wwrite-strings \
 # try shipping without any warnings
 CWARN   +=-Werror
 
+CGPROF =
 CDEBUG = -g
-CFLAGS += $(CDEBUG) $(CWARN)
+CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN)
 
 TOOL = dnsdbq
 TOOL_OBJ = $(TOOL).o ns_ttl.o
@@ -31,7 +32,7 @@ clean:
 	rm -f $(TOOL_OBJ)
 
 dnsdbq: $(TOOL_OBJ) Makefile
-	$(CC) -o $(TOOL) $(TOOL_OBJ) $(CURLLIBS) $(JANSLIBS)
+	$(CC) -o $(TOOL) $(CGPROF) $(TOOL_OBJ) $(CURLLIBS) $(JANSLIBS)
 
 .c.o:
 	$(CC) $(CFLAGS) $(CURLINCL) $(JANSINCL) -c $<
