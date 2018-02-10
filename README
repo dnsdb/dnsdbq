@@ -1,4 +1,8 @@
-This is a shortened version of the dnsdb query testing tool, with -A and -B.
+This is a pure C program that accesses the DNSDB API server at Farsight
+Security. An API key is required for operation. The command syntax was
+inspired by a python script called dnsdb_query, but significant departure
+has occured, largely inspired by a modern understanding of "time fencing"
+and a desire for new features such as CSV output and JSON reprocessing.
 
 Dependencies:
 	jansson
