@@ -42,7 +42,7 @@ struct dnsdb_json {
 
 struct dnsdb_tuple {
 	struct dnsdb_json  obj;
-	ulong		time_first, time_last, zone_first, zone_last;
+	u_long		time_first, time_last, zone_first, zone_last;
 	const char	*bailiwick, *rrname, *rrtype, *rdata;
 	json_int_t	count;
 };
@@ -64,8 +64,8 @@ typedef struct reader *reader_t;
 struct writer {
 	struct writer		*next;
 	struct reader		*readers;
-	ulong			after;
-	ulong			before;
+	u_long			after;
+	u_long			before;
 	FILE			*sort_stdin;
 	FILE			*sort_stdout;
 	pid_t			sort_pid;
@@ -101,17 +101,17 @@ static __attribute__((noreturn)) void my_exit(int, ...);
 static void server_setup(void);
 static void read_configs(void);
 static void read_environ(void);
-static void do_batch(FILE *, ulong, ulong);
+static void do_batch(FILE *, u_long, u_long);
 static char *restful(mode_e, const char *, const char *,
 		     const char *, const char *);
 static void make_curl(void);
 static void unmake_curl(void);
-static void dnsdb_query(const char *, ulong, ulong);
-static void query_launcher(const char *, writer_t, ulong, ulong);
-static void launch(const char *, writer_t, ulong, ulong, ulong, ulong);
+static void dnsdb_query(const char *, u_long, u_long);
+static void query_launcher(const char *, writer_t, u_long, u_long);
+static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
 static void rendezvous(reader_t);
-static void ruminate_json(int, ulong, ulong);
-static writer_t writer_init(ulong, ulong);
+static void ruminate_json(int, u_long, u_long);
+static writer_t writer_init(u_long, u_long);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(writer_t);
 static int reader_error(reader_t);
@@ -121,9 +121,9 @@ static void present_csv(const dnsdb_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const dnsdb_tuple_t, const char *, FILE *);
 static const char *tuple_make(dnsdb_tuple_t, char *, size_t);
 static void tuple_unmake(dnsdb_tuple_t);
-static int timecmp(ulong, ulong);
-static void time_print(ulong x, FILE *);
-static int time_get(const char *src, ulong *dst);
+static int timecmp(u_long, u_long);
+static void time_print(u_long x, FILE *);
+static int time_get(const char *src, u_long *dst);
 static void escape(char **);
 
 /* Private. */
@@ -151,8 +151,8 @@ int
 main(int argc, char *argv[]) {
 	mode_e mode = no_mode;
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
-	ulong after = 0;
-	ulong before = 0;
+	u_long after = 0;
+	u_long before = 0;
 	int json_fd = -1;
 	int ch;
 
@@ -615,7 +615,7 @@ read_environ() {
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
  */
 static void
-do_batch(FILE *f, ulong after, ulong before) {
+do_batch(FILE *f, u_long after, u_long before) {
 	char *command = NULL;
 	size_t n = 0;
 
@@ -721,7 +721,7 @@ unmake_curl(void) {
 /* dnsdb_query -- launch one or more libcurl jobs to fulfill this DNSDB query.
  */
 static void
-dnsdb_query(const char *command, ulong after, ulong before) {
+dnsdb_query(const char *command, u_long after, u_long before) {
 	writer_t writer;
 	CURLMsg *msg;
 	int still;
@@ -767,7 +767,7 @@ dnsdb_query(const char *command, ulong after, ulong before) {
  */
 static void
 query_launcher(const char *command, writer_t writer,
-	       ulong after, ulong before)
+	       u_long after, u_long before)
 {
 	/* figure out from time fencing which job(s) we'll be starting.
 	 *
@@ -814,8 +814,8 @@ query_launcher(const char *command, writer_t writer,
  */
 static void
 launch(const char *command, writer_t writer,
-       ulong first_after, ulong first_before,
-       ulong last_after, ulong last_before)
+       u_long first_after, u_long first_before,
+       u_long last_after, u_long last_before)
 {
 	reader_t reader;
 	CURLMcode res;
@@ -958,7 +958,7 @@ rendezvous(reader_t reader) {
 /* ruminate_json -- process a json file from the filesys rather than the API.
  */
 static void
-ruminate_json(int json_fd, ulong after, ulong before) {
+ruminate_json(int json_fd, u_long after, u_long before) {
 	reader_t reader;
 	writer_t writer;
 	char buf[65536];
@@ -984,7 +984,7 @@ ruminate_json(int json_fd, ulong after, ulong before) {
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
  */
 static writer_t
-writer_init(ulong after, ulong before) {
+writer_init(u_long after, u_long before) {
 	writer_t writer;
 
 	writer = malloc(sizeof(struct writer));
@@ -1073,7 +1073,7 @@ static size_t
 writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	reader_t reader = (reader_t) blob;
 	size_t bytes = size * nmemb;
-	ulong after, before;
+	u_long after, before;
 	char *nl;
 
 	if (debuglev > 2)
@@ -1091,7 +1091,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		size_t pre_len, post_len;
 		struct dnsdb_tuple tup;
 		const char *msg, *whynot;
-		ulong first, last;
+		u_long first, last;
 
 		if (reader_error(reader))
 			return (0);
@@ -1107,11 +1107,11 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		 * the on-the-wire times to the zone times, when possible.
 		 */
 		if (tup.time_first != 0 && tup.time_last != 0) {
-			first = (ulong)tup.time_first;
-			last = (ulong)tup.time_last;
+			first = (u_long)tup.time_first;
+			last = (u_long)tup.time_last;
 		} else {
-			first = (ulong)tup.zone_first;
-			last = (ulong)tup.zone_last;
+			first = (u_long)tup.zone_first;
+			last = (u_long)tup.zone_last;
 		}
 		whynot = NULL;
 		if (debuglev > 1)
@@ -1546,7 +1546,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 			msg = "zone_time_first must be an integer";
 			goto ouch;
 		}
-		tup->zone_first = (ulong)
+		tup->zone_first = (u_long)
 			json_integer_value(tup->obj.zone_first);
 	}
 	tup->obj.zone_last = json_object_get(tup->obj.main, "zone_time_last");
@@ -1555,7 +1555,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 			msg = "zone_time_last must be an integer";
 			goto ouch;
 		}
-		tup->zone_last = (ulong)
+		tup->zone_last = (u_long)
 			json_integer_value(tup->obj.zone_last);
 	}
 	tup->obj.time_first = json_object_get(tup->obj.main, "time_first");
@@ -1564,7 +1564,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 			msg = "time_first must be an integer";
 			goto ouch;
 		}
-		tup->time_first = (ulong)
+		tup->time_first = (u_long)
 			json_integer_value(tup->obj.time_first);
 	}
 	tup->obj.time_last = json_object_get(tup->obj.main, "time_last");
@@ -1573,7 +1573,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 			msg = "time_last must be an integer";
 			goto ouch;
 		}
-		tup->time_last = (ulong)
+		tup->time_last = (u_long)
 			json_integer_value(tup->obj.time_last);
 	}
 
@@ -1646,7 +1646,7 @@ tuple_unmake(dnsdb_tuple_t tup) {
 /* timecmp -- compare two absolute timestamps, give -1, 0, or 1.
  */
 static int
-timecmp(ulong a, ulong b) {
+timecmp(u_long a, u_long b) {
 	if (a < b)
 		return (-1);
 	if (a > b)
@@ -1657,7 +1657,7 @@ timecmp(ulong a, ulong b) {
 /* time_print -- format one (possibly relative) timestamp.
  */
 static void
-time_print(ulong x, FILE *outf) {
+time_print(u_long x, FILE *outf) {
 	if (x == 0) {
 		fputs("0", outf);
 	} else {
@@ -1673,7 +1673,7 @@ time_print(ulong x, FILE *outf) {
 /* time_get -- parse and return one (possibly relative) timestamp.
  */
 static int
-time_get(const char *src, ulong *dst) {
+time_get(const char *src, u_long *dst) {
 	struct tm tt;
 	u_long t;
 	char *ep;
@@ -1682,7 +1682,7 @@ time_get(const char *src, ulong *dst) {
 	if (((ep = strptime(src, "%F %T", &tt)) != NULL && *ep == '\0') ||
 	    ((ep = strptime(src, "%F", &tt)) != NULL && *ep == '\0'))
 	{
-		*dst = (ulong)(mktime(&tt) - here.tz_minuteswest);
+		*dst = (u_long)(mktime(&tt) - here.tz_minuteswest);
 		return (1);
 	}
 	t = strtoul(src, &ep, 10);
@@ -1691,7 +1691,7 @@ time_get(const char *src, ulong *dst) {
 		return (1);
 	}
 	if (ns_parse_ttl(src, &t) == 0) {
-		*dst = (ulong)now.tv_sec - t;
+		*dst = (u_long)now.tv_sec - t;
 		return (1);
 	}
 	return (0);
