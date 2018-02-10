@@ -42,7 +42,7 @@ struct dnsdb_json {
 
 struct dnsdb_tuple {
 	struct dnsdb_json  obj;
-	time_t		time_first, time_last, zone_first, zone_last;
+	ulong		time_first, time_last, zone_first, zone_last;
 	const char	*bailiwick, *rrname, *rrtype, *rdata;
 	json_int_t	count;
 };
@@ -64,6 +64,8 @@ typedef struct reader *reader_t;
 struct writer {
 	struct writer		*next;
 	struct reader		*readers;
+	ulong			after;
+	ulong			before;
 	FILE			*sort_stdin;
 	FILE			*sort_stdout;
 	pid_t			sort_pid;
@@ -99,16 +101,17 @@ static __attribute__((noreturn)) void my_exit(int, ...);
 static void server_setup(void);
 static void read_configs(void);
 static void read_environ(void);
-static void do_batch(FILE *);
+static void do_batch(FILE *, ulong, ulong);
 static char *restful(mode_e, const char *, const char *,
 		     const char *, const char *);
 static void make_curl(void);
 static void unmake_curl(void);
-static void dnsdb_query(const char *);
-static void launch(const char *, writer_t, time_t, time_t, time_t, time_t);
+static void dnsdb_query(const char *, ulong, ulong);
+static void query_launcher(const char *, writer_t, ulong, ulong);
+static void launch(const char *, writer_t, ulong, ulong, ulong, ulong);
 static void rendezvous(reader_t);
-static void ruminate_json(int);
-static writer_t writer_init(void);
+static void ruminate_json(int, ulong, ulong);
+static writer_t writer_init(ulong, ulong);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(writer_t);
 static int reader_error(reader_t);
@@ -118,10 +121,9 @@ static void present_csv(const dnsdb_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const dnsdb_tuple_t, const char *, FILE *);
 static const char *tuple_make(dnsdb_tuple_t, char *, size_t);
 static void tuple_unmake(dnsdb_tuple_t);
-static time_t abstime(time_t);
-static int timecmp(time_t, time_t);
-static void time_print(time_t x, FILE *);
-static int time_get(const char *src, time_t *dst);
+static int timecmp(ulong, ulong);
+static void time_print(ulong x, FILE *);
+static int time_get(const char *src, ulong *dst);
 static void escape(char **);
 
 /* Private. */
@@ -136,8 +138,6 @@ static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_dns;
-static time_t after = 0;
-static time_t before = 0;
 static int limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
@@ -151,6 +151,8 @@ int
 main(int argc, char *argv[]) {
 	mode_e mode = no_mode;
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
+	ulong after = 0;
+	ulong before = 0;
 	int json_fd = -1;
 	int ch;
 
@@ -198,11 +200,12 @@ main(int argc, char *argv[]) {
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
 					bailiwick = strdup(q + 1);
-					type = strndup(p + 1, q - p - 1);
+					type = strndup(p + 1,
+						       (size_t)(q - p - 1));
 				} else {
 					type = strdup(p + 1);
 				}
-				name = strndup(optarg, p - optarg);
+				name = strndup(optarg, (size_t)(p - optarg));
 			} else {
 				name = strdup(optarg);
 			}
@@ -220,7 +223,7 @@ main(int argc, char *argv[]) {
 			else
 				p = NULL;
 			if (p != NULL) {
-				name = strndup(optarg, p - optarg);
+				name = strndup(optarg, (size_t)(p - optarg));
 				type = strdup(p + 1);
 			} else {
 				name = strdup(optarg);
@@ -236,7 +239,7 @@ main(int argc, char *argv[]) {
 			mode = ip_mode;
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-				name = strndup(optarg, p - optarg);
+				name = strndup(optarg, (size_t)(p - optarg));
 				length = strdup(p + 1);
 			} else {
 				name = strdup(optarg);
@@ -389,7 +392,7 @@ main(int argc, char *argv[]) {
 			usage("can't mix -n, -r, or -i with -J");
 		if (batch)
 			usage("can't mix -b with -J");
-		ruminate_json(json_fd);
+		ruminate_json(json_fd, after, before);
 		close(json_fd);
 	} else if (batch) {
 		if (mode != no_mode)
@@ -400,7 +403,7 @@ main(int argc, char *argv[]) {
 			usage("can't mix -t with -f");
 		server_setup();
 		make_curl();
-		do_batch(stdin);
+		do_batch(stdin, after, before);
 		unmake_curl();
 	} else {
 		char *command;
@@ -411,7 +414,7 @@ main(int argc, char *argv[]) {
 		command = restful(mode, name, type, bailiwick, length);
 		server_setup();
 		make_curl();
-		dnsdb_query(command);
+		dnsdb_query(command, after, before);
 		DESTROY(command);
 		unmake_curl();
 	}
@@ -612,7 +615,7 @@ read_environ() {
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
  */
 static void
-do_batch(FILE *f) {
+do_batch(FILE *f, ulong after, ulong before) {
 	char *command = NULL;
 	size_t n = 0;
 
@@ -624,7 +627,7 @@ do_batch(FILE *f) {
 			continue;
 		}
 		*nl = '\0';
-		dnsdb_query(command);
+		dnsdb_query(command, after, before);
 		fprintf(stdout, "--\n");
 		fflush(stdout);
 	}
@@ -718,7 +721,7 @@ unmake_curl(void) {
 /* dnsdb_query -- launch one or more libcurl jobs to fulfill this DNSDB query.
  */
 static void
-dnsdb_query(const char *command) {
+dnsdb_query(const char *command, ulong after, ulong before) {
 	writer_t writer;
 	CURLMsg *msg;
 	int still;
@@ -727,8 +730,45 @@ dnsdb_query(const char *command) {
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
 
 	/* start a writer, which might be format functions, or POSIX sort. */
-	writer = writer_init();
+	writer = writer_init(after, before);
 
+	/* start one or more readers on that writer. */
+	query_launcher(command, writer, after, before);
+	
+	/* let libcurl run until there are no jobs remaining. */
+	while (curl_multi_perform(multi, &still) == CURLM_OK && still > 0) {
+		curl_multi_wait(multi, NULL, 0, 0, NULL);
+	}
+	/* pull out all the response codes, die suddenly on any failure.. */
+	while ((msg = curl_multi_info_read(multi, &still)) != NULL) {
+		long rcode;
+		char *url;
+
+		if (msg->msg != CURLMSG_DONE)
+			continue;
+		curl_easy_getinfo(msg->easy_handle,
+				  CURLINFO_RESPONSE_CODE, &rcode);
+		if (rcode != 200) {
+			curl_easy_getinfo(msg->easy_handle,
+					  CURLINFO_EFFECTIVE_URL, &url);
+			fprintf(stderr, "libcurl: %ld (%s)\n", rcode, url);
+			if (rcode == 404)
+				fprintf(stderr, "please note: 404 usually "
+					"just means that no records matched "
+					"the search\n");
+		}
+	}
+	/* stop the writer, which might involve reading POSIX sort's output. */
+	writer_fini(writer);
+	writer = NULL;
+}
+
+/* query_launcher -- fork off some curl jobs via launch() for this query.
+ */
+static void
+query_launcher(const char *command, writer_t writer,
+	       ulong after, ulong before)
+{
 	/* figure out from time fencing which job(s) we'll be starting.
 	 *
 	 * the 4-tuple is: first_after, first_before, last_after, last_before
@@ -768,41 +808,14 @@ dnsdb_query(const char *command) {
 		/* no time fencing. */
 		launch(command, writer, 0, 0, 0, 0);
 	}
-	
-	/* let libcurl run until there are no jobs remaining. */
-	while (curl_multi_perform(multi, &still) == CURLM_OK && still > 0) {
-		curl_multi_wait(multi, NULL, 0, 0, NULL);
-	}
-	/* pull out all the response codes, die suddenly on any failure.. */
-	while ((msg = curl_multi_info_read(multi, &still)) != NULL) {
-		long rcode;
-		char *url;
-
-		if (msg->msg != CURLMSG_DONE)
-			continue;
-		curl_easy_getinfo(msg->easy_handle,
-				  CURLINFO_RESPONSE_CODE, &rcode);
-		if (rcode != 200) {
-			curl_easy_getinfo(msg->easy_handle,
-					  CURLINFO_EFFECTIVE_URL, &url);
-			fprintf(stderr, "libcurl: %ld (%s)\n", rcode, url);
-			if (rcode == 404)
-				fprintf(stderr, "please note: 404 usually "
-					"just means that no records matched "
-					"the search\n");
-		}
-	}
-	/* stop the writer, which might involve reading POSIX sort's output. */
-	writer_fini(writer);
-	writer = NULL;
 }
 
 /* launch -- actually launch a libcurl job, given a command and time fences.
  */
 static void
 launch(const char *command, writer_t writer,
-       time_t first_after, time_t first_before,
-       time_t last_after, time_t last_before)
+       ulong first_after, ulong first_before,
+       ulong last_after, ulong last_before)
 {
 	reader_t reader;
 	CURLMcode res;
@@ -945,13 +958,13 @@ rendezvous(reader_t reader) {
 /* ruminate_json -- process a json file from the filesys rather than the API.
  */
 static void
-ruminate_json(int json_fd) {
+ruminate_json(int json_fd, ulong after, ulong before) {
 	reader_t reader;
 	writer_t writer;
 	char buf[65536];
 	ssize_t len;
 
-	writer = writer_init();
+	writer = writer_init(after, before);
 	reader = malloc(sizeof(struct reader));
 	if (reader == NULL) {
 		perror("malloc");
@@ -962,7 +975,7 @@ ruminate_json(int json_fd) {
 	writer->readers = reader;
 	reader = NULL;
 	while ((len = read(json_fd, buf, sizeof buf)) > 0) {
-		writer_func(buf, 1, len, writer->readers);
+		writer_func(buf, 1, (size_t)len, writer->readers);
 	}
 	writer_fini(writer);
 	writer = NULL;
@@ -971,7 +984,7 @@ ruminate_json(int json_fd) {
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
  */
 static writer_t
-writer_init(void) {
+writer_init(ulong after, ulong before) {
 	writer_t writer;
 
 	writer = malloc(sizeof(struct writer));
@@ -1047,6 +1060,8 @@ writer_init(void) {
 		close(p2[1]);
 	}
 
+	writer->after = after;
+	writer->before = before;
 	writer->next = writers;
 	writers = writer;
 	return (writer);
@@ -1058,6 +1073,7 @@ static size_t
 writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	reader_t reader = (reader_t) blob;
 	size_t bytes = size * nmemb;
+	ulong after, before;
 	char *nl;
 
 	if (debuglev > 2)
@@ -1068,15 +1084,18 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	memcpy(reader->buf + reader->len, ptr, bytes);
 	reader->len += bytes;
 
+	after = reader->writer->after;
+	before = reader->writer->before;
+
 	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
 		size_t pre_len, post_len;
 		struct dnsdb_tuple tup;
 		const char *msg, *whynot;
-		time_t first, last;
+		ulong first, last;
 
 		if (reader_error(reader))
 			return (0);
-		pre_len = nl - reader->buf;
+		pre_len = (size_t)(nl - reader->buf);
 
 		msg = tuple_make(&tup, reader->buf, pre_len);
 		if (msg) {
@@ -1088,11 +1107,11 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		 * the on-the-wire times to the zone times, when possible.
 		 */
 		if (tup.time_first != 0 && tup.time_last != 0) {
-			first = tup.time_first;
-			last = tup.time_last;
+			first = (ulong)tup.time_first;
+			last = (ulong)tup.time_last;
 		} else {
-			first = tup.zone_first;
-			last = tup.zone_last;
+			first = (ulong)tup.zone_first;
+			last = (ulong)tup.zone_last;
 		}
 		whynot = NULL;
 		if (debuglev > 1)
@@ -1280,12 +1299,12 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
-			msg = tuple_make(&tup, linep, nl - linep);
+			msg = tuple_make(&tup, linep, (size_t)(nl - linep));
 			if (msg != NULL) {
 				puts(msg);
 				continue;
 			}
-			(*pres)(&tup, linep, nl - linep, stdout);
+			(*pres)(&tup, linep, (size_t)(nl - linep), stdout);
 			tuple_unmake(&tup);
 			count++;
 			if (limit != 0 && count == limit)
@@ -1527,7 +1546,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 			msg = "zone_time_first must be an integer";
 			goto ouch;
 		}
-		tup->zone_first = (time_t)
+		tup->zone_first = (ulong)
 			json_integer_value(tup->obj.zone_first);
 	}
 	tup->obj.zone_last = json_object_get(tup->obj.main, "zone_time_last");
@@ -1536,7 +1555,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 			msg = "zone_time_last must be an integer";
 			goto ouch;
 		}
-		tup->zone_last = (time_t)
+		tup->zone_last = (ulong)
 			json_integer_value(tup->obj.zone_last);
 	}
 	tup->obj.time_first = json_object_get(tup->obj.main, "time_first");
@@ -1545,7 +1564,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 			msg = "time_first must be an integer";
 			goto ouch;
 		}
-		tup->time_first = (time_t)
+		tup->time_first = (ulong)
 			json_integer_value(tup->obj.time_first);
 	}
 	tup->obj.time_last = json_object_get(tup->obj.main, "time_last");
@@ -1554,7 +1573,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 			msg = "time_last must be an integer";
 			goto ouch;
 		}
-		tup->time_last = (time_t)
+		tup->time_last = (ulong)
 			json_integer_value(tup->obj.time_last);
 	}
 
@@ -1624,24 +1643,13 @@ tuple_unmake(dnsdb_tuple_t tup) {
 		memset(tup, 0, sizeof *tup);
 }
 
-/* abstime -- make a relative timestamp absolute.
- */
-static time_t
-abstime(time_t t) {
-	if (t < 0)
-		t += now.tv_sec;
-	return (t);
-}
-
 /* timecmp -- compare two absolute timestamps, give -1, 0, or 1.
  */
 static int
-timecmp(time_t a, time_t b) {
-	time_t abs_a = abstime(a), abs_b = abstime(b);
-
-	if (abs_a < abs_b)
+timecmp(ulong a, ulong b) {
+	if (a < b)
 		return (-1);
-	if (abs_a > abs_b)
+	if (a > b)
 		return (1);
 	return (0);
 }
@@ -1649,14 +1657,12 @@ timecmp(time_t a, time_t b) {
 /* time_print -- format one (possibly relative) timestamp.
  */
 static void
-time_print(time_t x, FILE *outf) {
-	if (x < 0) {
-		/* XXX should be able to reverse the ns_ttl encoding? */
-		fprintf(outf, "%ld", (long)x);
-	} else if (x == 0) {
+time_print(ulong x, FILE *outf) {
+	if (x == 0) {
 		fputs("0", outf);
 	} else {
-		struct tm *y = gmtime(&x);
+		time_t t = (time_t)x;
+		struct tm *y = gmtime(&t);
 		char z[99];
 
 		strftime(z, sizeof z, "%F %T", y);
@@ -1667,7 +1673,7 @@ time_print(time_t x, FILE *outf) {
 /* time_get -- parse and return one (possibly relative) timestamp.
  */
 static int
-time_get(const char *src, time_t *dst) {
+time_get(const char *src, ulong *dst) {
 	struct tm tt;
 	u_long t;
 	char *ep;
@@ -1676,16 +1682,16 @@ time_get(const char *src, time_t *dst) {
 	if (((ep = strptime(src, "%F %T", &tt)) != NULL && *ep == '\0') ||
 	    ((ep = strptime(src, "%F", &tt)) != NULL && *ep == '\0'))
 	{
-		*dst = (u_long) mktime(&tt) - here.tz_minuteswest;
+		*dst = (ulong)(mktime(&tt) - here.tz_minuteswest);
 		return (1);
 	}
 	t = strtoul(src, &ep, 10);
 	if (*src != '\0' && *ep == '\0') {
-		*dst = (time_t) t;
+		*dst = t;
 		return (1);
 	}
 	if (ns_parse_ttl(src, &t) == 0) {
-		*dst = (time_t) (((u_long) time(NULL)) - t);
+		*dst = (ulong)now.tv_sec - t;
 		return (1);
 	}
 	return (0);
@@ -1697,7 +1703,7 @@ static void
 escape(char **src) {
 	char *escaped;
 
-	escaped = curl_escape(*src, strlen(*src));
+	escaped = curl_escape(*src, (int)strlen(*src));
 	if (escaped == NULL) {
 		fprintf(stderr, "curl_escape(%s) failed\n", *src);
 		my_exit(1, NULL);

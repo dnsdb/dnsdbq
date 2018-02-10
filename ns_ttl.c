@@ -42,7 +42,7 @@ ns_parse_ttl(const char *src, u_long *dst) {
 			goto einval;
 		if (isdigit(ch)) {
 			tmp *= 10;
-			tmp += (ch - '0');
+			tmp += (unsigned)(ch - '0');
 			digits++;
 			continue;
 		}

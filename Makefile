@@ -6,7 +6,8 @@ JANSLIBS = -L/usr/local/lib -ljansson
 
 CWARN =-W -Wall -Wextra -Wcast-qual -Wpointer-arith -Wwrite-strings \
 	-Wmissing-prototypes  -Wbad-function-cast -Wnested-externs \
-	-Wunused -Wshadow -Wmissing-noreturn -Wswitch-enum -Wformat-nonliteral
+	-Wunused -Wshadow -Wmissing-noreturn -Wswitch-enum -Wconversion \
+	-Wformat-nonliteral
 # try shipping without any warnings
 CWARN   +=-Werror
 
