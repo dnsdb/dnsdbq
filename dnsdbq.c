@@ -52,6 +52,7 @@ typedef void (*present_t)(const dnsdb_tuple_t, const char *, size_t, FILE *);
 
 struct reader {
 	struct reader		*next;
+	struct writer		*writer;
 	CURL			*easy;
 	struct curl_slist	*hdrs;
 	char			*url;
@@ -61,10 +62,15 @@ struct reader {
 typedef struct reader *reader_t;
 
 struct writer {
+	struct writer		*next;
+	struct reader		*readers;
 	FILE			*sort_stdin;
 	FILE			*sort_stdout;
 	pid_t			sort_pid;
 };
+typedef struct writer *writer_t;
+
+typedef enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode_e;
 
 /* Constants. */
 
@@ -84,21 +90,27 @@ static const char env_dnsdb_server[] = "DNSDB_SERVER";
 
 #define	MAX_KEYS 3
 
+#define DESTROY(p) if (p != NULL) { free(p); p = NULL; } else {}
+
 /* Forward. */
 
 static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
+static void server_setup(void);
 static void read_configs(void);
+static void read_environ(void);
+static void do_batch(FILE *);
+static char *restful(mode_e, const char *, const char *,
+		     const char *, const char *);
 static void make_curl(void);
 static void unmake_curl(void);
 static void dnsdb_query(const char *);
-static void launch(const char *, time_t, time_t, time_t, time_t);
-static void all_readers(void);
+static void launch(const char *, writer_t, time_t, time_t, time_t, time_t);
 static void rendezvous(reader_t);
 static void ruminate_json(int);
-static void writer_init(void);
+static writer_t writer_init(void);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
-static void writer_fini(void);
+static void writer_fini(writer_t);
 static int reader_error(reader_t);
 static void present_dns(const dnsdb_tuple_t, const char *, size_t, FILE *);
 static void present_json(const dnsdb_tuple_t, const char *, size_t, FILE *);
@@ -124,33 +136,33 @@ static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_dns;
-static reader_t readers = NULL;
 static time_t after = 0;
 static time_t before = 0;
 static int limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static struct timezone here;
-static struct writer writer;
 static int nkeys, keys[MAX_KEYS];
+static writer_t writers = NULL;
 
 /* Public. */
 
 int
 main(int argc, char *argv[]) {
-	enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode = no_mode;
+	mode_e mode = no_mode;
 	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
-	const char *val;
 	int json_fd = -1;
 	int ch;
 
+	/* global dynamic initialization. */
 	gettimeofday(&now, &here);
 	program_name = strrchr(argv[0], '/');
-	if (program_name == NULL)
-		program_name = argv[0];
-	else
+	if (program_name != NULL)
 		program_name++;
+	else
+		program_name = argv[0];
 
+	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
 			    "A:B:r:n:i:l:p:t:b:k:J:djfsShc")) != -1)
 	{
@@ -317,6 +329,8 @@ main(int argc, char *argv[]) {
 	argv += optind;
 	if (argc != 0)
 		usage("there are no non-option arguments to this program");
+
+	/* recondition various options for HTML use. */
 	if (name != NULL)
 		escape(&name);
 	if (type != NULL)
@@ -325,6 +339,8 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (length != NULL)
 		escape(&length);
+
+	/* optionally dump program options as interpreted. */
 	if (debuglev > 0) {
 		if (name != NULL)
 			fprintf(stderr, "name = '%s'\n", name);
@@ -348,6 +364,7 @@ main(int argc, char *argv[]) {
 			fprintf(stderr, "limit = %d\n", limit);
 	}
 
+	/* validate some interrelated options. */
 	if (after != 0 && before != 0) {
 		if (after > 0 && before > 0 && after > before) {
 			fprintf(stderr,
@@ -361,45 +378,12 @@ main(int argc, char *argv[]) {
 			sorted = reverse_sort;
 		}
 	}
-
 	if (nkeys > 0 && sorted == no_sort) {
 		fprintf(stderr, "using -k without -s or -S makes no sense.\n");
 		my_exit(1, NULL);
 	}
 
-	read_configs();
-	val = getenv(env_api_key);
-	if (val != NULL) {
-		if (api_key != NULL)
-			free(api_key);
-		api_key = strdup(val);
-		if (debuglev > 0)
-			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
-	}
-	val = getenv(env_dnsdb_server);
-	if (val != NULL) {
-		if (dnsdb_server != NULL)
-			free(dnsdb_server);
-		dnsdb_server = strdup(val);
-		if (debuglev > 0)
-			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
-				dnsdb_server);
-	}
-	if (api_key == NULL) {
-		fprintf(stderr, "no API key given\n");
-		my_exit(1, NULL);
-	}
-	if (dnsdb_server == NULL) {
-		dnsdb_server = strdup(default_server);
-		if (debuglev > 0)
-			fprintf(stderr, "conf default dnsdb_server = '%s'\n",
-				dnsdb_server);
-	}
-	if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
-		perror("asprintf");
-		my_exit(1, NULL);
-	}
-
+	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -J");
@@ -408,97 +392,35 @@ main(int argc, char *argv[]) {
 		ruminate_json(json_fd);
 		close(json_fd);
 	} else if (batch) {
-		char command[1000];
-
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -f");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -f");
 		if (type != NULL)
 			usage("can't mix -t with -f");
+		server_setup();
 		make_curl();
-		while (fgets(command, sizeof command, stdin) != NULL) {
-			char *nl = strchr(command, '\n');
-
-			if (nl == NULL) {
-				fprintf(stderr, "batch line too long: %s\n",
-					command);
-				continue;
-			}
-			*nl = '\0';
-			dnsdb_query(command);
-			fprintf(stdout, "--\n");
-			fflush(stdout);
-		}
+		do_batch(stdin);
 		unmake_curl();
 	} else {
 		char *command;
 
-		switch (mode) {
-			int x;
-		case no_mode:
+		if (mode == no_mode)
 			usage("must specify -r, -n, or -i"
 			      " unless -f or -J is used");
-		case rdata_mode:
-			if (type != NULL && bailiwick != NULL)
-				x = asprintf(&command, "rrset/name/%s/%s/%s",
-					     name, type, bailiwick);
-			else if (type != NULL)
-				x = asprintf(&command, "rrset/name/%s/%s",
-					     name, type);
-			else
-				x = asprintf(&command, "rrset/name/%s",
-					     name);
-			if (x < 0) {
-				perror("asprintf");
-				my_exit(1, NULL);
-			}
-			break;
-		case name_mode:
-			if (type != NULL)
-				x = asprintf(&command, "rdata/name/%s/%s",
-					     name, type);
-			else
-				x = asprintf(&command, "rdata/name/%s",
-					     name);
-			if (x < 0) {
-				perror("asprintf");
-				my_exit(1, NULL);
-			}
-			break;
-		case ip_mode:
-			if (length != NULL)
-				x = asprintf(&command, "rdata/ip/%s,%s",
-					     name, length);
-			else
-				x = asprintf(&command, "rdata/ip/%s",
-					     name);
-			if (x < 0) {
-				perror("asprintf");
-				my_exit(1, NULL);
-			}
-			break;
-		default:
-			abort();
-		}
-		if (name != NULL) {
-			free(name);
-			name = NULL;
-		}
-		if (type != NULL) {
-			free(type);
-			type = NULL;
-		}
-		if (bailiwick != NULL) {
-			free(bailiwick);
-			bailiwick = NULL;
-		}
+		command = restful(mode, name, type, bailiwick, length);
+		server_setup();
 		make_curl();
 		dnsdb_query(command);
-		free(command);
-		command = NULL;
+		DESTROY(command);
 		unmake_curl();
 	}
+
+	/* clean up and go. */
+	DESTROY(name);
+	DESTROY(type);
+	DESTROY(bailiwick);
+	DESTROY(length);
 	my_exit(0, NULL);
 }
 
@@ -551,26 +473,33 @@ my_exit(int code, ...) {
 	va_end(ap);
 
 	/* globals which may have been initialized, are to be free()'d. */
-	if (key_header != NULL) {
-		free(key_header);
-		key_header = NULL;
-	}
-	if (api_key != NULL) {
-		free(api_key);
-		api_key = NULL;
-	}
-	if (dnsdb_server != NULL) {
-		free(dnsdb_server);
-		dnsdb_server = NULL;
-	}
+	DESTROY(key_header);
+	DESTROY(api_key);
+	DESTROY(dnsdb_server);
 
-	/* readers which are still known, must be free()'d. */
-	all_readers();
+	/* writers and readers which are still known, must be free()'d. */
+	while (writers != NULL)
+		writer_fini(writers);
 
 	/* if curl is operating, it must be shut down. */
 	unmake_curl();
 
+	/* terminate process. */
+	if (debuglev > 0)
+		fprintf(stderr, "about to call exit(%d)\n", code);
 	exit(code);
+}
+
+/* server_setup -- learn the server name and API key by various means.
+ */
+static void
+server_setup(void) {
+	read_configs();
+	read_environ();
+	if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
+		perror("asprintf");
+		my_exit(1, NULL);
+	}
 }
 
 /* read_configs -- try to find a config file in static path, then parse it.
@@ -594,7 +523,8 @@ read_configs(void) {
 		}
 	}
 	if (*conf != NULL) {
-		char *cmd, *tok, line[1000];
+		char *cmd, *tok, *line;
+		size_t n;
 		FILE *f;
 		int x;
 
@@ -614,9 +544,10 @@ read_configs(void) {
 		}
 		if (debuglev > 0)
 			fprintf(stderr, "conf cmd = '%s'\n", cmd);
-		free(cmd);
-		cmd = NULL;
-		while (fgets(line, sizeof line, f) != NULL) {
+		DESTROY(cmd);
+		line = NULL;
+		n = 0;
+		while (getline(&line, &n, f) > 0) {
 			if (strchr(line, '\n') == NULL) {
 				fprintf(stderr, "%s: line too long\n", cf);
 				my_exit(1, cf, NULL);
@@ -637,10 +568,124 @@ read_configs(void) {
 				my_exit(1, cf, NULL);
 			}
 		}
+		DESTROY(line);
 		pclose(f);
 	}
-	free(cf);
-	cf = NULL;
+	DESTROY(cf);
+}
+
+/* read_environ -- override the config file from environment variables?
+ */
+static void
+read_environ() {
+	const char *val;
+
+	val = getenv(env_api_key);
+	if (val != NULL) {
+		if (api_key != NULL)
+			free(api_key);
+		api_key = strdup(val);
+		if (debuglev > 0)
+			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
+	}
+	val = getenv(env_dnsdb_server);
+	if (val != NULL) {
+		if (dnsdb_server != NULL)
+			free(dnsdb_server);
+		dnsdb_server = strdup(val);
+		if (debuglev > 0)
+			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
+				dnsdb_server);
+	}
+	if (api_key == NULL) {
+		fprintf(stderr, "no API key given\n");
+		my_exit(1, NULL);
+	}
+	if (dnsdb_server == NULL) {
+		dnsdb_server = strdup(default_server);
+		if (debuglev > 0)
+			fprintf(stderr, "conf default dnsdb_server = '%s'\n",
+				dnsdb_server);
+	}
+}
+
+/* do_batch -- implement "filter" mode, reading commands from a batch file.
+ */
+static void
+do_batch(FILE *f) {
+	char *command = NULL;
+	size_t n = 0;
+
+	while (getline(&command, &n, f) > 0) {
+		char *nl = strchr(command, '\n');
+
+		if (nl == NULL) {
+			fprintf(stderr, "batch line too long: %s\n", command);
+			continue;
+		}
+		*nl = '\0';
+		dnsdb_query(command);
+		fprintf(stdout, "--\n");
+		fflush(stdout);
+	}
+	DESTROY(command);
+}
+
+/* restful -- make a RESTful URI that describes these search parameters
+ */
+static char *
+restful(mode_e mode, const char *name, const char *type,
+	const char *bailiwick, const char *length)
+{
+	char *command;
+	int x;
+
+	switch (mode) {
+	case rdata_mode:
+		if (type != NULL && bailiwick != NULL)
+			x = asprintf(&command, "rrset/name/%s/%s/%s",
+				     name, type, bailiwick);
+		else if (type != NULL)
+			x = asprintf(&command, "rrset/name/%s/%s",
+				     name, type);
+		else
+			x = asprintf(&command, "rrset/name/%s",
+				     name);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, NULL);
+		}
+		break;
+	case name_mode:
+		if (type != NULL)
+			x = asprintf(&command, "rdata/name/%s/%s",
+				     name, type);
+		else
+			x = asprintf(&command, "rdata/name/%s",
+				     name);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, NULL);
+		}
+		break;
+	case ip_mode:
+		if (length != NULL)
+			x = asprintf(&command, "rdata/ip/%s,%s",
+				     name, length);
+		else
+			x = asprintf(&command, "rdata/ip/%s",
+				     name);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, NULL);
+		}
+		break;
+	case no_mode:
+		/*FALLTHROUGH*/
+	default:
+		abort();
+	}
+	return (command);
 }
 
 /* make_curl -- perform global initializations of libcurl.
@@ -674,6 +719,7 @@ unmake_curl(void) {
  */
 static void
 dnsdb_query(const char *command) {
+	writer_t writer;
 	CURLMsg *msg;
 	int still;
 
@@ -681,7 +727,7 @@ dnsdb_query(const char *command) {
 		fprintf(stderr, "dnsdb_query(%s)\n", command);
 
 	/* start a writer, which might be format functions, or POSIX sort. */
-	writer_init();
+	writer = writer_init();
 
 	/* figure out from time fencing which job(s) we'll be starting.
 	 *
@@ -690,12 +736,12 @@ dnsdb_query(const char *command) {
 	if (after != 0 && before != 0) {
 		if (complete) {
 			/* each db tuple must be enveloped by time fence. */
-			launch(command, after, 0, 0, before);
+			launch(command, writer, after, 0, 0, before);
 		} else {
 			/* we need tuples that end after fence start... */
-			launch(command, 0, 0, after, 0);
+			launch(command, writer, 0, 0, after, 0);
 			/* ...and that begin before the time fence end. */
-			launch(command, 0, before, 0, 0);
+			launch(command, writer, 0, before, 0, 0);
 			/* and we will filter in reader_func() to
 			 * select only those tuples which either:
 			 * ...(start within), or (end within), or
@@ -705,22 +751,22 @@ dnsdb_query(const char *command) {
 	} else if (after != 0) {
 		if (complete) {
 			/* each db tuple must begin after the fence-start. */
-			launch(command, after, 0, 0, 0);
+			launch(command, writer, after, 0, 0, 0);
 		} else {
 			/* each db tuple must end after the fence-start. */
-			launch(command, 0, 0, after, 0);
+			launch(command, writer, 0, 0, after, 0);
 		}
 	} else if (before != 0) {
 		if (complete) {
 			/* each db tuple must end before the fence-end. */
-			launch(command, 0, 0, 0, before);
+			launch(command, writer, 0, 0, 0, before);
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			launch(command, 0, before, 0, 0);
+			launch(command, writer, 0, before, 0, 0);
 		}
 	} else {
 		/* no time fencing. */
-		launch(command, 0, 0, 0, 0);
+		launch(command, writer, 0, 0, 0, 0);
 	}
 	
 	/* let libcurl run until there are no jobs remaining. */
@@ -746,17 +792,15 @@ dnsdb_query(const char *command) {
 					"the search\n");
 		}
 	}
-	/* shut down and reclaim all the curl jobs. */
-	all_readers();
-
 	/* stop the writer, which might involve reading POSIX sort's output. */
-	writer_fini();
+	writer_fini(writer);
+	writer = NULL;
 }
 
 /* launch -- actually launch a libcurl job, given a command and time fences.
  */
 static void
-launch(const char *command,
+launch(const char *command, writer_t writer,
        time_t first_after, time_t first_before,
        time_t last_after, time_t last_before)
 {
@@ -771,6 +815,7 @@ launch(const char *command,
 		my_exit(1, NULL);
 	}
 	memset(reader, 0, sizeof *reader);
+	reader->writer = writer;
 	reader->easy = curl_easy_init();
 	if (reader->easy == NULL) {
 		/* an error will have been output by libcurl in this case. */
@@ -866,27 +911,17 @@ launch(const char *command,
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
+	reader->next = writer->readers;
+	writer->readers = reader;
+	reader = NULL;
 
-	res = curl_multi_add_handle(multi, reader->easy);
+	res = curl_multi_add_handle(multi, writer->readers->easy);
 	if (res != CURLM_OK) {
 		fprintf(stderr, "curl_multi_add_handle() failed: %s\n",
 			curl_multi_strerror(res));
-		writer_fini();
-		rendezvous(reader);
+		writer_fini(writer);
+		writer = NULL;
 		my_exit(1, NULL);
-	}
-	reader->next = readers;
-	readers = reader;
-}
-
-/* all_readers -- reap all the readers.
- */
-static void
-all_readers(void) {
-	while (readers != NULL) {
-		reader_t next = readers->next;
-		rendezvous(readers);
-		readers = next;
 	}
 }
 
@@ -903,10 +938,7 @@ rendezvous(reader_t reader) {
 		curl_slist_free_all(reader->hdrs);
 		reader->hdrs = NULL;
 	}
-	if (reader->url != NULL) {
-		free(reader->url);
-		reader->url = NULL;
-	}
+	DESTROY(reader->url);
 	free(reader);
 }
 
@@ -914,23 +946,40 @@ rendezvous(reader_t reader) {
  */
 static void
 ruminate_json(int json_fd) {
-	struct reader reader;
+	reader_t reader;
+	writer_t writer;
 	char buf[65536];
 	ssize_t len;
 
-	writer_init();
-	memset(&reader, 0, sizeof reader);
-	while ((len = read(json_fd, buf, sizeof buf)) > 0) {
-		writer_func(buf, 1, len, &reader);
+	writer = writer_init();
+	reader = malloc(sizeof(struct reader));
+	if (reader == NULL) {
+		perror("malloc");
+		my_exit(1, NULL);
 	}
-	writer_fini();
+	memset(reader, 0, sizeof(struct reader));
+	reader->writer = writer;
+	writer->readers = reader;
+	reader = NULL;
+	while ((len = read(json_fd, buf, sizeof buf)) > 0) {
+		writer_func(buf, 1, len, writer->readers);
+	}
+	writer_fini(writer);
+	writer = NULL;
 }
 
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
  */
-static void
+static writer_t
 writer_init(void) {
-	memset(&writer, 0, sizeof writer);
+	writer_t writer;
+
+	writer = malloc(sizeof(struct writer));
+	if (writer == NULL) {
+		perror("malloc");
+		my_exit(1, NULL);
+	}
+	memset(writer, 0, sizeof(struct writer));
 
 	if (sorted != no_sort) {
 		/* sorting involves a subprocess (POSIX sort(1) command),
@@ -947,11 +996,11 @@ writer_init(void) {
 			perror("pipe");
 			my_exit(1, NULL);
 		}
-		if ((writer.sort_pid = fork()) < 0) {
+		if ((writer->sort_pid = fork()) < 0) {
 			perror("fork");
 			my_exit(1, NULL);
 		}
-		if (writer.sort_pid == 0) {
+		if (writer->sort_pid == 0) {
 			char *sort_argv[5+MAX_KEYS], **sap;
 			int n;
 
@@ -988,17 +1037,19 @@ writer_init(void) {
 			}
 			execve(path_sort, sort_argv, environ);
 			perror("execve");
-			for (sap = sort_argv; *sap != NULL; sap++) {
-				free(*sap);
-				*sap = NULL;
-			}
+			for (sap = sort_argv; *sap != NULL; sap++)
+				DESTROY(*sap);
 			_exit(1);
 		}
 		close(p1[0]);
-		writer.sort_stdin = fdopen(p1[1], "w");
-		writer.sort_stdout = fdopen(p2[0], "r");
+		writer->sort_stdin = fdopen(p1[1], "w");
+		writer->sort_stdout = fdopen(p2[0], "r");
 		close(p2[1]);
 	}
+
+	writer->next = writers;
+	writers = writer;
+	return (writer);
 }
 
 /* writer_func -- process a block of json text, from filesys or API socket.
@@ -1010,7 +1061,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	char *nl;
 
 	if (debuglev > 2)
-		fprintf(stderr, "writer(%d, %d): %d\n",
+		fprintf(stderr, "writer_func(%d, %d): %d\n",
 			(int)size, (int)nmemb, (int)bytes);
 
 	reader->buf = realloc(reader->buf, reader->len + bytes);
@@ -1121,7 +1172,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			 * for all this old-school code is to avoid
 			 * having to store the full result in memory.
 			 */
-			fprintf(writer.sort_stdin, "%lu %lu %lu %*.*s\n",
+			fprintf(reader->writer->sort_stdin,
+				"%lu %lu %lu %*.*s\n",
 				(unsigned long)first,
 				(unsigned long)last,
 				(unsigned long)tup.count,
@@ -1143,22 +1195,52 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 /* writer_fini -- stop a writer's readers, and perhaps execute a "sort".
  */
 static void
-writer_fini(void) {
-	reader_t reader;
+writer_fini(writer_t writer) {
+	/* unlink this writer from the global chain. */
+	if (writers == writer) {
+		writers = writer->next;
+	} else {
+		writer_t prev = NULL;
+		writer_t temp;
 
-	for (reader = readers; reader != NULL; reader = reader->next) {
+		for (temp = writers; temp != NULL; temp = temp->next) {
+			if (temp->next == writer) {
+				prev = temp;
+				break;
+			}
+		}
+		if (prev == NULL) {
+			fprintf(stderr, "writer_fini(): no prev found.\n");
+			abort();
+		}
+		prev->next = writer->next;
+	}
+
+	/* finish and close any readers still cooking. */
+	while (writer->readers != NULL) {
+		reader_t reader = writer->readers;
+
+		/* display any error messages still lurking in buffers. */
 		if (reader->buf != NULL) {
-			(void) reader_error(reader);
-			free(reader->buf);
-			reader->buf = NULL;
+			if (reader_error(reader))
+				reader->len = 0;
+			DESTROY(reader->buf);
 		}
 		if (reader->len != 0) {
 			fprintf(stderr, "stranding %d octets!\n",
 				(int)reader->len);
 			reader->len = 0;
 		}
+
+		/* tear down any curl infrastructure on the reader & remove. */
+		reader_t next = reader->next;
+		rendezvous(reader);
+		reader = NULL;
+		writer->readers = next;
 	}
-	if (sorted != no_sort) {
+
+	/* drain the sort if there is one. */
+	if (writer->sort_pid != 0) {
 		char line[65536];
 		int status, count;
 
@@ -1166,9 +1248,9 @@ writer_fini(void) {
 		 * intermediate representation from the POSIX sort stdout,
 		 * skip over the sort keys we added earlier, and process.
 		 */
-		fclose(writer.sort_stdin);
+		fclose(writer->sort_stdin);
 		count = 0;
-		while (fgets(line, sizeof line, writer.sort_stdout) != NULL) {
+		while (fgets(line, sizeof line, writer->sort_stdout) != NULL) {
 			char *nl, *linep;
 			const char *msg;
 			struct dnsdb_tuple tup;
@@ -1209,8 +1291,8 @@ writer_fini(void) {
 			if (limit != 0 && count == limit)
 				break;
 		}
-		fclose(writer.sort_stdout);
-		if (waitpid(writer.sort_pid, &status, 0) < 0) {
+		fclose(writer->sort_stdout);
+		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
 			if (status != 0)
@@ -1218,7 +1300,7 @@ writer_fini(void) {
 					status);
 		}
 	}
-	memset(&writer, 0, sizeof writer);
+	free(writer);
 }
 
 /* reader_error -- if the response body isn't a json blob, print as error.
