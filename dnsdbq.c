@@ -91,6 +91,7 @@ static const char env_api_key[] = "DNSDB_API_KEY";
 static const char env_dnsdb_server[] = "DNSDB_SERVER";
 
 #define	MAX_KEYS 3
+#define	MAX_JOBS 8
 
 #define DESTROY(p) if (p != NULL) { free(p); p = NULL; } else {}
 
@@ -134,6 +135,7 @@ static char *api_key = NULL;
 static char *key_header = NULL;
 static char *dnsdb_server = NULL;
 static bool batch = false;
+static bool merge = false;
 static bool complete = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
@@ -167,7 +169,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:p:t:b:k:J:djfsShc")) != -1)
+			    "A:B:r:n:i:l:p:t:b:k:J:djfmsShc")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -313,6 +315,9 @@ main(int argc, char *argv[]) {
 		case 'f':
 			batch = true;
 			break;
+		case 'm':
+			merge = true;
+			break;
 		case 's':
 			sorted = normal_sort;
 			break;
@@ -366,6 +371,7 @@ main(int argc, char *argv[]) {
 		}
 		if (limit != 0)
 			fprintf(stderr, "limit = %d\n", limit);
+		fprintf(stderr, "batch=%d, merge=%d\n", batch, merge);
 	}
 
 	/* validate some interrelated options. */
@@ -384,6 +390,10 @@ main(int argc, char *argv[]) {
 	}
 	if (nkeys > 0 && sorted == no_sort) {
 		fprintf(stderr, "using -k without -s or -S makes no sense.\n");
+		my_exit(1, NULL);
+	}
+	if (merge && !batch) {
+		fprintf(stderr, "using -m without -f makes no sense.\n");
 		my_exit(1, NULL);
 	}
 
@@ -617,8 +627,14 @@ read_environ() {
  */
 static void
 do_batch(FILE *f, u_long after, u_long before) {
+	writer_t writer = NULL;
 	char *command = NULL;
 	size_t n = 0;
+
+
+	/* if merging, start a writer. */
+	if (merge)
+		writer = writer_init(after, before);
 
 	while (getline(&command, &n, f) > 0) {
 		char *nl = strchr(command, '\n');
@@ -628,11 +644,34 @@ do_batch(FILE *f, u_long after, u_long before) {
 			continue;
 		}
 		*nl = '\0';
-		dnsdb_query(command, after, before);
-		fprintf(stdout, "--\n");
-		fflush(stdout);
+		if (debuglev > 0)
+			fprintf(stderr, "do_batch(%s)\n", command);
+
+		/* if not merging, start a writer here instead. */
+		if (!merge)
+			writer = writer_init(after, before);
+
+		/* start one or two curl jobs based on this search. */
+		query_launcher(command, writer, after, before);
+
+		/* if merging, drain some jobs; else, drain all jobs. */
+		if (merge) {
+			io_engine(MAX_JOBS);
+		} else {
+			io_engine(0);
+			writer_fini(writer);
+			writer = NULL;
+			fprintf(stdout, "--\n");
+			fflush(stdout);
+		}
 	}
 	DESTROY(command);
+	
+	/* if merging, run remaining jobs to completion, then finish up. */
+	if (merge) {
+		io_engine(0);
+		writer_fini(writer);
+	}
 }
 
 /* restful -- make a RESTful URI that describes these search parameters
@@ -739,7 +778,6 @@ dnsdb_query(const char *command, u_long after, u_long before) {
 
 	/* stop the writer, which might involve reading POSIX sort's output. */
 	writer_fini(writer);
-	writer = NULL;
 }
 
 /* query_launcher -- fork off some curl jobs via launch() for this query.

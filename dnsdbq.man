@@ -19,7 +19,7 @@
 .Nm dnsdbq
 .Nd DNSDB query tool
 .Sh SYNOPSIS
-.Op Fl dfhjsShc
+.Op Fl dfmhjsShc
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -115,6 +115,11 @@ or
 An example of how to use
 .Fl f
 is below.
+.It Fl m
+used only with
+.Fl f ,
+this causes all output to be merged rather than serialized, and causes up
+to ten (10) API jobs to execute in parallel.
 .It Fl h
 emit usage and quit.
 .It Fl i Ar ip
