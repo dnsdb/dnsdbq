@@ -188,7 +188,7 @@ sort output in reverse date-time order.
 .It Fl c
 by default, -A and -B (separately or together) will select partial
 overlaps of database tuples and time search criteria. To match only
-complete overlaps, add the -c ("completeness") command line option.
+complete overlaps, add the -c ("completeness") command line option (this is also known as "strict" mode).
 .El
 .Sh EXAMPLES
 
