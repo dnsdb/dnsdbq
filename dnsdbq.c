@@ -83,6 +83,7 @@ struct writer {
 	FILE			*sort_stdin;
 	FILE			*sort_stdout;
 	pid_t			sort_pid;
+	int			count;
 };
 typedef struct writer *writer_t;
 
@@ -1234,6 +1235,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		} else {
 			(*pres)(&tup, reader->buf, pre_len, stdout);
 		}
+		reader->writer->count++;
  next:
 		tuple_unmake(&tup);
  more:
@@ -1301,8 +1303,19 @@ writer_fini(writer_t writer) {
 		 * skip over the sort keys we added earlier, and process.
 		 */
 		fclose(writer->sort_stdin);
+		if (debuglev > 0)
+			fprintf(stderr,
+				"closed sort_stdin, wrote %d objs\n",
+				writer->count);
 		count = 0;
 		while (fgets(line, sizeof line, writer->sort_stdout) != NULL) {
+			/* if we're above the limit, ignore remaining output.
+			 * this is nec'y to avoid SIGPIPE from sort if we were
+			 * to close its stdout pipe without emptying it first.
+			 */
+			if (limit != 0 && count >= limit)
+				continue;
+
 			char *nl, *linep;
 			const char *msg;
 			struct dnsdb_tuple tup;
@@ -1340,10 +1353,12 @@ writer_fini(writer_t writer) {
 			(*pres)(&tup, linep, (size_t)(nl - linep), stdout);
 			tuple_unmake(&tup);
 			count++;
-			if (limit != 0 && count == limit)
-				break;
 		}
 		fclose(writer->sort_stdout);
+		if (debuglev > 0)
+			fprintf(stderr,
+				"closed sort_stdout, read %d objs (lim %d)\n",
+				count, limit);
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
