@@ -102,6 +102,7 @@ static const char * const conf_files[] = {
 static const char path_sort[] = "/usr/bin/sort";
 static const char json_header[] = "Accept: application/json";
 static const char default_server[] = "https://api.dnsdb.info";
+static const char default_prefix[] = "/lookup";
 static const char env_api_key[] = "DNSDB_API_KEY";
 static const char env_dnsdb_server[] = "DNSDB_SERVER";
 
@@ -119,8 +120,9 @@ static void server_setup(void);
 static void read_configs(void);
 static void read_environ(void);
 static void do_batch(FILE *, u_long, u_long);
-static char *restful(mode_e, const char *, const char *,
-		     const char *, const char *);
+static char *makepath(mode_e, const char *, const char *,
+		      const char *, const char *);
+static char *makeurl(const char *);
 static void make_curl(void);
 static void unmake_curl(void);
 static void dnsdb_query(const char *, u_long, u_long);
@@ -150,6 +152,8 @@ static const char *program_name = NULL;
 static char *api_key = NULL;
 static char *key_header = NULL;
 static char *dnsdb_server = NULL;
+static char *api_prefix = NULL;
+static enum { sys_dnsdb = 0 } api_system = sys_dnsdb;
 static bool batch = false;
 static bool merge = false;
 static bool complete = false;
@@ -185,7 +189,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:p:t:b:k:J:djfmsShc")) != -1)
+			    "A:B:r:n:i:l:a:u:p:t:b:k:J:djfmsShc")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -271,6 +275,17 @@ main(int argc, char *argv[]) {
 			limit = atoi(optarg);
 			if (limit <= 0)
 				usage("-l must be positive");
+			break;
+		case 'a':
+			if (api_prefix != NULL)
+				free(api_prefix);
+			api_prefix = strdup(optarg);
+			break;
+		case 'u':
+			if (strcasecmp(optarg, "dnsdb") == 0)
+				api_system = sys_dnsdb;
+			else
+				usage("-u can only be 'dnsdb' right now");
 			break;
 		case 'p':
 			if (strcmp(optarg, "json") == 0)
@@ -446,7 +461,7 @@ main(int argc, char *argv[]) {
 				usage("can't mix -b with -n");
 		}
 
-		command = restful(mode, name, type, bailiwick, length);
+		command = makepath(mode, name, type, bailiwick, length);
 		server_setup();
 		make_curl();
 		dnsdb_query(command, after, before);
@@ -524,6 +539,7 @@ my_exit(int code, ...) {
 	/* globals which may have been initialized, are to be free()'d. */
 	DESTROY(key_header);
 	DESTROY(api_key);
+	DESTROY(api_prefix);
 	DESTROY(dnsdb_server);
 
 	/* writers and readers which are still known, must be free()'d. */
@@ -545,6 +561,8 @@ static void
 server_setup(void) {
 	read_configs();
 	read_environ();
+	if (api_prefix == NULL)
+		api_prefix = strdup(default_prefix);
 	if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
 		perror("asprintf");
 		my_exit(1, NULL);
@@ -708,11 +726,11 @@ do_batch(FILE *f, u_long after, u_long before) {
 	}
 }
 
-/* restful -- make a RESTful URI that describes these search parameters
+/* makepath -- make a RESTful URI that describes these search parameters
  */
 static char *
-restful(mode_e mode, const char *name, const char *type,
-	const char *bailiwick, const char *length)
+makepath(mode_e mode, const char *name, const char *type,
+	 const char *bailiwick, const char *length)
 {
 	char *command;
 	int x;
@@ -763,6 +781,32 @@ restful(mode_e mode, const char *name, const char *type,
 		abort();
 	}
 	return (command);
+}
+
+/* makeurl -- create a URL corresponding to a command-path string.
+ *
+ * the batch file and command line syntax are in native DNSDB API format.
+ * this function has the opportunity to crack this into pieces, and re-form
+ * those pieces into the URL format needed by some other DNSDB-like system
+ * which might have the same JSON output format but a different REST syntax.
+ */
+static char *
+makeurl(const char *path) {
+	char *ret;
+	int x;
+
+	switch (api_system) {
+	case sys_dnsdb:
+		x = asprintf(&ret, "%s%s/%s", dnsdb_server, api_prefix, path);
+		if (x < 0) {
+			perror("asprintf");
+			ret = NULL;
+		}
+		break;
+	default:
+		abort();
+	}
+	return (ret);
 }
 
 /* make_curl -- perform global initializations of libcurl.
@@ -886,11 +930,9 @@ launch(const char *command, writer_t writer,
 		my_exit(1, reader, NULL);
 	}
 
-	x = asprintf(&reader->url, "%s/lookup/%s", dnsdb_server, command);
-	if (x < 0) {
-		perror("asprintf");
+	reader->url = makeurl(command);
+	if (reader->url == NULL)
 		my_exit(1, reader, NULL);
-	}
 	sep = '?';
 	/* only say ?limit= if it was specified and we aren't sorting. if we
 	 * are sorting, we'll implement this on the output of the sort.

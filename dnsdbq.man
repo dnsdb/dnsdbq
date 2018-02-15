@@ -25,6 +25,8 @@
 .Op Fl b Ar bailiwick
 .Op Fl i Ar ip
 .Op Fl l Ar limit
+.Op Fl a Ar server_path
+.Op Fl u Ar server_sys
 .Op Fl n Ar name
 .Op Fl k Ar sort_fields
 .Op Fl p Ar output_type
@@ -131,6 +133,10 @@ specify newline delimited json output mode.
 .It Fl l Ar limit
 clamp the number of responses to
 .Ic limit .
+.It Fl a Ar server_path
+specifies the RESTful URL path on the server, default is "/lookup".
+.It Fl u Ar server_sys
+specifies the syntax of the RESTful URL, default is "dnsdb".
 .It Fl n Ar name
 specify
 .Ic rdata
