@@ -112,6 +112,7 @@ static const char env_dnsdb_server[] = "DNSDB_SERVER";
 
 /* Forward. */
 
+static void help(void);
 static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
 static void server_setup(void);
@@ -347,8 +348,8 @@ main(int argc, char *argv[]) {
 			complete = true;
 			break;
 		case 'h':
-			usage(NULL);
-			break;
+			help();
+			my_exit(0, NULL);
 		default:
 			usage("unrecognized option");
 		}
@@ -459,12 +460,10 @@ main(int argc, char *argv[]) {
 
 /* Private. */
 
-/* usage -- display a usage error message, brief usage help text; then exit.
+/* help -- display a brief usage-help text; then exit.
  */
-static __attribute__((noreturn)) void
-usage(const char *error) {
-	if (error != NULL)
-		fprintf(stderr, "error: %s\n", error);
+static void
+help(void) {
 	fprintf(stderr,
 "usage: %s [-vdjsShc] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
 "\t[-l LIMIT] [-A after] [-B before] {\n"
@@ -487,8 +486,21 @@ usage(const char *error) {
 "use -j as a synonym for -p json.\n"
 "use -s to sort in ascending order, or -S for descending order.\n"
 "use -h to reliably display this helpful text.\n"
-"use -c to get complete (vs. partial) time matching for -A and -B\n",
-		program_name);
+"use -c to get complete (vs. partial) time matching for -A and -B\n"
+"\n"
+"try   man %s   for a longer description\n",
+		program_name, program_name);
+}
+
+/* usage -- display a usage error message, brief usage help text; then exit.
+ */
+static __attribute__((noreturn)) void
+usage(const char *error) {
+	fprintf(stderr,
+"error: %s\n"
+"\n"
+"try   %s -h   for a short description of program usage.\n",
+		error, program_name);
 	my_exit(1, NULL);
 }
 
