@@ -657,7 +657,6 @@ do_batch(FILE *f, u_long after, u_long before) {
 	char *command = NULL;
 	size_t n = 0;
 
-
 	/* if merging, start a writer. */
 	if (merge)
 		writer = writer_init(after, before);
@@ -1304,8 +1303,9 @@ writer_fini(writer_t writer) {
 
 	/* drain the sort if there is one. */
 	if (writer->sort_pid != 0) {
-		char line[65536];
 		int status, count;
+		char *line = NULL;
+		size_t n = 0;
 
 		/* when sorting, there has been no output yet. gather the
 		 * intermediate representation from the POSIX sort stdout,
@@ -1317,7 +1317,7 @@ writer_fini(writer_t writer) {
 				"closed sort_stdin, wrote %d objs\n",
 				writer->count);
 		count = 0;
-		while (fgets(line, sizeof line, writer->sort_stdout) != NULL) {
+		while (getline(&line, &n, writer->sort_stdout) > 0) {
 			/* if we're above the limit, ignore remaining output.
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
@@ -1363,6 +1363,7 @@ writer_fini(writer_t writer) {
 			tuple_unmake(&tup);
 			count++;
 		}
+		DESTROY(line);
 		fclose(writer->sort_stdout);
 		if (debuglev > 0)
 			fprintf(stderr,
