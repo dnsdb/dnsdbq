@@ -241,6 +241,8 @@ main(int argc, char *argv[]) {
 			else
 				p = NULL;
 			if (p != NULL) {
+				if (strchr(p + 1, '/') != NULL)
+					usage("-n must be NAME[/TYPE] only");
 				name = strndup(optarg, (size_t)(p - optarg));
 				type = strdup(p + 1);
 			} else {
