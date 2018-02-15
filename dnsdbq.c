@@ -396,11 +396,8 @@ main(int argc, char *argv[]) {
 
 	/* validate some interrelated options. */
 	if (after != 0 && before != 0) {
-		if (after > 0 && before > 0 && after > before) {
-			fprintf(stderr,
-				"-A -B requires after <= before (for now)\n");
-			my_exit(1, NULL);
-		}
+		if (after > 0 && before > 0 && after > before)
+			usage("-A -B requires after <= before (for now)");
 		if (sorted == no_sort && json_fd == -1 && !complete) {
 			fprintf(stderr,
 				"-A and -B w/o -c requires sorting for dedup, "
@@ -408,14 +405,12 @@ main(int argc, char *argv[]) {
 			sorted = reverse_sort;
 		}
 	}
-	if (nkeys > 0 && sorted == no_sort) {
-		fprintf(stderr, "using -k without -s or -S makes no sense.\n");
-		my_exit(1, NULL);
-	}
-	if (merge && !batch) {
-		fprintf(stderr, "using -m without -f makes no sense.\n");
-		my_exit(1, NULL);
-	}
+	if (complete && !after && !before)
+		usage("-c without -A or -B makes no sense.");
+	if (nkeys > 0 && sorted == no_sort)
+		usage("using -k without -s or -S makes no sense.");
+	if (merge && !batch)
+		usage("using -m without -f makes no sense.");
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
