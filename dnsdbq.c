@@ -265,6 +265,8 @@ main(int argc, char *argv[]) {
 		    }
 		case 'l':
 			limit = atoi(optarg);
+			if (limit <= 0)
+				usage("-l must be positive");
 			break;
 		case 'p':
 			if (strcmp(optarg, "json") == 0)
