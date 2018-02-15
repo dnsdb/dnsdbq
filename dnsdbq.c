@@ -417,6 +417,8 @@ main(int argc, char *argv[]) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -J");
 		if (batch)
+			usage("can't mix -f with -J");
+		if (bailiwick != NULL)
 			usage("can't mix -b with -J");
 		ruminate_json(json_fd, after, before);
 		close(json_fd);
@@ -437,6 +439,13 @@ main(int argc, char *argv[]) {
 		if (mode == no_mode)
 			usage("must specify -r, -n, or -i"
 			      " unless -f or -J is used");
+		if (bailiwick != NULL) {
+			if (mode == ip_mode)
+				usage("can't mix -b with -i");
+			if (mode == name_mode)
+				usage("can't mix -b with -n");
+		}
+
 		command = restful(mode, name, type, bailiwick, length);
 		server_setup();
 		make_curl();
