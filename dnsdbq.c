@@ -1782,10 +1782,6 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 static void
 tuple_unmake(dnsdb_tuple_t tup) {
 	json_decref(tup->obj.main);
-	if (debuglev > 0)
-		memset(tup, 0x5a, sizeof *tup);
-	else
-		memset(tup, 0, sizeof *tup);
 }
 
 /* timecmp -- compare two absolute timestamps, give -1, 0, or 1.
