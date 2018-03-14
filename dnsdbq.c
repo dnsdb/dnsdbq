@@ -72,6 +72,7 @@ struct reader {
 	char			*url;
 	char			*buf;
 	size_t			len;
+	long			rcode;
 };
 typedef struct reader *reader_t;
 
@@ -133,7 +134,6 @@ static void ruminate_json(int, u_long, u_long);
 static writer_t writer_init(u_long, u_long);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(writer_t);
-static int reader_error(reader_t);
 static void io_engine(int);
 static void present_dns(const dnsdb_tuple_t, const char *, size_t, FILE *);
 static void present_json(const dnsdb_tuple_t, const char *, size_t, FILE *);
@@ -1177,6 +1177,29 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	memcpy(reader->buf + reader->len, ptr, bytes);
 	reader->len += bytes;
 
+	if (reader->easy != NULL && reader->rcode == 0) {
+		curl_easy_getinfo(reader->easy,
+				  CURLINFO_RESPONSE_CODE, &reader->rcode);
+		if (reader->rcode != 200) {
+			char *url;
+
+			curl_easy_getinfo(reader->easy,
+					  CURLINFO_EFFECTIVE_URL, &url);
+			fprintf(stderr, "libcurl: %ld (%s)\n",
+				reader->rcode, url);
+			fprintf(stderr, "API: %-*.*s",
+				(int)reader->len, (int)reader->len,
+				reader->buf);
+			if (reader->rcode == 404)
+				fprintf(stderr, "please note: 404 usually "
+					"just means that no records matched "
+					"the search\n");
+			reader->buf[0] = '\0';
+			reader->len = 0;
+			return (0);
+		}
+	}
+
 	after = reader->writer->after;
 	before = reader->writer->before;
 
@@ -1186,8 +1209,6 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		const char *msg, *whynot;
 		u_long first, last;
 
-		if (reader_error(reader))
-			return (0);
 		pre_len = (size_t)(nl - reader->buf);
 
 		msg = tuple_make(&tup, reader->buf, pre_len);
@@ -1333,12 +1354,8 @@ writer_fini(writer_t writer) {
 	while (writer->readers != NULL) {
 		reader_t reader = writer->readers;
 
-		/* display any error messages still lurking in buffers. */
-		if (reader->buf != NULL) {
-			if (reader_error(reader))
-				reader->len = 0;
-			DESTROY(reader->buf);
-		}
+		/* release any buffered info. */
+		DESTROY(reader->buf);
 		if (reader->len != 0) {
 			fprintf(stderr, "stranding %d octets!\n",
 				(int)reader->len);
@@ -1435,7 +1452,6 @@ writer_fini(writer_t writer) {
  */
 static void
 io_engine(int jobs) {
-	CURLMsg *msg;
 	int still;
 
 	/* let libcurl run while there are too many jobs remaining. */
@@ -1443,42 +1459,11 @@ io_engine(int jobs) {
 	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs)
 		curl_multi_wait(multi, NULL, 0, 0, NULL);
 
-	/* pull out all the response codes, die suddenly on any failure.. */
+	/* drain the response code reports. */
 	still = 0;
-	while ((msg = curl_multi_info_read(multi, &still)) != NULL) {
-		long rcode;
-		char *url;
-
-		if (msg->msg != CURLMSG_DONE)
-			continue;
-		curl_easy_getinfo(msg->easy_handle,
-				  CURLINFO_RESPONSE_CODE, &rcode);
-		if (rcode != 200) {
-			curl_easy_getinfo(msg->easy_handle,
-					  CURLINFO_EFFECTIVE_URL, &url);
-			fprintf(stderr, "libcurl: %ld (%s)\n", rcode, url);
-			if (rcode == 404)
-				fprintf(stderr, "please note: 404 usually "
-					"just means that no records matched "
-					"the search\n");
-		}
+	while (curl_multi_info_read(multi, &still) != NULL) {
+		NULL;
 	}
-}
-
-/* reader_error -- if the response body isn't a json blob, print as error.
- *
- * design critique: this is incredibly fragile and bogus.
- */
-static int
-reader_error(reader_t reader) {
-	if (reader->buf[0] != '\0' && reader->buf[0] != '{') {
-		fprintf(stderr, "API: %-*.*s",
-		       (int)reader->len, (int)reader->len, reader->buf);
-		reader->buf[0] = '\0';
-		reader->len = 0;
-		return (1);
-	}
-	return (0);
 }
 
 /* present_dns -- render one dnsdb tuple in "dig" style ascii text.
