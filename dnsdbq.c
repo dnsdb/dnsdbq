@@ -73,6 +73,7 @@ struct reader {
 	char			*buf;
 	size_t			len;
 	long			rcode;
+	bool			once;
 };
 typedef struct reader *reader_t;
 
@@ -1177,23 +1178,31 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	memcpy(reader->buf + reader->len, ptr, bytes);
 	reader->len += bytes;
 
-	if (reader->easy != NULL && reader->rcode == 0) {
-		curl_easy_getinfo(reader->easy,
-				  CURLINFO_RESPONSE_CODE, &reader->rcode);
-		if (reader->rcode != 200) {
-			char *url;
-
+	/* when the reader is a live web result, emit body as error reports. */
+	if (reader->easy != NULL) {
+		if (reader->rcode == 0)
 			curl_easy_getinfo(reader->easy,
-					  CURLINFO_EFFECTIVE_URL, &url);
-			fprintf(stderr, "libcurl: %ld (%s)\n",
-				reader->rcode, url);
-			fprintf(stderr, "API: %-*.*s",
-				(int)reader->len, (int)reader->len,
-				reader->buf);
-			if (reader->rcode == 404)
-				fprintf(stderr, "please note: 404 usually "
-					"just means that no records matched "
-					"the search\n");
+					  CURLINFO_RESPONSE_CODE,
+					  &reader->rcode);
+		if (reader->rcode != 200) {
+			if (!reader->once) {
+				char *url;
+
+				curl_easy_getinfo(reader->easy,
+						  CURLINFO_EFFECTIVE_URL,
+						  &url);
+				fprintf(stderr, "libcurl: %ld (%s)\n",
+					reader->rcode, url);
+				if (reader->rcode == 404)
+					fprintf(stderr,
+						"please note: 404 usually "
+						"just means that no records "
+						"matched the search "
+						"criteria\n");
+				fputs("API: ", stderr);
+				reader->once = true;
+			}
+			fwrite(reader->buf, 1, reader->len, stderr);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (0);
