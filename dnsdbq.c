@@ -47,22 +47,22 @@ extern char **environ;
 
 /* Types. */
 
-struct dnsdb_json {
+struct pdns_json {
 	json_t		*main,
 			*time_first, *time_last, *zone_first, *zone_last,
 			*bailiwick, *rrname, *rrtype, *rdata,
 			*count;
 };
 
-struct dnsdb_tuple {
-	struct dnsdb_json  obj;
+struct pdns_tuple {
+	struct pdns_json  obj;
 	u_long		time_first, time_last, zone_first, zone_last;
 	const char	*bailiwick, *rrname, *rrtype, *rdata;
 	json_int_t	count;
 };
-typedef struct dnsdb_tuple *dnsdb_tuple_t;
+typedef struct pdns_tuple *pdns_tuple_t;
 
-typedef void (*present_t)(const dnsdb_tuple_t, const char *, size_t, FILE *);
+typedef void (*present_t)(const pdns_tuple_t, const char *, size_t, FILE *);
 
 struct reader {
 	struct reader		*next;
@@ -106,7 +106,7 @@ static const char json_header[] = "Accept: application/json";
 static const char default_server[] = "https://api.dnsdb.info";
 static const char default_prefix[] = "/lookup";
 static const char env_api_key[] = "DNSDB_API_KEY";
-static const char env_dnsdb_server[] = "DNSDB_SERVER";
+static const char env_pdns_server[] = "DNSDB_SERVER";
 
 #define	MAX_KEYS 3
 #define	MAX_JOBS 8
@@ -127,7 +127,7 @@ static char *makepath(mode_e, const char *, const char *,
 static char *makeurl(const char *);
 static void make_curl(void);
 static void unmake_curl(void);
-static void dnsdb_query(const char *, u_long, u_long);
+static void pdns_query(const char *, u_long, u_long);
 static void query_launcher(const char *, writer_t, u_long, u_long);
 static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
 static void rendezvous(reader_t);
@@ -136,12 +136,12 @@ static writer_t writer_init(u_long, u_long);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(writer_t);
 static void io_engine(int);
-static void present_dns(const dnsdb_tuple_t, const char *, size_t, FILE *);
-static void present_json(const dnsdb_tuple_t, const char *, size_t, FILE *);
-static void present_csv(const dnsdb_tuple_t, const char *, size_t, FILE *);
-static void present_csv_line(const dnsdb_tuple_t, const char *, FILE *);
-static const char *tuple_make(dnsdb_tuple_t, char *, size_t);
-static void tuple_unmake(dnsdb_tuple_t);
+static void present_dns(const pdns_tuple_t, const char *, size_t, FILE *);
+static void present_json(const pdns_tuple_t, const char *, size_t, FILE *);
+static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
+static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
+static const char *tuple_make(pdns_tuple_t, char *, size_t);
+static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
 static int time_get(const char *src, u_long *dst);
@@ -152,7 +152,7 @@ static void escape(char **);
 static const char *program_name = NULL;
 static char *api_key = NULL;
 static char *key_header = NULL;
-static char *dnsdb_server = NULL;
+static char *pdns_server = NULL;
 static char *api_prefix = NULL;
 static enum { sys_dnsdb = 0 } api_system = sys_dnsdb;
 static bool batch = false;
@@ -465,7 +465,7 @@ main(int argc, char *argv[]) {
 		command = makepath(mode, name, type, bailiwick, length);
 		server_setup();
 		make_curl();
-		dnsdb_query(command, after, before);
+		pdns_query(command, after, before);
 		DESTROY(command);
 		unmake_curl();
 	}
@@ -541,7 +541,7 @@ my_exit(int code, ...) {
 	DESTROY(key_header);
 	DESTROY(api_key);
 	DESTROY(api_prefix);
-	DESTROY(dnsdb_server);
+	DESTROY(pdns_server);
 
 	/* writers and readers which are still known, must be free()'d. */
 	while (writers != NULL)
@@ -630,7 +630,7 @@ read_configs(void) {
 			} else if (tok != NULL && strcmp(tok, "server") == 0) {
 				tok = strtok(NULL, "\040\012");
 				if (tok != NULL)
-					dnsdb_server = strdup(tok);
+					pdns_server = strdup(tok);
 			} else {
 				fprintf(stderr, "%s: line malformed\n", cf);
 				my_exit(1, cf, NULL);
@@ -656,24 +656,24 @@ read_environ() {
 		if (debuglev > 0)
 			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
 	}
-	val = getenv(env_dnsdb_server);
+	val = getenv(env_pdns_server);
 	if (val != NULL) {
-		if (dnsdb_server != NULL)
-			free(dnsdb_server);
-		dnsdb_server = strdup(val);
+		if (pdns_server != NULL)
+			free(pdns_server);
+		pdns_server = strdup(val);
 		if (debuglev > 0)
-			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
-				dnsdb_server);
+			fprintf(stderr, "conf env pdns_server = '%s'\n",
+				pdns_server);
 	}
 	if (api_key == NULL) {
 		fprintf(stderr, "no API key given\n");
 		my_exit(1, NULL);
 	}
-	if (dnsdb_server == NULL) {
-		dnsdb_server = strdup(default_server);
+	if (pdns_server == NULL) {
+		pdns_server = strdup(default_server);
 		if (debuglev > 0)
-			fprintf(stderr, "conf default dnsdb_server = '%s'\n",
-				dnsdb_server);
+			fprintf(stderr, "conf default pdns_server = '%s'\n",
+				pdns_server);
 	}
 }
 
@@ -798,7 +798,7 @@ makeurl(const char *path) {
 
 	switch (api_system) {
 	case sys_dnsdb:
-		x = asprintf(&ret, "%s%s/%s", dnsdb_server, api_prefix, path);
+		x = asprintf(&ret, "%s%s/%s", pdns_server, api_prefix, path);
 		if (x < 0) {
 			perror("asprintf");
 			ret = NULL;
@@ -837,14 +837,14 @@ unmake_curl(void) {
 	}
 }
 
-/* dnsdb_query -- launch one or more libcurl jobs to fulfill this DNSDB query.
+/* pdns_query -- launch one or more libcurl jobs to fulfill this DNSDB query.
  */
 static void
-dnsdb_query(const char *command, u_long after, u_long before) {
+pdns_query(const char *command, u_long after, u_long before) {
 	writer_t writer;
 
 	if (debuglev > 0)
-		fprintf(stderr, "dnsdb_query(%s)\n", command);
+		fprintf(stderr, "pdns_query(%s)\n", command);
 
 	/* start a writer, which might be format functions, or POSIX sort. */
 	writer = writer_init(after, before);
@@ -1214,7 +1214,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 
 	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
 		size_t pre_len, post_len;
-		struct dnsdb_tuple tup;
+		struct pdns_tuple tup;
 		const char *msg, *whynot;
 		u_long first, last;
 
@@ -1404,7 +1404,7 @@ writer_fini(writer_t writer) {
 
 			char *nl, *linep;
 			const char *msg;
-			struct dnsdb_tuple tup;
+			struct pdns_tuple tup;
 
 			if ((nl = strchr(line, '\n')) == NULL) {
 				fprintf(stderr, "no \\n found in '%s'\n",
@@ -1475,10 +1475,10 @@ io_engine(int jobs) {
 	}
 }
 
-/* present_dns -- render one dnsdb tuple in "dig" style ascii text.
+/* present_dns -- render one pdns tuple in "dig" style ascii text.
  */
 static void
-present_dns(const dnsdb_tuple_t tup,
+present_dns(const pdns_tuple_t tup,
 	    const char *jsonbuf __attribute__ ((unused)),
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
@@ -1555,7 +1555,7 @@ present_dns(const dnsdb_tuple_t tup,
 /* present_json -- render one DNSDB tuple as newline-separated JSON.
  */
 static void
-present_json(const dnsdb_tuple_t tup __attribute__ ((unused)),
+present_json(const pdns_tuple_t tup __attribute__ ((unused)),
 	     const char *jsonbuf,
 	     size_t jsonlen,
 	     FILE *outf)
@@ -1567,7 +1567,7 @@ present_json(const dnsdb_tuple_t tup __attribute__ ((unused)),
 /* present_csv -- render one DNSDB tuple as comma-separated values (CSV).
  */
 static void
-present_csv(const dnsdb_tuple_t tup,
+present_csv(const pdns_tuple_t tup,
 	    const char *jsonbuf __attribute__ ((unused)),
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
@@ -1604,7 +1604,7 @@ present_csv(const dnsdb_tuple_t tup,
 /* present_csv_line -- display a CSV for one rdatum out of an rrset.
  */
 static void
-present_csv_line(const dnsdb_tuple_t tup,
+present_csv_line(const pdns_tuple_t tup,
 		 const char *rdata,
 		 FILE *outf)
 {
@@ -1657,7 +1657,7 @@ present_csv_line(const dnsdb_tuple_t tup,
 /* tuple_make -- create one DNSDB tuple object out of a JSON object.
  */
 static const char *
-tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
+tuple_make(pdns_tuple_t tup, char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 
@@ -1774,7 +1774,7 @@ tuple_make(dnsdb_tuple_t tup, char *buf, size_t len) {
 /* tuple_unmake -- deallocate the heap storage associated with one tuple.
  */
 static void
-tuple_unmake(dnsdb_tuple_t tup) {
+tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
