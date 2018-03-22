@@ -89,29 +89,15 @@ struct writer {
 };
 typedef struct writer *writer_t;
 
-typedef enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode_e;
-
-/* Constants. */
-
-static const char * const conf_files[] = {
-	"~/.isc-dnsdb-query.conf",
-	"~/.dnsdb-query.conf",
-	"/etc/isc-dnsdb-query.conf",
-	"/etc/dnsdb-query.conf",
-	NULL
+struct pdns_sys {
+	const char	*name;
+	char *		(*url)(const char *);
+	void		(*auth)(reader_t);
+	bool		(*wanted)(pdns_tuple_t);
 };
+typedef const struct pdns_sys *pdns_sys_t;
 
-static const char path_sort[] = "/usr/bin/sort";
-static const char json_header[] = "Accept: application/json";
-static const char default_server[] = "https://api.dnsdb.info";
-static const char default_prefix[] = "/lookup";
-static const char env_api_key[] = "DNSDB_API_KEY";
-static const char env_pdns_server[] = "DNSDB_SERVER";
-
-#define	MAX_KEYS 3
-#define	MAX_JOBS 8
-
-#define DESTROY(p) if (p != NULL) { free(p); p = NULL; } else {}
+typedef enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode_e;
 
 /* Forward. */
 
@@ -119,12 +105,15 @@ static void help(void);
 static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
 static void server_setup(void);
+static pdns_sys_t find_system(const char *);
 static void read_configs(void);
 static void read_environ(void);
 static void do_batch(FILE *, u_long, u_long);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
-static char *makeurl(const char *);
+static char *dnsdb_url(const char *);
+static void dnsdb_auth(reader_t);
+static bool dnsdb_wanted(pdns_tuple_t);
 static void make_curl(void);
 static void unmake_curl(void);
 static void pdns_query(const char *, u_long, u_long);
@@ -147,14 +136,44 @@ static void time_print(u_long x, FILE *);
 static int time_get(const char *src, u_long *dst);
 static void escape(char **);
 
+/* Constants. */
+
+static const char * const conf_files[] = {
+	"~/.isc-dnsdb-query.conf",
+	"~/.dnsdb-query.conf",
+	"/etc/isc-dnsdb-query.conf",
+	"/etc/dnsdb-query.conf",
+	NULL
+};
+
+static const struct pdns_sys pdns_systems[] = {
+	/* note: element [0] of this array is the default. */
+	{ "dnsdb", dnsdb_url, dnsdb_auth, dnsdb_wanted },
+	{ NULL }
+};
+
+static const char path_sort[] = "/usr/bin/sort";
+static const char json_header[] = "Accept: application/json";
+static const char default_server[] = "https://api.dnsdb.info";
+static const char default_prefix[] = "/lookup";
+static const char env_api_key[] = "DNSDB_API_KEY";
+static const char env_pdns_server[] = "DNSDB_SERVER";
+
+#define	MAX_KEYS 3
+#define	MAX_JOBS 8
+
+#define DESTROY(p) if (p != NULL) { free(p); p = NULL; } else {}
+
 /* Private. */
 
 static const char *program_name = NULL;
 static char *api_key = NULL;
 static char *key_header = NULL;
+static char *auth_user = NULL;
+static char *auth_pass = NULL;
 static char *pdns_server = NULL;
 static char *api_prefix = NULL;
-static enum { sys_dnsdb = 0 } api_system = sys_dnsdb;
+static pdns_sys_t sys = pdns_systems;
 static bool batch = false;
 static bool merge = false;
 static bool complete = false;
@@ -283,10 +302,9 @@ main(int argc, char *argv[]) {
 			api_prefix = strdup(optarg);
 			break;
 		case 'u':
-			if (strcasecmp(optarg, "dnsdb") == 0)
-				api_system = sys_dnsdb;
-			else
-				usage("-u can only be 'dnsdb' right now");
+			sys = find_system(optarg);
+			if (sys == NULL)
+				usage("-u must refer to a pdns system");
 			break;
 		case 'p':
 			if (strcmp(optarg, "json") == 0)
@@ -484,9 +502,11 @@ main(int argc, char *argv[]) {
  */
 static void
 help(void) {
+	pdns_sys_t t;
+
 	fprintf(stderr,
 "usage: %s [-vdjsShc] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l LIMIT] [-A after] [-B before] {\n"
+"\t[-l LIMIT] [-A after] [-B before] [-u $system] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t type] [-b bailiwick] {\n"
@@ -506,10 +526,13 @@ help(void) {
 "use -j as a synonym for -p json.\n"
 "use -s to sort in ascending order, or -S for descending order.\n"
 "use -h to reliably display this helpful text.\n"
-"use -c to get complete (vs. partial) time matching for -A and -B\n"
-"\n"
-"try   man %s   for a longer description\n",
-		program_name, program_name);
+"use -c to get complete (vs. partial) time matching for -A and -B\n",
+		program_name);
+	fprintf(stderr, "\nsystem must be one of:");
+	for (t = pdns_systems; t->name != NULL; t++)
+		fprintf(stderr, " %s", t->name);
+	fprintf(stderr, "\n\ntry   man %s   for a longer description\n",
+		program_name);
 }
 
 /* usage -- display a usage error message, brief usage help text; then exit.
@@ -540,6 +563,8 @@ my_exit(int code, ...) {
 	/* globals which may have been initialized, are to be free()'d. */
 	DESTROY(key_header);
 	DESTROY(api_key);
+	DESTROY(auth_user);
+	DESTROY(auth_pass);
 	DESTROY(api_prefix);
 	DESTROY(pdns_server);
 
@@ -556,6 +581,18 @@ my_exit(int code, ...) {
 	exit(code);
 }
 
+/* find_pdns -- locate a pdns system's metadata by name
+ */
+static pdns_sys_t
+find_system(const char *name) {
+	pdns_sys_t t;
+
+	for (t = pdns_systems; t->name != NULL; t++)
+		if (strcasecmp(t->name, name) == 0)
+			return (t);
+	return (NULL);
+}
+
 /* server_setup -- learn the server name and API key by various means.
  */
 static void
@@ -564,9 +601,11 @@ server_setup(void) {
 	read_environ();
 	if (api_prefix == NULL)
 		api_prefix = strdup(default_prefix);
-	if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
-		perror("asprintf");
-		my_exit(1, NULL);
+	if (api_key != NULL) {
+		if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
+			perror("asprintf");
+			my_exit(1, NULL);
+		}
 	}
 }
 
@@ -591,7 +630,7 @@ read_configs(void) {
 		}
 	}
 	if (*conf != NULL) {
-		char *cmd, *tok, *line;
+		char *cmd, *tok1, *tok2, *line;
 		size_t n;
 		FILE *f;
 		int x;
@@ -599,7 +638,9 @@ read_configs(void) {
 		x = asprintf(&cmd,
 			     ". %s;"
 			     "echo apikey $APIKEY;"
-			     "echo server $DNSDB_SERVER",
+			     "echo server $DNSDB_SERVER;"
+			     "echo usernm $USERNAME;"
+			     "echo passwd $PASSWORD",
 			     cf);
 		if (x < 0) {
 			perror("asprintf");
@@ -622,18 +663,24 @@ read_configs(void) {
 			}
 			if (debuglev > 0)
 				fprintf(stderr, "conf line: %s", line);
-			tok = strtok(line, "\040\012");
-			if (tok != NULL && strcmp(tok, "apikey") == 0) {
-				tok = strtok(NULL, "\040\012");
-				if (tok != NULL)
-					api_key = strdup(tok);
-			} else if (tok != NULL && strcmp(tok, "server") == 0) {
-				tok = strtok(NULL, "\040\012");
-				if (tok != NULL)
-					pdns_server = strdup(tok);
-			} else {
+			tok1 = strtok(line, "\040\012");
+			tok2 = strtok(NULL, "\040\012");
+			if (tok1 == NULL || tok2 == NULL) {
 				fprintf(stderr, "%s: line malformed\n", cf);
 				my_exit(1, cf, NULL);
+			}
+			if (strcmp(tok1, "apikey") == 0) {
+				DESTROY(api_key);
+				api_key = strdup(tok2);
+			} else if (strcmp(tok1, "server") == 0) {
+				DESTROY(pdns_server);
+				pdns_server = strdup(tok2);
+			} else if (strcmp(tok1, "usernm") == 0) {
+				DESTROY(auth_user);
+				auth_user = strdup(tok2);
+			} else if (strcmp(tok1, "passwd") == 0) {
+				DESTROY(auth_pass);
+				auth_pass = strdup(tok2);
 			}
 		}
 		DESTROY(line);
@@ -675,6 +722,10 @@ read_environ() {
 			fprintf(stderr, "conf default pdns_server = '%s'\n",
 				pdns_server);
 	}
+	/* note, the environment settings are for backward compatibility
+	 * with the old python CLI tool; modern settings like USERNAME and
+	 * PASSWORD are added to the configuration file instead.
+	 */
 }
 
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
@@ -784,7 +835,7 @@ makepath(mode_e mode, const char *name, const char *type,
 	return (command);
 }
 
-/* makeurl -- create a URL corresponding to a command-path string.
+/* dnsdb_url -- create a URL corresponding to a command-path string.
  *
  * the batch file and command line syntax are in native DNSDB API format.
  * this function has the opportunity to crack this into pieces, and re-form
@@ -792,22 +843,28 @@ makepath(mode_e mode, const char *name, const char *type,
  * which might have the same JSON output format but a different REST syntax.
  */
 static char *
-makeurl(const char *path) {
+dnsdb_url(const char *path) {
 	char *ret;
 	int x;
 
-	switch (api_system) {
-	case sys_dnsdb:
-		x = asprintf(&ret, "%s%s/%s", pdns_server, api_prefix, path);
-		if (x < 0) {
-			perror("asprintf");
-			ret = NULL;
-		}
-		break;
-	default:
-		abort();
+	x = asprintf(&ret, "%s%s/%s", pdns_server, api_prefix, path);
+	if (x < 0) {
+		perror("asprintf");
+		ret = NULL;
 	}
 	return (ret);
+}
+
+static void
+dnsdb_auth(reader_t reader) {
+	if (key_header != NULL)
+		reader->hdrs = curl_slist_append(reader->hdrs, key_header);
+}
+
+static bool
+dnsdb_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
+	/* DNSDB filters on the server side, so we want all that we get. */
+	return (true);
 }
 
 /* make_curl -- perform global initializations of libcurl.
@@ -931,7 +988,7 @@ launch(const char *command, writer_t writer,
 		my_exit(1, reader, NULL);
 	}
 
-	reader->url = makeurl(command);
+	reader->url = sys->url(command);
 	if (reader->url == NULL)
 		my_exit(1, reader, NULL);
 	sep = '?';
@@ -1013,7 +1070,7 @@ launch(const char *command, writer_t writer,
 	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
-	reader->hdrs = curl_slist_append(reader->hdrs, key_header);
+	sys->auth(reader);
 	reader->hdrs = curl_slist_append(reader->hdrs, json_header);
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
@@ -1225,6 +1282,11 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			puts(msg);
 			goto more;
 		}
+
+		/* some pdns systems don't filter on the far end; do it now.
+		 */
+		if (reader->easy != NULL && !sys->wanted(&tup))
+			goto next;
 
 		/* there are two sets of timestamps in a tuple. we prefer
 		 * the on-the-wire times to the zone times, when possible.
