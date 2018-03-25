@@ -97,7 +97,6 @@ struct pdns_sys {
 	const char	*server;
 	char *		(*url)(const char *);
 	void		(*auth)(reader_t);
-	bool		(*wanted)(pdns_tuple_t);
 };
 typedef const struct pdns_sys *pdns_sys_t;
 
@@ -138,11 +137,9 @@ static int time_get(const char *src, u_long *dst);
 static void escape(char **);
 static char *dnsdb_url(const char *);
 static void dnsdb_auth(reader_t);
-static bool dnsdb_wanted(pdns_tuple_t);
 #if WANT_PDNS_CIRCL
 static char *circl_url(const char *);
 static void circl_auth(reader_t);
-static bool circl_wanted(pdns_tuple_t);
 #endif
 
 /* Constants. */
@@ -163,10 +160,10 @@ static const char env_dnsdb_server[] = "DNSDB_SERVER";
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
 	{ "dnsdb", "https://api.dnsdb.info/lookup",
-		dnsdb_url, dnsdb_auth, dnsdb_wanted },
+		dnsdb_url, dnsdb_auth },
 #if WANT_PDNS_CIRCL
 	{ "circl", "https://www.circl.lu/pdns/query",
-		circl_url, circl_auth, circl_wanted },
+		circl_url, circl_auth },
 #endif
 	{ NULL }
 };
@@ -1253,11 +1250,6 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			goto more;
 		}
 
-		/* some pdns systems don't filter on the far end; do it now.
-		 */
-		if (reader->easy != NULL && !sys->wanted(&tup))
-			goto next;
-
 		/* there are two sets of timestamps in a tuple. we prefer
 		 * the on-the-wire times to the zone times, when possible.
 		 */
@@ -1917,12 +1909,6 @@ dnsdb_auth(reader_t reader) {
 	}
 }
 
-static bool
-dnsdb_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
-	/* DNSDB filters on the server side, so we want all that we get. */
-	return (true);
-}
-
 #if WANT_PDNS_CIRCL
 /* circl_url -- create a URL corresponding to a command-path string.
  *
@@ -1932,9 +1918,8 @@ dnsdb_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
  * which might have the same JSON output format but a different REST syntax.
  *
  * CIRCL pDNS only "understands IP addresses, hostnames or domain names
- * (please note that CIDR block queries are not supported)". some day we
- * may filter the server's output to be more specific, but for now we'll
- * simply die if asked to do something the server does not handle.
+ * (please note that CIDR block queries are not supported)". exit with an
+ * error message if asked to do something the CIRCL server does not handle.
  * 
  * 1. RRSet query: rrset/name/NAME[/TYPE[/BAILIWICK]]
  * 2. Rdata (name) query: rdata/name/NAME[/TYPE]
@@ -1977,11 +1962,5 @@ circl_auth(reader_t reader) {
 		curl_easy_setopt(reader->easy, CURLOPT_HTTPAUTH,
 				 CURLAUTH_BASIC);
 	}
-}
-
-static bool
-circl_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
-	/* for now, we are not asking questions whose answers are too broad. */
-	return (true);
 }
 #endif /*WANT_PDNS_CIRCL*/
