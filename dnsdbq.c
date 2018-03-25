@@ -165,7 +165,7 @@ static const struct pdns_sys pdns_systems[] = {
 	{ "circl", "https://www.circl.lu/pdns/query",
 		circl_url, circl_auth },
 #endif
-	{ NULL }
+	{ NULL, NULL, NULL, NULL }
 };
 
 #define	MAX_KEYS 3
