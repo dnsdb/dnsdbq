@@ -25,6 +25,8 @@
 /* modern glibc will complain about the above if it doesn't see this. */
 #define _DEFAULT_SOURCE
 
+#define WANT_PDNS_CIRCL 1
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
@@ -136,9 +138,11 @@ static void escape(char **);
 static char *dnsdb_url(const char *);
 static void dnsdb_auth(reader_t);
 static bool dnsdb_wanted(pdns_tuple_t);
+#if WANT_PDNS_CIRCL
 static char *circl_url(const char *);
 static void circl_auth(reader_t);
 static bool circl_wanted(pdns_tuple_t);
+#endif
 
 /* Constants. */
 
@@ -159,8 +163,10 @@ static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
 	{ "dnsdb", "https://api.dnsdb.info/lookup",
 		dnsdb_url, dnsdb_auth, dnsdb_wanted },
+#if WANT_PDNS_CIRCL
 	{ "circl", "https://www.circl.lu/pdns/query",
 		circl_url, circl_auth, circl_wanted },
+#endif
 	{ NULL }
 };
 
@@ -174,8 +180,10 @@ static const struct pdns_sys pdns_systems[] = {
 static const char *program_name = NULL;
 static char *api_key = NULL;
 static char *dnsdb_server = NULL;
+#if WANT_PDNS_CIRCL
 static char *circl_server = NULL;
 static char *circl_authinfo = NULL;
+#endif
 static pdns_sys_t sys = pdns_systems;
 static bool batch = false;
 static bool merge = false;
@@ -561,8 +569,10 @@ my_exit(int code, ...) {
 	/* globals which may have been initialized, are to be free()'d. */
 	DESTROY(api_key);
 	DESTROY(dnsdb_server);
+#if WANT_PDNS_CIRCL
 	DESTROY(circl_server);
 	DESTROY(circl_authinfo);
+#endif
 
 	/* writers and readers which are still known, must be free()'d. */
 	while (writers != NULL)
@@ -627,9 +637,11 @@ read_configs(void) {
 			     ". %s;"
 			     "echo apikey $APIKEY;"
 			     "echo server $DNSDB_SERVER;"
+#if WANT_PDNS_CIRCL
 			     "echo circla $CIRCL_AUTH;"
-			     "echo circls $CIRCL_SERVER",
-			     cf);
+			     "echo circls $CIRCL_SERVER;"
+#endif
+			     "exit", cf);
 		if (x < 0) {
 			perror("asprintf");
 			my_exit(1, NULL);
@@ -667,10 +679,12 @@ read_configs(void) {
 				pp = &api_key;
 			} else if (strcmp(tok1, "server") == 0) {
 				pp = &dnsdb_server;
+#if WANT_PDNS_CIRCL
 			} else if (strcmp(tok1, "circla") == 0) {
 				pp = &circl_authinfo;
 			} else if (strcmp(tok1, "circls") == 0) {
 				pp = &circl_server;
+#endif
 			} else
 				abort();
 			DESTROY(*pp);
@@ -1908,6 +1922,7 @@ dnsdb_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
 	return (true);
 }
 
+#if WANT_PDNS_CIRCL
 /* circl_url -- create a URL corresponding to a command-path string.
  *
  * the batch file and command line syntax are in native DNSDB API format.
@@ -1968,3 +1983,4 @@ circl_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
 	/* for now, we are not asking questions whose answers are too broad. */
 	return (true);
 }
+#endif /*WANT_PDNS_CIRCL*/
