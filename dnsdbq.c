@@ -91,6 +91,7 @@ typedef struct writer *writer_t;
 
 struct pdns_sys {
 	const char	*name;
+	const char	*server;
 	char *		(*url)(const char *);
 	void		(*auth)(reader_t);
 	bool		(*wanted)(pdns_tuple_t);
@@ -111,9 +112,6 @@ static void read_environ(void);
 static void do_batch(FILE *, u_long, u_long);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
-static char *dnsdb_url(const char *);
-static void dnsdb_auth(reader_t);
-static bool dnsdb_wanted(pdns_tuple_t);
 static void make_curl(void);
 static void unmake_curl(void);
 static void pdns_query(const char *, u_long, u_long);
@@ -135,6 +133,12 @@ static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
 static int time_get(const char *src, u_long *dst);
 static void escape(char **);
+static char *dnsdb_url(const char *);
+static void dnsdb_auth(reader_t);
+static bool dnsdb_wanted(pdns_tuple_t);
+static char *circl_url(const char *);
+static void circl_auth(reader_t);
+static bool circl_wanted(pdns_tuple_t);
 
 /* Constants. */
 
@@ -146,18 +150,19 @@ static const char * const conf_files[] = {
 	NULL
 };
 
-static const struct pdns_sys pdns_systems[] = {
-	/* note: element [0] of this array is the default. */
-	{ "dnsdb", dnsdb_url, dnsdb_auth, dnsdb_wanted },
-	{ NULL }
-};
-
 static const char path_sort[] = "/usr/bin/sort";
 static const char json_header[] = "Accept: application/json";
-static const char default_server[] = "https://api.dnsdb.info";
-static const char default_prefix[] = "/lookup";
 static const char env_api_key[] = "DNSDB_API_KEY";
-static const char env_pdns_server[] = "DNSDB_SERVER";
+static const char env_dnsdb_server[] = "DNSDB_SERVER";
+
+static const struct pdns_sys pdns_systems[] = {
+	/* note: element [0] of this array is the default. */
+	{ "dnsdb", "https://api.dnsdb.info/lookup",
+		dnsdb_url, dnsdb_auth, dnsdb_wanted },
+	{ "circl", "https://www.circl.lu/pdns/query",
+		circl_url, circl_auth, circl_wanted },
+	{ NULL }
+};
 
 #define	MAX_KEYS 3
 #define	MAX_JOBS 8
@@ -168,11 +173,9 @@ static const char env_pdns_server[] = "DNSDB_SERVER";
 
 static const char *program_name = NULL;
 static char *api_key = NULL;
-static char *key_header = NULL;
-static char *auth_user = NULL;
-static char *auth_pass = NULL;
-static char *pdns_server = NULL;
-static char *api_prefix = NULL;
+static char *dnsdb_server = NULL;
+static char *circl_server = NULL;
+static char *circl_authinfo = NULL;
 static pdns_sys_t sys = pdns_systems;
 static bool batch = false;
 static bool merge = false;
@@ -209,7 +212,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:a:u:p:t:b:k:J:djfmsShc")) != -1)
+			    "A:B:r:n:i:l:u:p:t:b:k:J:djfmsShc")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -295,11 +298,6 @@ main(int argc, char *argv[]) {
 			limit = atoi(optarg);
 			if (limit <= 0)
 				usage("-l must be positive");
-			break;
-		case 'a':
-			if (api_prefix != NULL)
-				free(api_prefix);
-			api_prefix = strdup(optarg);
 			break;
 		case 'u':
 			sys = find_system(optarg);
@@ -561,12 +559,10 @@ my_exit(int code, ...) {
 	va_end(ap);
 
 	/* globals which may have been initialized, are to be free()'d. */
-	DESTROY(key_header);
 	DESTROY(api_key);
-	DESTROY(auth_user);
-	DESTROY(auth_pass);
-	DESTROY(api_prefix);
-	DESTROY(pdns_server);
+	DESTROY(dnsdb_server);
+	DESTROY(circl_server);
+	DESTROY(circl_authinfo);
 
 	/* writers and readers which are still known, must be free()'d. */
 	while (writers != NULL)
@@ -599,14 +595,6 @@ static void
 server_setup(void) {
 	read_configs();
 	read_environ();
-	if (api_prefix == NULL)
-		api_prefix = strdup(default_prefix);
-	if (api_key != NULL) {
-		if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
-	}
 }
 
 /* read_configs -- try to find a config file in static path, then parse it.
@@ -639,8 +627,8 @@ read_configs(void) {
 			     ". %s;"
 			     "echo apikey $APIKEY;"
 			     "echo server $DNSDB_SERVER;"
-			     "echo usernm $USERNAME;"
-			     "echo passwd $PASSWORD",
+			     "echo circla $CIRCL_AUTH;"
+			     "echo circls $CIRCL_SERVER",
 			     cf);
 		if (x < 0) {
 			perror("asprintf");
@@ -657,31 +645,36 @@ read_configs(void) {
 		line = NULL;
 		n = 0;
 		while (getline(&line, &n, f) > 0) {
+			char **pp;
+
 			if (strchr(line, '\n') == NULL) {
-				fprintf(stderr, "%s: line too long\n", cf);
+				fprintf(stderr, "line too long: '%s'\n", line);
 				my_exit(1, cf, NULL);
 			}
 			if (debuglev > 0)
 				fprintf(stderr, "conf line: %s", line);
 			tok1 = strtok(line, "\040\012");
 			tok2 = strtok(NULL, "\040\012");
-			if (tok1 == NULL || tok2 == NULL) {
-				fprintf(stderr, "%s: line malformed\n", cf);
+			if (tok1 == NULL) {
+				fprintf(stderr, "line malformed: %s", line);
 				my_exit(1, cf, NULL);
 			}
+			if (tok2 == NULL)
+				continue;
+
+			pp = NULL;
 			if (strcmp(tok1, "apikey") == 0) {
-				DESTROY(api_key);
-				api_key = strdup(tok2);
+				pp = &api_key;
 			} else if (strcmp(tok1, "server") == 0) {
-				DESTROY(pdns_server);
-				pdns_server = strdup(tok2);
-			} else if (strcmp(tok1, "usernm") == 0) {
-				DESTROY(auth_user);
-				auth_user = strdup(tok2);
-			} else if (strcmp(tok1, "passwd") == 0) {
-				DESTROY(auth_pass);
-				auth_pass = strdup(tok2);
-			}
+				pp = &dnsdb_server;
+			} else if (strcmp(tok1, "circla") == 0) {
+				pp = &circl_authinfo;
+			} else if (strcmp(tok1, "circls") == 0) {
+				pp = &circl_server;
+			} else
+				abort();
+			DESTROY(*pp);
+			*pp = strdup(tok2);
 		}
 		DESTROY(line);
 		pclose(f);
@@ -703,24 +696,18 @@ read_environ() {
 		if (debuglev > 0)
 			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
 	}
-	val = getenv(env_pdns_server);
+	val = getenv(env_dnsdb_server);
 	if (val != NULL) {
-		if (pdns_server != NULL)
-			free(pdns_server);
-		pdns_server = strdup(val);
+		if (dnsdb_server != NULL)
+			free(dnsdb_server);
+		dnsdb_server = strdup(val);
 		if (debuglev > 0)
-			fprintf(stderr, "conf env pdns_server = '%s'\n",
-				pdns_server);
+			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
+				dnsdb_server);
 	}
 	if (api_key == NULL) {
 		fprintf(stderr, "no API key given\n");
 		my_exit(1, NULL);
-	}
-	if (pdns_server == NULL) {
-		pdns_server = strdup(default_server);
-		if (debuglev > 0)
-			fprintf(stderr, "conf default pdns_server = '%s'\n",
-				pdns_server);
 	}
 	/* note, the environment settings are for backward compatibility
 	 * with the old python CLI tool; modern settings like USERNAME and
@@ -833,38 +820,6 @@ makepath(mode_e mode, const char *name, const char *type,
 		abort();
 	}
 	return (command);
-}
-
-/* dnsdb_url -- create a URL corresponding to a command-path string.
- *
- * the batch file and command line syntax are in native DNSDB API format.
- * this function has the opportunity to crack this into pieces, and re-form
- * those pieces into the URL format needed by some other DNSDB-like system
- * which might have the same JSON output format but a different REST syntax.
- */
-static char *
-dnsdb_url(const char *path) {
-	char *ret;
-	int x;
-
-	x = asprintf(&ret, "%s%s/%s", pdns_server, api_prefix, path);
-	if (x < 0) {
-		perror("asprintf");
-		ret = NULL;
-	}
-	return (ret);
-}
-
-static void
-dnsdb_auth(reader_t reader) {
-	if (key_header != NULL)
-		reader->hdrs = curl_slist_append(reader->hdrs, key_header);
-}
-
-static bool
-dnsdb_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
-	/* DNSDB filters on the server side, so we want all that we get. */
-	return (true);
 }
 
 /* make_curl -- perform global initializations of libcurl.
@@ -1909,4 +1864,107 @@ escape(char **src) {
 	*src = strdup(escaped);
 	curl_free(escaped);
 	escaped = NULL;
+}
+
+/* dnsdb_url -- create a URL corresponding to a command-path string.
+ *
+ * the batch file and command line syntax are in native DNSDB API format.
+ * this function has the opportunity to crack this into pieces, and re-form
+ * those pieces into the URL format needed by some other DNSDB-like system
+ * which might have the same JSON output format but a different REST syntax.
+ */
+static char *
+dnsdb_url(const char *path) {
+	char *ret;
+	int x;
+
+	if (dnsdb_server == NULL)
+		dnsdb_server = strdup(sys->server);
+	x = asprintf(&ret, "%s/%s", dnsdb_server, path);
+	if (x < 0) {
+		perror("asprintf");
+		ret = NULL;
+	}
+	return (ret);
+}
+
+static void
+dnsdb_auth(reader_t reader) {
+	if (api_key != NULL) {
+		char *key_header;
+
+		if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
+			perror("asprintf");
+			my_exit(1, NULL);
+		}
+		reader->hdrs = curl_slist_append(reader->hdrs, key_header);
+		DESTROY(key_header);
+	}
+}
+
+static bool
+dnsdb_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
+	/* DNSDB filters on the server side, so we want all that we get. */
+	return (true);
+}
+
+/* circl_url -- create a URL corresponding to a command-path string.
+ *
+ * the batch file and command line syntax are in native DNSDB API format.
+ * this function has the opportunity to crack this into pieces, and re-form
+ * those pieces into the URL format needed by some other DNSDB-like system
+ * which might have the same JSON output format but a different REST syntax.
+ *
+ * CIRCL pDNS only "understands IP addresses, hostnames or domain names
+ * (please note that CIDR block queries are not supported)". some day we
+ * may filter the server's output to be more specific, but for now we'll
+ * simply die if asked to do something the server does not handle.
+ * 
+ * 1. RRSet query: rrset/name/NAME[/TYPE[/BAILIWICK]]
+ * 2. Rdata (name) query: rdata/name/NAME[/TYPE]
+ * 3. Rdata (IP address) query: rdata/ip/ADDR[/PFXLEN]
+ */
+static char *
+circl_url(const char *path) {
+	const char *val = NULL;
+	char *ret;
+	int x;
+
+	if (circl_server == NULL)
+		circl_server = strdup(sys->server);
+	if (strncasecmp(path, "rrset/name/", 11) == 0) {
+		val = path + 11;
+	} else if (strncasecmp(path, "rdata/name/", 11) == 0) {
+		val = path + 11;
+	} else if (strncasecmp(path, "rdata/ip/", 9) == 0) {
+		val = path + 9;
+	} else
+		abort();
+	if (strchr(val, '/') != NULL) {
+		fprintf(stderr, "qualifiers not supported by CIRCL pDNS: %s\n",
+			val);
+		my_exit(1, NULL);
+	}
+	x = asprintf(&ret, "%s/%s", circl_server, val);
+	if (x < 0) {
+		perror("asprintf");
+		ret = NULL;
+	}
+	return (ret);
+}
+
+static void
+circl_auth(reader_t reader) {
+	if (reader->easy != NULL) {
+		curl_easy_setopt(reader->easy, CURLOPT_USERPWD,
+				 circl_authinfo);
+		curl_easy_setopt(reader->easy, CURLOPT_HTTPAUTH,
+				 CURLAUTH_BASIC);
+	}
+}
+
+static bool
+circl_wanted(pdns_tuple_t tup __attribute__ ((unused))) {
+	/* for now, we are not asking questions whose answers are too broad. */
+	return (true);
 }
