@@ -25,6 +25,7 @@
 /* modern glibc will complain about the above if it doesn't see this. */
 #define _DEFAULT_SOURCE
 
+/* optional features. */
 #define WANT_PDNS_CIRCL 1
 
 #include <sys/types.h>
