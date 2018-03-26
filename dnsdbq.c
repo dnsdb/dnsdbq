@@ -564,6 +564,13 @@ my_exit(int code, ...) {
 		free(p);
 	va_end(ap);
 
+	/* writers and readers which are still known, must be free()'d. */
+	while (writers != NULL)
+		writer_fini(writers);
+
+	/* if curl is operating, it must be shut down. */
+	unmake_curl();
+
 	/* globals which may have been initialized, are to be free()'d. */
 	DESTROY(api_key);
 	DESTROY(dnsdb_server);
@@ -571,13 +578,6 @@ my_exit(int code, ...) {
 	DESTROY(circl_server);
 	DESTROY(circl_authinfo);
 #endif
-
-	/* writers and readers which are still known, must be free()'d. */
-	while (writers != NULL)
-		writer_fini(writers);
-
-	/* if curl is operating, it must be shut down. */
-	unmake_curl();
 
 	/* terminate process. */
 	if (debuglev > 0)
@@ -721,10 +721,6 @@ read_environ() {
 		fprintf(stderr, "no API key given\n");
 		my_exit(1, NULL);
 	}
-	/* note, the environment settings are for backward compatibility
-	 * with the old python CLI tool; modern settings like USERNAME and
-	 * PASSWORD are added to the configuration file instead.
-	 */
 }
 
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
