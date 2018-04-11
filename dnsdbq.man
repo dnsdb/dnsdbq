@@ -35,7 +35,8 @@
 .Sh DESCRIPTION
 .Nm dnsdbq
 constructs and issues queries to the Farsight DNSDB and displays responses. It
-is commonly used as a production command line interface to the DNSDB API server.
+is commonly used as a production command line interface to the DNSDB API
+server.
 
 DNSDB is a database that stores and indexes both the passive DNS data
 available via Farsight Security's Security Information Exchange as well as the
@@ -189,9 +190,10 @@ sort output in date-time order.
 .It Fl S
 sort output in reverse date-time order.
 .It Fl c
-by default, -A and -B (separately or together) will select partial
-overlaps of database tuples and time search criteria. To match only
-complete overlaps, add the -c ("completeness") command line option (this is also known as "strict" mode).
+by default, -A and -B (separately or together) will select partial overlaps of
+database tuples and time search criteria. To match only complete overlaps, add
+the -c ("completeness") command line option (this is also known as "strict"
+mode).
 .El
 .Sh EXAMPLES
 
