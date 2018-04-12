@@ -315,11 +315,11 @@ main(int argc, char *argv[]) {
 				usage("-u must refer to a pdns system");
 			break;
 		case 'p':
-			if (strcmp(optarg, "json") == 0)
+			if (strcasecmp(optarg, "json") == 0)
 				pres = present_json;
-			else if (strcmp(optarg, "dns") == 0)
+			else if (strcasecmp(optarg, "dns") == 0)
 				pres = present_dns;
-			else if (strcmp(optarg, "csv") == 0)
+			else if (strcasecmp(optarg, "csv") == 0)
 				pres = present_csv;
 			else
 				usage("-p must specify json, dns, or csv");
@@ -391,6 +391,7 @@ main(int argc, char *argv[]) {
 			break;
 		case 'I':
 			info = true;
+			pres = present_json;
 			break;
 		case 'h':
 			help();
@@ -485,6 +486,8 @@ main(int argc, char *argv[]) {
 	} else if (info) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -I");
+		if (pres != present_json)
+			usage("info must be presented in JSON format");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -I");
 		if (type != NULL)
@@ -533,8 +536,8 @@ help(void) {
 	pdns_sys_t t;
 
 	fprintf(stderr,
-"usage: %s [-vdjsShc] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l LIMIT] [-A after] [-B before] [-u $system] {\n"
+"usage: %s [-djsShcI] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
+"\t[-l LIMIT] [-A after] [-B before] [-u system] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t type] [-b bailiwick] {\n"
@@ -554,7 +557,9 @@ help(void) {
 "use -j as a synonym for -p json.\n"
 "use -s to sort in ascending order, or -S for descending order.\n"
 "use -h to reliably display this helpful text.\n"
-"use -c to get complete (vs. partial) time matching for -A and -B\n",
+"use -c to get complete (vs. partial) time matching for -A and -B\n"
+"use -d one or more times to ramp up the diagnostic output\n"
+"use -I to see a system-specific account or key summary in JSON format\n",
 		program_name);
 	fprintf(stderr, "\nsystem must be one of:");
 	for (t = pdns_systems; t->name != NULL; t++)
