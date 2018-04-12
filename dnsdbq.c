@@ -1054,7 +1054,6 @@ launch_one(writer_t writer, char *url) {
 		my_exit(1, reader, url, NULL);
 	}
 	reader->url = url;
-	free(url);
 	url = NULL;
 	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
@@ -1064,6 +1063,8 @@ launch_one(writer_t writer, char *url) {
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
+	if (debuglev > 2)
+		curl_easy_setopt(reader->easy, CURLOPT_VERBOSE, 1L);
 	reader->next = writer->readers;
 	writer->readers = reader;
 	reader = NULL;
@@ -1253,13 +1254,13 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			fwrite(reader->buf, 1, reader->len, stderr);
 			reader->buf[0] = '\0';
 			reader->len = 0;
-			return (0);
+			return (bytes);
 		}
 		if (info) {
 			fwrite(reader->buf, 1, reader->len, stdout);
 			reader->buf[0] = '\0';
 			reader->len = 0;
-			return (0);
+			return (bytes);
 		}
 	}
 
@@ -1517,14 +1518,22 @@ static void
 io_engine(int jobs) {
 	int still;
 
+	if (debuglev > 1)
+		fprintf(stderr, "io_engine(%d)\n", jobs);
+
 	/* let libcurl run while there are too many jobs remaining. */
 	still = 0;
-	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs)
+	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs) {
+		if (debuglev > 3)
+			fprintf(stderr, "...waiting (still %d)\n", still);
 		curl_multi_wait(multi, NULL, 0, 0, NULL);
+	}
 
 	/* drain the response code reports. */
 	still = 0;
 	while (curl_multi_info_read(multi, &still) != NULL) {
+		if (debuglev > 3)
+			fprintf(stderr, "...info read (still %d)\n", still);
 		NULL;
 	}
 }
