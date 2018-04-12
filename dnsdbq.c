@@ -96,6 +96,7 @@ struct pdns_sys {
 	const char	*name;
 	const char	*server;
 	char *		(*url)(const char *);
+	void		(*info)(void);
 	void		(*auth)(reader_t);
 };
 typedef const struct pdns_sys *pdns_sys_t;
@@ -119,6 +120,7 @@ static void unmake_curl(void);
 static void pdns_query(const char *, u_long, u_long);
 static void query_launcher(const char *, writer_t, u_long, u_long);
 static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
+static void launch_one(writer_t, char *);
 static void rendezvous(reader_t);
 static void ruminate_json(int, u_long, u_long);
 static writer_t writer_init(u_long, u_long);
@@ -136,6 +138,7 @@ static void time_print(u_long x, FILE *);
 static int time_get(const char *src, u_long *dst);
 static void escape(char **);
 static char *dnsdb_url(const char *);
+static void dnsdb_info(void);
 static void dnsdb_auth(reader_t);
 #if WANT_PDNS_CIRCL
 static char *circl_url(const char *);
@@ -160,12 +163,12 @@ static const char env_dnsdb_server[] = "DNSDB_SERVER";
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
 	{ "dnsdb", "https://api.dnsdb.info/lookup",
-		dnsdb_url, dnsdb_auth },
+		dnsdb_url, dnsdb_info, dnsdb_auth },
 #if WANT_PDNS_CIRCL
 	{ "circl", "https://www.circl.lu/pdns/query",
-		circl_url, circl_auth },
+		circl_url, NULL, circl_auth },
 #endif
-	{ NULL, NULL, NULL, NULL }
+	{ NULL, NULL, NULL, NULL, NULL }
 };
 
 #define	MAX_KEYS 3
@@ -186,6 +189,7 @@ static pdns_sys_t sys = pdns_systems;
 static bool batch = false;
 static bool merge = false;
 static bool complete = false;
+static bool info = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
@@ -218,7 +222,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:u:p:t:b:k:J:djfmsShc")) != -1)
+			    "A:B:r:n:i:l:u:p:t:b:k:J:djfmsShcI")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -385,6 +389,9 @@ main(int argc, char *argv[]) {
 		case 'c':
 			complete = true;
 			break;
+		case 'I':
+			info = true;
+			break;
 		case 'h':
 			help();
 			my_exit(0, NULL);
@@ -458,6 +465,8 @@ main(int argc, char *argv[]) {
 			usage("can't mix -f with -J");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -J");
+		if (info)
+			usage("can't mix -I with -J");
 		ruminate_json(json_fd, after, before);
 		close(json_fd);
 	} else if (batch) {
@@ -467,9 +476,24 @@ main(int argc, char *argv[]) {
 			usage("can't mix -b with -f");
 		if (type != NULL)
 			usage("can't mix -t with -f");
+		if (info)
+			usage("can't mix -I with -f");
 		server_setup();
 		make_curl();
 		do_batch(stdin, after, before);
+		unmake_curl();
+	} else if (info) {
+		if (mode != no_mode)
+			usage("can't mix -n, -r, or -i with -I");
+		if (bailiwick != NULL)
+			usage("can't mix -b with -I");
+		if (type != NULL)
+			usage("can't mix -t with -I");
+		if (sys->info == NULL)
+			usage("there is no 'info' for this service");
+		server_setup();
+		make_curl();
+		sys->info();
 		unmake_curl();
 	} else {
 		char *command;
@@ -926,18 +950,97 @@ query_launcher(const char *command, writer_t writer,
 	}
 }
 
-/* launch -- actually launch a libcurl job, given a command and time fences.
+/* launch -- actually launch a query job, given a command and time fences.
  */
 static void
 launch(const char *command, writer_t writer,
        u_long first_after, u_long first_before,
        u_long last_after, u_long last_before)
 {
-	reader_t reader;
-	CURLMcode res;
-	char sep;
+	char *url, *tmp, sep;
 	int x;
 
+	url = sys->url(command);
+	if (url == NULL)
+		my_exit(1, NULL);
+	sep = '?';
+	/* only say ?limit= if it was specified and we aren't sorting. if we
+	 * are sorting, we'll implement this on the output of the sort.
+	 */
+	if (limit != 0 && sorted == no_sort) {
+		x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, limit);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, url, NULL);
+		}
+		free(url);
+		url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (first_after != 0) {
+		x = asprintf(&tmp, "%s%c" "time_first_after=%lu",
+			     url, sep, (u_long)first_after);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, url, NULL);
+		}
+		free(url);
+		url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (first_before != 0) {
+		x = asprintf(&tmp, "%s%c" "time_first_before=%lu",
+			     url, sep, (u_long)first_before);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, url, NULL);
+		}
+		free(url);
+		url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (last_after != 0) {
+		x = asprintf(&tmp, "%s%c" "time_last_after=%lu",
+			     url, sep, (u_long)last_after);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, url, NULL);
+		}
+		free(url);
+		url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (last_before != 0) {
+		x = asprintf(&tmp, "%s%c" "time_last_before=%lu",
+			     url, sep, (u_long)last_before);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, url, NULL);
+		}
+		free(url);
+		url = tmp;
+		tmp = NULL;
+		sep = '&';
+	}
+	if (debuglev > 0)
+		fprintf(stderr, "url [%s]\n", url);
+
+	launch_one(writer, url);
+}
+
+/* launch_one -- given a url, tell libcurl to go fetch it
+ */
+static void
+launch_one(writer_t writer, char *url) {
+	reader_t reader;
+	CURLMcode res;
+
+	if (debuglev > 1)
+		fprintf(stderr, "launch_one(%s)\n", url);
 	reader = malloc(sizeof *reader);
 	if (reader == NULL) {
 		perror("malloc");
@@ -948,88 +1051,11 @@ launch(const char *command, writer_t writer,
 	reader->easy = curl_easy_init();
 	if (reader->easy == NULL) {
 		/* an error will have been output by libcurl in this case. */
-		my_exit(1, reader, NULL);
+		my_exit(1, reader, url, NULL);
 	}
-
-	reader->url = sys->url(command);
-	if (reader->url == NULL)
-		my_exit(1, reader, NULL);
-	sep = '?';
-	/* only say ?limit= if it was specified and we aren't sorting. if we
-	 * are sorting, we'll implement this on the output of the sort.
-	 */
-	if (limit != 0 && sorted == no_sort) {
-		char *tmp;
-
-		x = asprintf(&tmp, "%s%c" "limit=%d", reader->url, sep, limit);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, reader->url, reader, NULL);
-		}
-		free(reader->url);
-		reader->url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (first_after != 0) {
-		char *tmp;
-
-		x = asprintf(&tmp, "%s%c" "time_first_after=%lu",
-			     reader->url, sep, (u_long)first_after);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, reader->url, reader, NULL);
-		}
-		free(reader->url);
-		reader->url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (first_before != 0) {
-		char *tmp;
-
-		x = asprintf(&tmp, "%s%c" "time_first_before=%lu",
-			     reader->url, sep, (u_long)first_before);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, reader->url, reader, NULL);
-		}
-		free(reader->url);
-		reader->url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (last_after != 0) {
-		char *tmp;
-
-		x = asprintf(&tmp, "%s%c" "time_last_after=%lu",
-			     reader->url, sep, (u_long)last_after);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, reader->url, reader, NULL);
-		}
-		free(reader->url);
-		reader->url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (last_before != 0) {
-		char *tmp;
-
-		x = asprintf(&tmp, "%s%c" "time_last_before=%lu",
-			     reader->url, sep, (u_long)last_before);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, reader->url, reader, NULL);
-		}
-		free(reader->url);
-		reader->url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (debuglev > 0)
-		fprintf(stderr, "url [%s]\n", reader->url);
-
+	reader->url = url;
+	free(url);
+	url = NULL;
 	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
 	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -1198,7 +1224,9 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	memcpy(reader->buf + reader->len, ptr, bytes);
 	reader->len += bytes;
 
-	/* when the reader is a live web result, emit body as error reports. */
+	/* when the reader is a live web result, emit
+	 * !2xx errors and info payloads as reports.
+	 */
 	if (reader->easy != NULL) {
 		if (reader->rcode == 0)
 			curl_easy_getinfo(reader->easy,
@@ -1223,6 +1251,12 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				reader->once = true;
 			}
 			fwrite(reader->buf, 1, reader->len, stderr);
+			reader->buf[0] = '\0';
+			reader->len = 0;
+			return (0);
+		}
+		if (info) {
+			fwrite(reader->buf, 1, reader->len, stdout);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (0);
@@ -1889,6 +1923,25 @@ dnsdb_url(const char *path) {
 		ret = NULL;
 	}
 	return (ret);
+}
+
+static void dnsdb_info(void) {
+	writer_t writer;
+
+	if (debuglev > 0)
+		fprintf(stderr, "dnsdb_info()\n");
+
+	/* start a writer, which might be format functions, or POSIX sort. */
+	writer = writer_init(0, 0);
+
+	/* start a status fetch. */
+	launch_one(writer, strdup("/lookup/rate_limit"));
+	
+	/* run all jobs to completion. */
+	io_engine(0);
+
+	/* stop the writer, which might involve reading POSIX sort's output. */
+	writer_fini(writer);
 }
 
 static void
