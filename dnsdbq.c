@@ -162,7 +162,7 @@ static const char env_dnsdb_server[] = "DNSDB_SERVER";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
-	{ "dnsdb", "https://api.dnsdb.info/lookup",
+	{ "dnsdb", "https://api.dnsdb.info",
 		dnsdb_url, dnsdb_info, dnsdb_auth },
 #if WANT_PDNS_CIRCL
 	{ "circl", "https://www.circl.lu/pdns/query",
@@ -1921,12 +1921,21 @@ escape(char **src) {
  */
 static char *
 dnsdb_url(const char *path) {
+	const char *lookup, *p;
 	char *ret;
 	int x;
 
+	/* if the config file didn't specify our server, do it here. */
 	if (dnsdb_server == NULL)
 		dnsdb_server = strdup(sys->server);
-	x = asprintf(&ret, "%s/%s", dnsdb_server, path);
+
+	/* if there's a /path after the host, don't add /lookup here. */
+	x = 0;
+	for (p = dnsdb_server; *p != '\0'; p++)
+		x += (*p == '/');
+	lookup = (x < 3) ? "/lookup" : "";
+
+	x = asprintf(&ret, "%s%s/%s", dnsdb_server, lookup, path);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
@@ -1944,7 +1953,7 @@ static void dnsdb_info(void) {
 	writer = writer_init(0, 0);
 
 	/* start a status fetch. */
-	launch_one(writer, strdup("/lookup/rate_limit"));
+	launch_one(writer, dnsdb_url("rate_limit"));
 	
 	/* run all jobs to completion. */
 	io_engine(0);
