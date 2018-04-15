@@ -1539,7 +1539,6 @@ io_engine(int jobs) {
 	while (curl_multi_info_read(multi, &still) != NULL) {
 		if (debuglev > 3)
 			fprintf(stderr, "...info read (still %d)\n", still);
-		NULL;
 	}
 }
 
