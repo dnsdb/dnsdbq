@@ -284,7 +284,7 @@ $ head -1 batch-output.json | jq .
 .Ic /etc/isc-dnsdb-query.conf ,
 or
 .Ic /etc/dnsdb-query.conf :
-configuration file which should contain the user's apikey and server URL.
+configuration file which should contain the user's apikey and server URL.  The configuration file may contain standard shell comments.
 
 .Bl -offset indent
 .It
@@ -293,6 +293,13 @@ contains the user's apikey (no default)
 .It
 .Ic DNSDB_SERVER :
 contains the URL of the DNSDB API server (default is https://api.dnsdb.info)
+
+Example configuration file:
+.Bd -literal -offset 4n
+$ cat ~/.dnsdb-query.conf
+#APIKEY=<<censored1>>
+APIKEY=<<censored2>>
+.Ed
 .El
 .El
 .Sh ENVIRONMENT VARIABLES
