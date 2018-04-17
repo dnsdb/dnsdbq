@@ -134,6 +134,7 @@ static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, char *, size_t);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
+static json_t *time2json(u_long x);
 static void time_print(u_long x, FILE *);
 static int time_get(const char *src, u_long *dst);
 static void escape(char **);
@@ -200,6 +201,7 @@ static struct timeval now;
 static struct timezone here;
 static int nkeys, keys[MAX_KEYS];
 static writer_t writers = NULL;
+static enum { timestamp_default = 0, timestamp_human, timestamp_numeric } timestamp_format = timestamp_default;
 
 /* Public. */
 
@@ -222,7 +224,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:u:p:t:b:k:J:djfmsShcI")) != -1)
+			    "A:B:r:n:i:l:u:p:t:b:k:J:T:djfmsShcI")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -329,6 +331,14 @@ main(int argc, char *argv[]) {
 				free(type);
 			type = strdup(optarg);
 			break;
+		case 'T':
+			if (strcasecmp(optarg, "h") == 0)
+				timestamp_format = timestamp_human;
+			else if (strcasecmp(optarg, "n") == 0)
+				timestamp_format = timestamp_numeric;
+			else
+				usage("-T must specify h or n");
+			break;
 		case 'b':
 			if (bailiwick != NULL)
 				free(bailiwick);
@@ -414,6 +424,13 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (length != NULL)
 		escape(&length);
+
+	if (timestamp_format == timestamp_default) {
+		if (pres == present_json)
+			timestamp_format = timestamp_human;
+		else
+			timestamp_format = timestamp_numeric;
+	}
 
 	/* optionally dump program options as interpreted. */
 	if (debuglev > 0) {
@@ -537,7 +554,7 @@ help(void) {
 
 	fprintf(stderr,
 "usage: %s [-djsShcI] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l LIMIT] [-A after] [-B before] [-u system] {\n"
+"\t[-l LIMIT] [-A after] [-B before] [-u system] [-T h|n] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t type] [-b bailiwick] {\n"
@@ -1627,8 +1644,37 @@ present_json(const pdns_tuple_t tup __attribute__ ((unused)),
 	     size_t jsonlen,
 	     FILE *outf)
 {
-	fwrite(jsonbuf, 1, jsonlen, outf);
-	putc('\n', outf);
+	if (timestamp_format == timestamp_numeric) {
+		fwrite(jsonbuf, 1, jsonlen, outf);
+		putc('\n', outf);
+	} else {		/* assume timestamp_human */
+		/* If need human timestamps, then clone the json object and reformat each timestamp into human form */
+		char *newbuf = NULL;
+		json_t *jcopy = json_deep_copy(tup->obj.main);
+		assert (jcopy != NULL);
+		if (tup->obj.time_first != NULL) {
+			json_t *json_rep = time2json(tup->time_first);
+			json_object_set(jcopy, "time_first", json_rep);
+		}
+		if (tup->obj.time_last != NULL) {
+			json_t *json_rep = time2json(tup->time_last);
+			json_object_set(jcopy, "time_last", json_rep);
+		}
+		if (tup->obj.zone_first != NULL) {
+			json_t *json_rep = time2json(tup->zone_first);
+			json_object_set(jcopy, "zone_time_last", json_rep);
+		}
+		if (tup->obj.zone_last != NULL) {
+			json_t *json_rep = time2json(tup->zone_last);
+			json_object_set(jcopy, "zone_time_first", json_rep);
+		}
+		newbuf = json_dumps(jcopy, JSON_COMPACT);
+		fputs(newbuf, outf);
+		free(newbuf);
+		json_decref(jcopy);
+		putc('\n', outf);
+
+	}
 }
 
 /* present_csv -- render one DNSDB tuple as comma-separated values (CSV).
@@ -1856,20 +1902,42 @@ timecmp(u_long a, u_long b) {
 	return (0);
 }
 
+static json_t *time2json(u_long x)  {
+	if (x == 0) {
+		return json_string("0");
+	} else if (timestamp_format == timestamp_human) {
+		time_t t = (time_t)x;
+		struct tm *y = gmtime(&t);
+		char z[99];
+
+		strftime(z, sizeof z, "%F %T", y);
+		return json_string(z);
+	} else {		/* assume timestamp_numeric */
+		char z[99];
+		sprintf(z, "%lu", x);
+		return json_string(z);
+	}
+
+}
+
+
 /* time_print -- format one (possibly relative) timestamp.
  */
 static void
 time_print(u_long x, FILE *outf) {
 	if (x == 0) {
 		fputs("0", outf);
-	} else {
+	} else if (timestamp_format == timestamp_human) {
 		time_t t = (time_t)x;
 		struct tm *y = gmtime(&t);
 		char z[99];
 
 		strftime(z, sizeof z, "%F %T", y);
 		fputs(z, outf);
+	} else {		/* assume timestamp_numeric */
+		fprintf(outf, "%lu", x);
 	}
+
 }
 
 /* time_get -- parse and return one (possibly relative) timestamp.

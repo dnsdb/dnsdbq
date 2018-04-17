@@ -179,6 +179,20 @@ The
 .Ic value
 is an even number of hexadecimal digits specifying a raw octet string.
 .El
+.It Fl T Ar timestamp_format
+specify how timestamps should be output.  Must be one of the following:
+.Ic h
+for human readable form, which is the default for
+.Ic csv
+and
+.Ic dns
+output formats:
+.Ic YYYY-MM-DD HH:MM:SS,
+or
+.Ic n
+for numeric format, in seconds since the Unix epoch (1/1/1970 00:00:00 UTC).    This is the default for
+.Ic json
+output format.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be
