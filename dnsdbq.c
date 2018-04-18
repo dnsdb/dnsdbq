@@ -1883,7 +1883,12 @@ dnsdb_url(const char *path) {
 
 	if (dnsdb_server == NULL)
 		dnsdb_server = strdup(sys->server);
-	x = asprintf(&ret, "%s/%s", dnsdb_server, path);
+	/* enforce that dnsdb_server appears to be a URL, not just a bare hostname */
+	assert(dnsdb_server != NULL);
+	if (strstr(dnsdb_server, "://") == 0)
+		x = asprintf(&ret, "https://%s/%s", dnsdb_server, path);
+	else
+		x = asprintf(&ret, "%s/%s", dnsdb_server, path);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
