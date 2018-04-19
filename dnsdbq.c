@@ -1928,10 +1928,12 @@ dnsdb_url(const char *path) {
 	const char *lookup, *p;
 	char *ret;
 	int x;
+	const char *scheme_if_needed;
 
 	/* if the config file didn't specify our server, do it here. */
 	if (dnsdb_server == NULL)
 		dnsdb_server = strdup(sys->server);
+	assert(dnsdb_server != NULL);
 
 	/* if there's a /path after the host, don't add /lookup here. */
 	x = 0;
@@ -1939,7 +1941,10 @@ dnsdb_url(const char *path) {
 		x += (*p == '/');
 	lookup = (x < 3) ? "/lookup" : "";
 
-	x = asprintf(&ret, "%s%s/%s", dnsdb_server, lookup, path);
+	/* enforce that dnsdb_server appears to be a URL, not just a bare hostname */
+	scheme_if_needed = (strstr(dnsdb_server, "://") == NULL) ? "https://" : "" ;
+
+	x = asprintf(&ret, "%s%s%s/%s", scheme_if_needed, dnsdb_server, lookup, path);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
