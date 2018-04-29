@@ -34,6 +34,7 @@
 
 #include <assert.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1877,6 +1878,7 @@ time_print(u_long x, FILE *outf) {
 static int
 time_get(const char *src, u_long *dst) {
 	struct tm tt;
+	long long ll;
 	u_long t;
 	char *ep;
 
@@ -1887,9 +1889,12 @@ time_get(const char *src, u_long *dst) {
 		*dst = (u_long)(mktime(&tt) - here.tz_minuteswest);
 		return (1);
 	}
-	t = strtoul(src, &ep, 10);
+	ll = strtoll(src, &ep, 10);
 	if (*src != '\0' && *ep == '\0') {
-		*dst = t;
+		if (ll < 0)
+			*dst = (u_long)now.tv_sec - (u_long)imaxabs(ll);
+		else
+			*dst = (u_long)ll;
 		return (1);
 	}
 	if (ns_parse_ttl(src, &t) == 0) {
