@@ -1522,17 +1522,26 @@ writer_fini(writer_t writer) {
  */
 static void
 io_engine(int jobs) {
-	int still;
+	int still, repeats, numfds;
 
 	if (debuglev > 1)
 		fprintf(stderr, "io_engine(%d)\n", jobs);
 
 	/* let libcurl run while there are too many jobs remaining. */
 	still = 0;
+	repeats = 0;
 	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs) {
 		if (debuglev > 3)
 			fprintf(stderr, "...waiting (still %d)\n", still);
-		curl_multi_wait(multi, NULL, 0, 0, NULL);
+		numfds = 0;
+		if (curl_multi_wait(multi, NULL, 0, 0, &numfds) != CURLM_OK)
+			break;
+		if (numfds == 0) {
+			if (++repeats > 1)
+				usleep(100000);
+		} else {
+			repeats = 0;
+		}
 	}
 
 	/* drain the response code reports. */
