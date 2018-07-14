@@ -19,7 +19,7 @@
 .Nm dnsdbq
 .Nd DNSDB query tool
 .Sh SYNOPSIS
-.Op Fl dfmhjsShc
+.Op Fl dfmhjsShcI
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -194,6 +194,10 @@ by default, -A and -B (separately or together) will select partial overlaps of
 database tuples and time search criteria. To match only complete overlaps, add
 the -c ("completeness") command line option (this is also known as "strict"
 mode).
+.It Fl I
+request information from the API server concerning the API key itself, which
+may include rate limit, query quota, query allowance, or privilege levels; the
+output format and content is dependent on the server_sys argument (see -u).
 .El
 .Sh EXAMPLES
 
