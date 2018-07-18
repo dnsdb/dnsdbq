@@ -33,7 +33,7 @@ clean:
 	rm -f $(TOOL_OBJ)
 
 dnsdbq: $(TOOL_OBJ) Makefile
-	$(CC) -o $(TOOL) $(CGPROF) $(TOOL_OBJ) $(CURLLIBS) $(JANSLIBS)
+	$(CC) $(CDEBUG) -o $(TOOL) $(CGPROF) $(TOOL_OBJ) $(CURLLIBS) $(JANSLIBS)
 
 .c.o:
 	$(CC) $(CFLAGS) $(CURLINCL) $(JANSINCL) -c $<

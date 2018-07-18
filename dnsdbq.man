@@ -197,7 +197,10 @@ mode).
 .It Fl I
 request information from the API server concerning the API key itself, which
 may include rate limit, query quota, query allowance, or privilege levels; the
-output format and content is dependent on the server_sys argument (see -u).
+output format and content is dependent on the server_sys argument (see -u) and
+upon the -p argument.  -I -p json prints the raw info.  -I -p text prints
+the information in a more understandable textual form, including converting
+any epoch integer times into UTC formatted times.
 .El
 .Sh EXAMPLES
 
