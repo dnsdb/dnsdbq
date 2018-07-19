@@ -1523,6 +1523,7 @@ writer_fini(writer_t writer) {
 static void
 io_engine(int jobs) {
 	int still, repeats, numfds;
+        struct CURLMsg *curlmsg;
 
 	if (debuglev > 1)
 		fprintf(stderr, "io_engine(%d)\n", jobs);
@@ -1546,10 +1547,21 @@ io_engine(int jobs) {
 
 	/* drain the response code reports. */
 	still = 0;
-	while (curl_multi_info_read(multi, &still) != NULL) {
-		if (debuglev > 3)
-			fprintf(stderr, "...info read (still %d)\n", still);
-	}
+
+        do {
+                curlmsg = curl_multi_info_read(multi, &still);
+
+                if (curlmsg && curlmsg->msg == CURLMSG_DONE && curlmsg->data.result != CURLE_OK) {
+                        if (curlmsg->data.result == CURLE_COULDNT_RESOLVE_HOST)
+                                fprintf(stderr, "libcurl failed since could not resolve the hostname\n");
+                        else if (curlmsg->data.result == CURLE_COULDNT_CONNECT)
+                                fprintf(stderr, "libcurl failed since could not connect\n");
+                        else
+                                fprintf(stderr, "libcurl failed with curl error %d\n", curlmsg->data.result);
+                }
+                if (curlmsg && debuglev > 3)
+                        fprintf(stderr, "...info read (still %d)\n", still);
+        } while (curlmsg);
 }
 
 /* present_dns -- render one pdns tuple in "dig" style ascii text.
