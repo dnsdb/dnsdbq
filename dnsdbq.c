@@ -28,7 +28,6 @@
 /* optional features. */
 #define WANT_PDNS_CIRCL 1
 
-#define ENABLE_PRETTY_PRINT_TIMES 1
 #define DEFAULT_RATE_FORMAT present_json  /* or use present_dns */
 
 #include <sys/types.h>
@@ -71,36 +70,28 @@ typedef struct pdns_tuple *pdns_tuple_t;
 
 typedef void (*present_t)(const pdns_tuple_t, const char *, size_t, FILE *);
 
-#if ENABLE_PRETTY_PRINT_TIMES
 struct rate_json {
 	json_t		*main,
 			*reset, *expires, *limit, *remaining;
 };
 
-/*
- * holds either nothing, a n/a value, a unlimited value, or an integer value
+/*` holds either nothing, a n/a value, a unlimited value, or an integer value
  */
 struct quadvalue {
-	/* if neither of is_unlimited, is_na, or is_int is true then nothing valued */
-	/* if is_unlimited == true then is_na and is_int and as_int undefined */
-	/* if is_na == true then is_unlimited and is_int and as_int undefined */
-	/* if is_int == true then as_int defined */
-	bool is_na;
-	bool is_unlimited;
-	bool is_int;
-	u_long as_int;
+	/* if none of the is_* fields are true then nothing valued */
+	/* only one of the is_* fields can be true */
+	/* only if is_int == true then as_int defined */
+	bool	is_na;
+	bool	is_unlimited;
+	bool	is_int;
+	u_long	as_int;
 };
 
 struct rate_tuple {
-	struct rate_json  obj;
-	struct quadvalue reset, expires, limit, remaining;
+	struct rate_json	obj;
+	struct quadvalue	reset, expires, limit, remaining;
 };
 typedef struct rate_tuple *rate_tuple_t;
-
-static const char *rate_tuple_make(rate_tuple_t, char *, size_t);
-static void rate_tuple_unmake(rate_tuple_t);
-#endif /*  ENABLE_PRETTY_PRINT_TIMES */
-
 
 struct reader {
 	struct reader		*next;
@@ -167,6 +158,11 @@ static void present_json(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, char *, size_t);
+static void print_quadvalue(FILE *, const char *, const struct quadvalue *);
+static const char *parse_quadvalue(const json_t *, const char *, struct quadvalue *);
+static const char *rate_tuple_make(rate_tuple_t, char *, size_t);
+static void rate_tuple_unmake(rate_tuple_t);
+static void write_info(reader_t);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
@@ -228,11 +224,7 @@ static bool info = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
-#if ENABLE_PRETTY_PRINT_TIMES
 static present_t pres = NULL;
-#else
-static present_t pres = present_dns;
-#endif /*  ENABLE_PRETTY_PRINT_TIMES */
 static int limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
@@ -360,15 +352,10 @@ main(int argc, char *argv[]) {
 				pres = present_dns;
 			else if (strcasecmp(optarg, "csv") == 0)
 				pres = present_csv;
-#if ENABLE_PRETTY_PRINT_TIMES
 			else if (strcasecmp(optarg, "text") == 0)
 				pres = present_dns;
 			else
 				usage("-p must specify json, dns, text, or csv");
-#else
-			else
-				usage("-p must specify json, dns, or csv");
-#endif /* ENABLE_PRETTY_PRINT_TIMES */
 			break;
 		case 't':
 			if (type != NULL)
@@ -437,9 +424,7 @@ main(int argc, char *argv[]) {
 			break;
 		case 'I':
 			info = true;
-#if ENABLE_PRETTY_PRINT_TIMES == 0
 			pres = present_json;
-#endif /* ENABLE_PRETTY_PRINT_TIMES */
 			break;
 		case 'h':
 			help();
@@ -505,14 +490,12 @@ main(int argc, char *argv[]) {
 		usage("using -k without -s or -S makes no sense.");
 	if (merge && !batch)
 		usage("using -m without -f makes no sense.");
-#if ENABLE_PRETTY_PRINT_TIMES
-        if (pres == NULL) {
-                if (info)
-                        pres = DEFAULT_RATE_FORMAT;
-                else
-                        pres = present_dns;
-        }
-#endif /* ENABLE_PRETTY_PRINT_TIMES */
+	if (pres == NULL) {
+		if (info)
+			pres = DEFAULT_RATE_FORMAT;
+		else
+			pres = present_dns;
+	}
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -542,13 +525,8 @@ main(int argc, char *argv[]) {
 	} else if (info) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -I");
-#if ENABLE_PRETTY_PRINT_TIMES
-                if (!(pres == present_dns || pres == present_json))
-                        usage("info must be presented in json or dns (text) format");
-#else
-		if (pres != present_json)
-			usage("info must be presented in JSON format");
-#endif /* ENABLE_PRETTY_PRINT_TIMES */
+		if (!(pres == present_dns || pres == present_json))
+			usage("info must be presented in json or dns (text) format");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -I");
 		if (type != NULL)
@@ -1274,22 +1252,44 @@ writer_init(u_long after, u_long before) {
 	return (writer);
 }
 
-#if ENABLE_PRETTY_PRINT_TIMES
-static void print_quadvalue(FILE *outstream, const char *key, const struct quadvalue *tp) {
-        if (!(tp->is_na || tp->is_unlimited || tp->is_int))
-                return;         /* don't print anything */
-        fprintf(outstream, "\t%s: ", key);
-        if (tp->is_na)
-                fprintf(outstream, "n/a");
-        else if (tp->is_unlimited)
-                fprintf(outstream, "unlimited");
-        else if (strcmp(key, "reset") == 0 || strcmp(key, "expires") == 0)
-                time_print(tp->as_int, outstream);
-        else
-                fprintf(outstream, "%lu", tp->as_int);
-        fputc('\n', outstream);
+static void
+print_quadvalue(FILE *outstream, const char *key, const struct quadvalue *tp) {
+	if (!(tp->is_na || tp->is_unlimited || tp->is_int))
+		return;		/* don't print anything */
+	fprintf(outstream, "\t%s: ", key);
+	if (tp->is_na)
+		fprintf(outstream, "n/a");
+	else if (tp->is_unlimited)
+		fprintf(outstream, "unlimited");
+	else if (strcmp(key, "reset") == 0 || strcmp(key, "expires") == 0)
+		time_print(tp->as_int, outstream);
+	else
+		fprintf(outstream, "%lu", tp->as_int);
+	fputc('\n', outstream);
 }
-#endif /* ENABLE_PRETTY_PRINT_TIMES */
+
+/* write_info -- assumes that reader contains the complete json block
+ */
+static void
+write_info(reader_t reader) {
+	if (pres == present_dns) {
+		struct rate_tuple tup;
+		const char *msg;
+		msg = rate_tuple_make(&tup, reader->buf, reader->len);
+		if (msg != NULL) { /* there was an error */
+			puts(msg);
+		} else {
+			fprintf(stdout, "quota:\n");
+			print_quadvalue(stdout, "reset", &tup.reset);
+			print_quadvalue(stdout, "expires", &tup.expires);
+			print_quadvalue(stdout, "limit", &tup.limit);
+			print_quadvalue(stdout, "remaining", &tup.remaining);
+		}
+	} else {
+		/* just output the raw json form */
+		fwrite(reader->buf, 1, reader->len, stdout);
+	}
+}
 
 /* writer_func -- process a block of json text, from filesys or API socket.
  */
@@ -1340,23 +1340,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			return (bytes);
 		}
 		if (info) {
-#if ENABLE_PRETTY_PRINT_TIMES
-                        if (pres == present_dns) {
-                                struct rate_tuple tup;
-                                const char *msg;
-                                msg = rate_tuple_make(&tup, reader->buf, reader->len);
-                                if (msg) { /* there was an error */
-                                        puts(msg);
-                                        return (bytes);
-                                }
-                                fprintf(stdout, "quota:\n");
-                                print_quadvalue(stdout, "reset", &tup.reset);
-                                print_quadvalue(stdout, "expires", &tup.expires);
-                                print_quadvalue(stdout, "limit", &tup.limit);
-                                print_quadvalue(stdout, "remaining", &tup.remaining);
-                        } else
-#endif /*  ENABLE_PRETTY_PRINT_TIMES */
-			fwrite(reader->buf, 1, reader->len, stdout);
+			write_info(reader);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);
@@ -1375,7 +1359,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		pre_len = (size_t)(nl - reader->buf);
 
 		msg = tuple_make(&tup, reader->buf, pre_len);
-		if (msg) {
+		if (msg != NULL) {
 			puts(msg);
 			goto more;
 		}
@@ -1722,6 +1706,8 @@ present_dns(const pdns_tuple_t tup,
 		putc('\n', outf);
 }
 
+/* present_json -- render one DNSDB tuple as newline-separated JSON.
+ */
 static void
 present_json(const pdns_tuple_t tup __attribute__ ((unused)),
 	     const char *jsonbuf,
@@ -1946,17 +1932,14 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-#if ENABLE_PRETTY_PRINT_TIMES
+static const char *
+parse_quadvalue(const json_t *obj, const char *key, struct quadvalue *tp) {
+	json_t *jvalue;
 
-static const char *parse_quadvalue(const json_t *obj, const char *key, struct quadvalue *tp) {
-        json_t *jvalue = json_object_get(obj, key);
+	memset(tp, 0, sizeof *tp); /* leaves quadvalue as "no value" */
 
-        tp->is_na = false;
-        tp->is_unlimited = false;
-        tp->is_int = false;
-        tp->as_int = 0;
-
-	if (jvalue != NULL) {	/* NULL is not an error, since we allow missing keys */
+	jvalue = json_object_get(obj, key);
+	if (jvalue != NULL) {	/* NULL is not an error, since we allow missing keys, which means it is a "no value" */
 		if (json_is_integer(jvalue)) {
 			tp->is_int = true;
 			tp->as_int = (u_long)json_integer_value(jvalue);
@@ -1970,7 +1953,7 @@ static const char *parse_quadvalue(const json_t *obj, const char *key, struct qu
 				return "value must be an integer or \"n/a\" or \"unlimited\"";
 		}
 	}
-        return NULL;
+	return NULL;
 }
 
 /* rate_tuple_make -- create one rate tuple object out of a JSON object.
@@ -1979,7 +1962,7 @@ static const char *
 rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
-        json_t *rate;
+	json_t *rate;
 
 	memset(tup, 0, sizeof *tup);
 	if (debuglev > 2)
@@ -1997,27 +1980,27 @@ rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
 		fputc('\n', stderr);
 	}
 
-        rate = json_object_get(tup->obj.main, "rate");
-        if (rate == NULL) {
-                msg = "Missing \"rate\" object";
-                goto ouch;
-        }
+	rate = json_object_get(tup->obj.main, "rate");
+	if (rate == NULL) {
+		msg = "Missing \"rate\" object";
+		goto ouch;
+	}
 
-        msg = parse_quadvalue(rate, "reset", &tup->reset);
-        if (msg != NULL)
-                goto ouch;
+	msg = parse_quadvalue(rate, "reset", &tup->reset);
+	if (msg != NULL)
+		goto ouch;
 
-        msg = parse_quadvalue(rate, "expires", &tup->expires);
-        if (msg != NULL)
-                goto ouch;
+	msg = parse_quadvalue(rate, "expires", &tup->expires);
+	if (msg != NULL)
+		goto ouch;
 
-        msg = parse_quadvalue(rate, "limit", &tup->limit);
-        if (msg != NULL)
-                goto ouch;
+	msg = parse_quadvalue(rate, "limit", &tup->limit);
+	if (msg != NULL)
+		goto ouch;
 
-        msg = parse_quadvalue(rate, "remaining", &tup->remaining);
-        if (msg != NULL)
-                goto ouch;
+	msg = parse_quadvalue(rate, "remaining", &tup->remaining);
+	if (msg != NULL)
+		goto ouch;
 
 	assert(msg == NULL);
 	return (NULL);
@@ -2034,7 +2017,6 @@ static void
 rate_tuple_unmake(rate_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
-#endif /*  ENABLE_PRETTY_PRINT_TIMES */
 
 /* timecmp -- compare two absolute timestamps, give -1, 0, or 1.
  */
@@ -2147,7 +2129,8 @@ dnsdb_url(const char *path) {
 	return (ret);
 }
 
-static void dnsdb_info(void) {
+static void
+dnsdb_info(void) {
 	writer_t writer;
 
 	if (debuglev > 0)
