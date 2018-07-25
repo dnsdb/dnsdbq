@@ -1250,6 +1250,7 @@ writer_init(u_long after, u_long before) {
  */
 static void
 print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
+	/* if unspecified, output nothing, not even the key name. */
 	if (tp->rk == rk_naught)
 		return;
 
