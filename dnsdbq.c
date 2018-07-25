@@ -73,21 +73,21 @@ struct rate_json {
 			*reset, *expires, *limit, *remaining;
 };
 
-/* holds either nothing, a n/a value, a unlimited value, or an integer value.
- * if none of the is_* fields are true then nothing valued.
- * only one of the is_* fields can be true.
- * only if is_int == true then as_int defined.
- */
-struct quadvalue {
-	bool	is_na;
-	bool	is_unlimited;
-	bool	is_int;
-	u_long	as_int;
+enum ratekind {
+	rk_naught = 0,		/* not present. */
+	rk_na,			/* "n/a". */
+	rk_unlimited,		/* "unlimited". */
+	rk_int			/* some integer. */
+};
+
+struct rateval {
+	enum ratekind		rk;
+	u_long			as_int;		/* only for rk == rk_int. */
 };
 
 struct rate_tuple {
 	struct rate_json	obj;
-	struct quadvalue	reset, expires, limit, remaining;
+	struct rateval	reset, expires, limit, remaining;
 };
 typedef struct rate_tuple *rate_tuple_t;
 
@@ -156,8 +156,9 @@ static void present_json(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, char *, size_t);
-static void print_quadvalue(FILE *, const char *, const struct quadvalue *);
-static const char *parse_quadvalue(const json_t *, const char *, struct quadvalue *);
+static void print_rateval(FILE *, const char *, const struct rateval *);
+static const char *parse_rateval(const json_t *, const char *,
+				 struct rateval *);
 static const char *rate_tuple_make(rate_tuple_t, char *, size_t);
 static void rate_tuple_unmake(rate_tuple_t);
 static void write_info(reader_t);
@@ -1245,22 +1246,31 @@ writer_init(u_long after, u_long before) {
 	return (writer);
 }
 
-/* print_quadvalue -- output formatter for quadvalue
+/* print_rateval -- output formatter for rateval
  */
 static void
-print_quadvalue(FILE *outstream, const char *key, const struct quadvalue *tp) {
-	if (!(tp->is_na || tp->is_unlimited || tp->is_int))
+print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
+	if (tp->rk == rk_naught)
 		return;
 
 	fprintf(outstream, "\t%s: ", key);
-	if (tp->is_na)
+	switch (tp->rk) {
+	case rk_na:
 		fprintf(outstream, "n/a");
-	else if (tp->is_unlimited)
+		break;
+	case rk_unlimited:
 		fprintf(outstream, "unlimited");
-	else if (strcmp(key, "reset") == 0 || strcmp(key, "expires") == 0)
-		time_print(tp->as_int, outstream);
-	else
-		fprintf(outstream, "%lu", tp->as_int);
+		break;
+	case rk_int:
+		if (strcmp(key, "reset") == 0 || strcmp(key, "expires") == 0)
+			time_print(tp->as_int, outstream);
+		else
+			fprintf(outstream, "%lu", tp->as_int);
+		break;
+	case rk_naught: /*FALLTHROUGH*/
+	default:
+		abort();
+	}
 	fputc('\n', outstream);
 }
 
@@ -1276,10 +1286,10 @@ write_info(reader_t reader) {
 			puts(msg);
 		} else {
 			fprintf(stdout, "quota:\n");
-			print_quadvalue(stdout, "reset", &tup.reset);
-			print_quadvalue(stdout, "expires", &tup.expires);
-			print_quadvalue(stdout, "limit", &tup.limit);
-			print_quadvalue(stdout, "remaining", &tup.remaining);
+			print_rateval(stdout, "reset", &tup.reset);
+			print_rateval(stdout, "expires", &tup.expires);
+			print_rateval(stdout, "limit", &tup.limit);
+			print_rateval(stdout, "remaining", &tup.remaining);
 		}
 	} else if (pres == present_json) {
 		fwrite(reader->buf, 1, reader->len, stdout);
@@ -1929,21 +1939,21 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-/* parse_quadvalue: parse an optional key value json object.
+/* parse_rateval: parse an optional key value json object.
  *
  * note: a missing key means the corresponding key's value is a "no value".
  */
 static const char *
-parse_quadvalue(const json_t *obj, const char *key, struct quadvalue *tp) {
+parse_rateval(const json_t *obj, const char *key, struct rateval *tp) {
 	json_t *jvalue;
 
 	jvalue = json_object_get(obj, key);
 	if (jvalue == NULL) {
-		memset(tp, 0, sizeof *tp); /* leaves quadvalue as "no value" */
+		memset(tp, 0, sizeof *tp); /* leaves rateval as "no value" */
 	} else {
 		if (json_is_integer(jvalue)) {
 			memset(tp, 0, sizeof *tp);
-			tp->is_int = true;
+			tp->rk = rk_int;
 			tp->as_int = (u_long)json_integer_value(jvalue);
 		} else {
 			const char *strvalue = json_string_value(jvalue);
@@ -1952,13 +1962,13 @@ parse_quadvalue(const json_t *obj, const char *key, struct quadvalue *tp) {
 			if (strvalue != NULL) {
 				if (strcasecmp(strvalue, "n/a") == 0) {
 					memset(tp, 0, sizeof *tp);
-					tp->is_na = true;
+					tp->rk = rk_na;
 					ok = true;
 				} else if (strcasecmp(strvalue,
 						      "unlimited") == 0)
 				{
 					memset(tp, 0, sizeof *tp);
-					tp->is_unlimited = true;
+					tp->rk = rk_unlimited;
 					ok = true;
 				}
 			}
@@ -2000,19 +2010,19 @@ rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
 		goto ouch;
 	}
 
-	msg = parse_quadvalue(rate, "reset", &tup->reset);
+	msg = parse_rateval(rate, "reset", &tup->reset);
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_quadvalue(rate, "expires", &tup->expires);
+	msg = parse_rateval(rate, "expires", &tup->expires);
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_quadvalue(rate, "limit", &tup->limit);
+	msg = parse_rateval(rate, "limit", &tup->limit);
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_quadvalue(rate, "remaining", &tup->remaining);
+	msg = parse_rateval(rate, "remaining", &tup->remaining);
 	if (msg != NULL)
 		goto ouch;
 
