@@ -28,8 +28,6 @@
 /* optional features. */
 #define WANT_PDNS_CIRCL 1
 
-#define DEFAULT_RATE_FORMAT present_json  /* or use present_dns */
-
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
@@ -75,12 +73,12 @@ struct rate_json {
 			*reset, *expires, *limit, *remaining;
 };
 
-/*` holds either nothing, a n/a value, a unlimited value, or an integer value
+/* holds either nothing, a n/a value, a unlimited value, or an integer value.
+ * if none of the is_* fields are true then nothing valued.
+ * only one of the is_* fields can be true.
+ * only if is_int == true then as_int defined.
  */
 struct quadvalue {
-	/* if none of the is_* fields are true then nothing valued */
-	/* only one of the is_* fields can be true */
-	/* only if is_int == true then as_int defined */
 	bool	is_na;
 	bool	is_unlimited;
 	bool	is_int;
@@ -153,7 +151,7 @@ static writer_t writer_init(u_long, u_long);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(writer_t);
 static void io_engine(int);
-static void present_dns(const pdns_tuple_t, const char *, size_t, FILE *);
+static void present_text(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_json(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
@@ -224,7 +222,7 @@ static bool info = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
-static present_t pres = NULL;
+static present_t pres = present_text;
 static int limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
@@ -348,14 +346,13 @@ main(int argc, char *argv[]) {
 		case 'p':
 			if (strcasecmp(optarg, "json") == 0)
 				pres = present_json;
-			else if (strcasecmp(optarg, "dns") == 0)
-				pres = present_dns;
 			else if (strcasecmp(optarg, "csv") == 0)
 				pres = present_csv;
-			else if (strcasecmp(optarg, "text") == 0)
-				pres = present_dns;
+			else if ((strcasecmp(optarg, "text") == 0) ||
+				 (strcasecmp(optarg, "dns") == 0))
+				pres = present_text;
 			else
-				usage("-p must specify json, dns, text, or csv");
+				usage("-p must specify json, text, or csv");
 			break;
 		case 't':
 			if (type != NULL)
@@ -424,7 +421,7 @@ main(int argc, char *argv[]) {
 			break;
 		case 'I':
 			info = true;
-			pres = present_json;
+			pres = present_text;
 			break;
 		case 'h':
 			help();
@@ -490,12 +487,6 @@ main(int argc, char *argv[]) {
 		usage("using -k without -s or -S makes no sense.");
 	if (merge && !batch)
 		usage("using -m without -f makes no sense.");
-	if (pres == NULL) {
-		if (info)
-			pres = DEFAULT_RATE_FORMAT;
-		else
-			pres = present_dns;
-	}
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -525,8 +516,8 @@ main(int argc, char *argv[]) {
 	} else if (info) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -I");
-		if (!(pres == present_dns || pres == present_json))
-			usage("info must be presented in json or dns (text) format");
+		if (pres != present_text && pres != present_json)
+			usage("info must be presented in json or text format");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -I");
 		if (type != NULL)
@@ -1272,7 +1263,7 @@ print_quadvalue(FILE *outstream, const char *key, const struct quadvalue *tp) {
  */
 static void
 write_info(reader_t reader) {
-	if (pres == present_dns) {
+	if (pres == present_text) {
 		struct rate_tuple tup;
 		const char *msg;
 		msg = rate_tuple_make(&tup, reader->buf, reader->len);
@@ -1629,10 +1620,10 @@ io_engine(int jobs) {
 	}
 }
 
-/* present_dns -- render one pdns tuple in "dig" style ascii text.
+/* present_text -- render one pdns tuple in "dig" style ascii text.
  */
 static void
-present_dns(const pdns_tuple_t tup,
+present_text(const pdns_tuple_t tup,
 	    const char *jsonbuf __attribute__ ((unused)),
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
@@ -1932,28 +1923,37 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
+/* parse_quadvalue: parse an optional key value json object.
+ * a missing key means the corresponding key's value is a "no value"
+ */
 static const char *
 parse_quadvalue(const json_t *obj, const char *key, struct quadvalue *tp) {
 	json_t *jvalue;
 
-	memset(tp, 0, sizeof *tp); /* leaves quadvalue as "no value" */
-
 	jvalue = json_object_get(obj, key);
-	if (jvalue != NULL) {	/* NULL is not an error, since we allow missing keys, which means it is a "no value" */
+	if (jvalue == NULL) {
+		memset(tp, 0, sizeof *tp); /* leaves quadvalue as "no value" */
+	} else {
 		if (json_is_integer(jvalue)) {
+			memset(tp, 0, sizeof *tp);
 			tp->is_int = true;
 			tp->as_int = (u_long)json_integer_value(jvalue);
 		} else {
 			const char *strvalue = json_string_value(jvalue);
-			if (strvalue != NULL && strcmp(strvalue, "n/a") == 0)
+
+			if (strvalue != NULL &&
+			    strcmp(strvalue, "n/a") == 0) {
+				memset(tp, 0, sizeof *tp);
 				tp->is_na = true;
-			else if (strvalue != NULL && strcmp(strvalue, "unlimited") == 0)
+			} else if (strvalue != NULL &&
+				   strcmp(strvalue, "unlimited") == 0) {
+				memset(tp, 0, sizeof *tp);
 				tp->is_unlimited = true;
-			else 
-				return "value must be an integer or \"n/a\" or \"unlimited\"";
+			} else
+				return ("value must be an integer or \"n/a\" or \"unlimited\"");
 		}
 	}
-	return NULL;
+	return (NULL);
 }
 
 /* rate_tuple_make -- create one rate tuple object out of a JSON object.
@@ -2011,7 +2011,7 @@ rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
 	return (msg);
 }
 
-/* rate_tuple_unmake -- deallocate the heap storage associated with one rate tuple.
+/* rate_tuple_unmake -- deallocate heap storage associated with one rate tuple.
  */
 static void
 rate_tuple_unmake(rate_tuple_t tup) {
