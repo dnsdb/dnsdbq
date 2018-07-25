@@ -348,11 +348,13 @@ main(int argc, char *argv[]) {
 				pres = present_json;
 			else if (strcasecmp(optarg, "csv") == 0)
 				pres = present_csv;
-			else if ((strcasecmp(optarg, "text") == 0) ||
-				 (strcasecmp(optarg, "dns") == 0))
+			else if (strcasecmp(optarg, "text") == 0 ||
+				 strcasecmp(optarg, "dns") == 0)
+			{
 				pres = present_text;
-			else
+			} else {
 				usage("-p must specify json, text, or csv");
+			}
 			break;
 		case 't':
 			if (type != NULL)
@@ -1243,10 +1245,13 @@ writer_init(u_long after, u_long before) {
 	return (writer);
 }
 
+/* print_quadvalue -- output formatter for quadvalue
+ */
 static void
 print_quadvalue(FILE *outstream, const char *key, const struct quadvalue *tp) {
 	if (!(tp->is_na || tp->is_unlimited || tp->is_int))
-		return;		/* don't print anything */
+		return;
+
 	fprintf(outstream, "\t%s: ", key);
 	if (tp->is_na)
 		fprintf(outstream, "n/a");
@@ -1276,9 +1281,10 @@ write_info(reader_t reader) {
 			print_quadvalue(stdout, "limit", &tup.limit);
 			print_quadvalue(stdout, "remaining", &tup.remaining);
 		}
-	} else {
-		/* just output the raw json form */
+	} else if (pres == present_json) {
 		fwrite(reader->buf, 1, reader->len, stdout);
+	} else {
+		abort();
 	}
 }
 
@@ -1924,7 +1930,8 @@ tuple_unmake(pdns_tuple_t tup) {
 }
 
 /* parse_quadvalue: parse an optional key value json object.
- * a missing key means the corresponding key's value is a "no value"
+ *
+ * note: a missing key means the corresponding key's value is a "no value".
  */
 static const char *
 parse_quadvalue(const json_t *obj, const char *key, struct quadvalue *tp) {
@@ -1940,17 +1947,24 @@ parse_quadvalue(const json_t *obj, const char *key, struct quadvalue *tp) {
 			tp->as_int = (u_long)json_integer_value(jvalue);
 		} else {
 			const char *strvalue = json_string_value(jvalue);
+			bool ok = false;
 
-			if (strvalue != NULL &&
-			    strcmp(strvalue, "n/a") == 0) {
-				memset(tp, 0, sizeof *tp);
-				tp->is_na = true;
-			} else if (strvalue != NULL &&
-				   strcmp(strvalue, "unlimited") == 0) {
-				memset(tp, 0, sizeof *tp);
-				tp->is_unlimited = true;
-			} else
-				return ("value must be an integer or \"n/a\" or \"unlimited\"");
+			if (strvalue != NULL) {
+				if (strcasecmp(strvalue, "n/a") == 0) {
+					memset(tp, 0, sizeof *tp);
+					tp->is_na = true;
+					ok = true;
+				} else if (strcasecmp(strvalue,
+						      "unlimited") == 0)
+				{
+					memset(tp, 0, sizeof *tp);
+					tp->is_unlimited = true;
+					ok = true;
+				}
+			}
+			if (!ok)
+				return ("value must be an integer "
+					"or \"n/a\" or \"unlimited\"");
 		}
 	}
 	return (NULL);
