@@ -68,6 +68,29 @@ typedef struct pdns_tuple *pdns_tuple_t;
 
 typedef void (*present_t)(const pdns_tuple_t, const char *, size_t, FILE *);
 
+struct rate_json {
+	json_t		*main,
+			*reset, *expires, *limit, *remaining;
+};
+
+enum ratekind {
+	rk_naught = 0,		/* not present. */
+	rk_na,			/* "n/a". */
+	rk_unlimited,		/* "unlimited". */
+	rk_int			/* some integer. */
+};
+
+struct rateval {
+	enum ratekind		rk;
+	u_long			as_int;		/* only for rk == rk_int. */
+};
+
+struct rate_tuple {
+	struct rate_json	obj;
+	struct rateval	reset, expires, limit, remaining;
+};
+typedef struct rate_tuple *rate_tuple_t;
+
 struct reader {
 	struct reader		*next;
 	struct writer		*writer;
@@ -128,11 +151,17 @@ static writer_t writer_init(u_long, u_long);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static void writer_fini(writer_t);
 static void io_engine(int);
-static void present_dns(const pdns_tuple_t, const char *, size_t, FILE *);
+static void present_text(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_json(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, char *, size_t);
+static void print_rateval(FILE *, const char *, const struct rateval *);
+static const char *parse_rateval(const json_t *, const char *,
+				 struct rateval *);
+static const char *rate_tuple_make(rate_tuple_t, char *, size_t);
+static void rate_tuple_unmake(rate_tuple_t);
+static void write_info(reader_t);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
@@ -194,7 +223,7 @@ static bool info = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
-static present_t pres = present_dns;
+static present_t pres = present_text;
 static int limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
@@ -318,12 +347,15 @@ main(int argc, char *argv[]) {
 		case 'p':
 			if (strcasecmp(optarg, "json") == 0)
 				pres = present_json;
-			else if (strcasecmp(optarg, "dns") == 0)
-				pres = present_dns;
 			else if (strcasecmp(optarg, "csv") == 0)
 				pres = present_csv;
-			else
-				usage("-p must specify json, dns, or csv");
+			else if (strcasecmp(optarg, "text") == 0 ||
+				 strcasecmp(optarg, "dns") == 0)
+			{
+				pres = present_text;
+			} else {
+				usage("-p must specify json, text, or csv");
+			}
 			break;
 		case 't':
 			if (type != NULL)
@@ -392,7 +424,7 @@ main(int argc, char *argv[]) {
 			break;
 		case 'I':
 			info = true;
-			pres = present_json;
+			pres = present_text;
 			break;
 		case 'h':
 			help();
@@ -487,8 +519,8 @@ main(int argc, char *argv[]) {
 	} else if (info) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, or -i with -I");
-		if (pres != present_json)
-			usage("info must be presented in JSON format");
+		if (pres != present_text && pres != present_json)
+			usage("info must be presented in json or text format");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -I");
 		if (type != NULL)
@@ -1214,6 +1246,59 @@ writer_init(u_long after, u_long before) {
 	return (writer);
 }
 
+/* print_rateval -- output formatter for rateval
+ */
+static void
+print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
+	/* if unspecified, output nothing, not even the key name. */
+	if (tp->rk == rk_naught)
+		return;
+
+	fprintf(outstream, "\t%s: ", key);
+	switch (tp->rk) {
+	case rk_na:
+		fprintf(outstream, "n/a");
+		break;
+	case rk_unlimited:
+		fprintf(outstream, "unlimited");
+		break;
+	case rk_int:
+		if (strcmp(key, "reset") == 0 || strcmp(key, "expires") == 0)
+			time_print(tp->as_int, outstream);
+		else
+			fprintf(outstream, "%lu", tp->as_int);
+		break;
+	case rk_naught: /*FALLTHROUGH*/
+	default:
+		abort();
+	}
+	fputc('\n', outstream);
+}
+
+/* write_info -- assumes that reader contains the complete json block
+ */
+static void
+write_info(reader_t reader) {
+	if (pres == present_text) {
+		struct rate_tuple tup;
+		const char *msg;
+		msg = rate_tuple_make(&tup, reader->buf, reader->len);
+		if (msg != NULL) { /* there was an error */
+			puts(msg);
+		} else {
+			fprintf(stdout, "quota:\n");
+			print_rateval(stdout, "reset", &tup.reset);
+			print_rateval(stdout, "expires", &tup.expires);
+			print_rateval(stdout, "limit", &tup.limit);
+			print_rateval(stdout, "remaining", &tup.remaining);
+		}
+	} else if (pres == present_json) {
+		fwrite(reader->buf, 1, reader->len, stdout);
+	} else {
+		abort();
+	}
+}
+
 /* writer_func -- process a block of json text, from filesys or API socket.
  */
 static size_t
@@ -1263,7 +1348,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			return (bytes);
 		}
 		if (info) {
-			fwrite(reader->buf, 1, reader->len, stdout);
+			write_info(reader);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);
@@ -1282,7 +1367,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		pre_len = (size_t)(nl - reader->buf);
 
 		msg = tuple_make(&tup, reader->buf, pre_len);
-		if (msg) {
+		if (msg != NULL) {
 			puts(msg);
 			goto more;
 		}
@@ -1565,10 +1650,10 @@ io_engine(int jobs) {
 	}
 }
 
-/* present_dns -- render one pdns tuple in "dig" style ascii text.
+/* present_text -- render one pdns tuple in "dig" style ascii text.
  */
 static void
-present_dns(const pdns_tuple_t tup,
+present_text(const pdns_tuple_t tup,
 	    const char *jsonbuf __attribute__ ((unused)),
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
@@ -1868,6 +1953,109 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
+/* parse_rateval: parse an optional key value json object.
+ *
+ * note: a missing key means the corresponding key's value is a "no value".
+ */
+static const char *
+parse_rateval(const json_t *obj, const char *key, struct rateval *tp) {
+	json_t *jvalue;
+
+	jvalue = json_object_get(obj, key);
+	if (jvalue == NULL) {
+		memset(tp, 0, sizeof *tp); /* leaves rateval as "no value" */
+	} else {
+		if (json_is_integer(jvalue)) {
+			memset(tp, 0, sizeof *tp);
+			tp->rk = rk_int;
+			tp->as_int = (u_long)json_integer_value(jvalue);
+		} else {
+			const char *strvalue = json_string_value(jvalue);
+			bool ok = false;
+
+			if (strvalue != NULL) {
+				if (strcasecmp(strvalue, "n/a") == 0) {
+					memset(tp, 0, sizeof *tp);
+					tp->rk = rk_na;
+					ok = true;
+				} else if (strcasecmp(strvalue,
+						      "unlimited") == 0)
+				{
+					memset(tp, 0, sizeof *tp);
+					tp->rk = rk_unlimited;
+					ok = true;
+				}
+			}
+			if (!ok)
+				return ("value must be an integer "
+					"or \"n/a\" or \"unlimited\"");
+		}
+	}
+	return (NULL);
+}
+
+/* rate_tuple_make -- create one rate tuple object out of a JSON object.
+ */
+static const char *
+rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
+	const char *msg = NULL;
+	json_error_t error;
+	json_t *rate;
+
+	memset(tup, 0, sizeof *tup);
+	if (debuglev > 2)
+		fprintf(stderr, "[%d] '%-*.*s'\n",
+			(int)len, (int)len, (int)len, buf);
+	tup->obj.main = json_loadb(buf, len, 0, &error);
+	if (tup->obj.main == NULL) {
+		fprintf(stderr, "%d:%d: %s %s\n",
+		       error.line, error.column,
+		       error.text, error.source);
+		abort();
+	}
+	if (debuglev > 3) {
+		json_dumpf(tup->obj.main, stderr, JSON_INDENT(2));
+		fputc('\n', stderr);
+	}
+
+	rate = json_object_get(tup->obj.main, "rate");
+	if (rate == NULL) {
+		msg = "Missing \"rate\" object";
+		goto ouch;
+	}
+
+	msg = parse_rateval(rate, "reset", &tup->reset);
+	if (msg != NULL)
+		goto ouch;
+
+	msg = parse_rateval(rate, "expires", &tup->expires);
+	if (msg != NULL)
+		goto ouch;
+
+	msg = parse_rateval(rate, "limit", &tup->limit);
+	if (msg != NULL)
+		goto ouch;
+
+	msg = parse_rateval(rate, "remaining", &tup->remaining);
+	if (msg != NULL)
+		goto ouch;
+
+	assert(msg == NULL);
+	return (NULL);
+
+ ouch:
+	assert(msg != NULL);
+	rate_tuple_unmake(tup);
+	return (msg);
+}
+
+/* rate_tuple_unmake -- deallocate heap storage associated with one rate tuple.
+ */
+static void
+rate_tuple_unmake(rate_tuple_t tup) {
+	json_decref(tup->obj.main);
+}
+
 /* timecmp -- compare two absolute timestamps, give -1, 0, or 1.
  */
 static int
@@ -1979,7 +2167,8 @@ dnsdb_url(const char *path) {
 	return (ret);
 }
 
-static void dnsdb_info(void) {
+static void
+dnsdb_info(void) {
 	writer_t writer;
 
 	if (debuglev > 0)
