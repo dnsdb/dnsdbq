@@ -300,7 +300,7 @@ override configuration file options:
 .Bl -item -offset indent
 .It
 .Ic DNSDB_API_KEY :
-contains the user's apikey
+contains the user's apikey. If not present, then APIKEY, if set, will be used.
 .It
 .Ic DNSDB_SERVER :
 contains the URL of the DNSDB API server
