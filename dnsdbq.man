@@ -37,7 +37,7 @@
 constructs and issues queries to the Farsight DNSDB and displays responses. It
 is commonly used as a production command line interface to the DNSDB API
 server.
-
+.Pp
 DNSDB is a database that stores and indexes both the passive DNS data
 available via Farsight Security's Security Information Exchange as well as the
 authoritative DNS data that various zone operators make available. DNSDB makes
@@ -45,7 +45,7 @@ it easy to search for individual DNS RRsets and provides additional metadata
 for search results such as first seen and last seen timestamps as well as the
 DNS bailiwick associated with an RRset. DNSDB also has the ability to perform
 inverse or rdata searches.
-
+.Pp
 You'll need to get an API key from Farsight to use
 .Ic dnsdbq
 with DNSDB.
@@ -82,7 +82,7 @@ Prevent "untrustworthy" records that are a result of intentional or
 unintentional cache poisoning attempts from being replicated by downstream
 consumers.
 .El
-
+.Pp
 For example, given the fully qualified domain name
 .Ic www.dachshund.example.com ,
 valid bailiwics would be
@@ -96,7 +96,6 @@ enable debug mode.
 specify batch lookup mode allowing one or more queries to be performed.
 Queries will be read from standard input and are expected to be be in
 one of the following formats:
-
 .Bl -enum -offset indent
 .It
 RRSet query:
@@ -108,7 +107,7 @@ Rdata (name) query:
 Rdata (IP address) query:
 .Ic rdata/ip/ADDR[/PFXLEN]
 .El
-
+.Pp
 This option cannot be mixed with
 .Fl n ,
 .Fl r ,
@@ -203,7 +202,6 @@ the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
 .El
 .Sh EXAMPLES
-
 A few examples of how to use timefencing options.
 .Bd -literal -offset 4n
 # only responses after Aug 22, 2015
@@ -221,7 +219,7 @@ $ date +%s
 1485284066
 $ dnsdbq ... -A 1485284066
 .Ed
-
+.Pp
 A few examples of how to specify IP address information.
 .Bd -literal -offset 4n
 # specify a single IPv4 address
@@ -231,7 +229,7 @@ $ dnsdbq ... -i 128.223.32.0/24
 # specify a range of IPv4 addresses
 $ dnsdbq ... -i 128.223.32.0-128.223.32.32
 .Ed
-
+.Pp
 Perform an rrset query for a single A record for
 .Ic farsightsecurity.com .
 The output is serialized as JSON and is piped to the
@@ -250,8 +248,8 @@ $ dnsdbq -r farsightsecurity.com/A -l 1 -j | jq .
     "66.160.140.81"
   ]
 }
-
 .Ed
+.Pp
 Perform a batched operation for a several different
 .Ic rrset
 and
@@ -288,8 +286,7 @@ $ head -1 batch-output.json | jq .
 or
 .Ic /etc/dnsdb-query.conf :
 configuration file which should contain the user's apikey and server URL.
-
-.Bl -offset indent
+.Bl -item -offset indent
 .It
 .Ic APIKEY :
 contains the user's apikey (no default)
@@ -297,12 +294,10 @@ contains the user's apikey (no default)
 .Ic DNSDB_SERVER :
 contains the URL of the DNSDB API server (default is https://api.dnsdb.info)
 .El
-.El
 .Sh ENVIRONMENT VARIABLES
 Optionally, the user can set the following environment variables which will
 override configuration file options:
-
-.Bl -offset indent
+.Bl -item -offset indent
 .It
 .Ic DNSDB_API_KEY :
 contains the user's apikey
