@@ -543,6 +543,8 @@ main(int argc, char *argv[]) {
 			if (mode == name_mode)
 				usage("can't mix -b with -n");
 		}
+		if (mode == ip_mode && type != NULL)
+			usage("can't mix -i with -t");
 
 		command = makepath(mode, name, type, bailiwick, length);
 		server_setup();
