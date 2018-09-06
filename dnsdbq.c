@@ -2080,7 +2080,7 @@ time_print(u_long x, FILE *outf) {
 		struct tm *y = gmtime(&t);
 		char z[99];
 
-		strftime(z, sizeof z, "%F %T", y);
+		strftime(z, sizeof z, "%FT%TZ", y);
 		fputs(z, outf);
 	}
 }
