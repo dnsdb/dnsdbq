@@ -305,6 +305,11 @@ contains the user's apikey. If not present, then APIKEY, if set, will be used.
 .Ic DNSDB_SERVER :
 contains the URL of the DNSDB API server
 .El
+.Bl -item -offset indent
+.It
+.Ic DNSDB_TIME_FORMAT
+controls how human readable date times are displayed.  If "iso" then ISO8601 / RFC3339 format is used, for example; "2018-09-06T22:48:00Z".  If "csv" then an Excel CSV compatible format is used; for example, "2018-09-06 22:48:00".
+.El
 .Sh SEE ALSO
 .Xr dig 1 ,
 .Xr jq  1

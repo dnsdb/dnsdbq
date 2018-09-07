@@ -189,6 +189,7 @@ static const char path_sort[] = "/usr/bin/sort";
 static const char json_header[] = "Accept: application/json";
 static const char env_api_key[] = "DNSDB_API_KEY";
 static const char env_dnsdb_server[] = "DNSDB_SERVER";
+static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
@@ -2076,11 +2077,16 @@ time_print(u_long x, FILE *outf) {
 	if (x == 0) {
 		fputs("0", outf);
 	} else {
+		const char *val;
 		time_t t = (time_t)x;
 		struct tm *y = gmtime(&t);
 		char z[99];
-
-		strftime(z, sizeof z, "%FT%TZ", y);
+		/* only allow "iso" or "csv", but default to "csv", so only "iso" matters */
+		val = getenv(env_time_fmt);
+		if (val != NULL && strcmp(val, "iso") == 0)
+			strftime(z, sizeof z, "%FT%TZ", y);
+		else
+			strftime(z, sizeof z, "%F %T", y);
 		fputs(z, outf);
 	}
 }
