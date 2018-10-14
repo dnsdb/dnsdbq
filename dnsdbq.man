@@ -53,21 +53,10 @@ with DNSDB.
 .Bl -tag -width 3n
 .It Fl A Ar timestamp
 Specify a "time_first_after" timestamp. Only results first seen by the Farsight
-sensor network on or after this date will be emitted. Expects timestamp to be
-of the absolute form:
-.Ic YYYY-MM-DD[ HH:MM:SS]
-or the relative form:
-.Ic %dw%dd%dh%dm%ds .
-Examples are below.
+sensor network on or after this date will be emitted. See below for timestamp formats and examples.
 .It Fl B Ar timestamp
 Specify a "time_first_before" timestamp. Only results first seen by the
-Farsight sensor network on or before this date will be emitted. Expects
-timestamp to be of
-the absolute form:
-.Ic YYYY-MM-DD[ HH:MM:SS]
-or the relative form:
-.Ic %dw%dd%dh%dm%ds .
-Examples are below.
+Farsight sensor network on or before this date will be emitted. See below for timestamp formats and examples.
 .It Fl b Ar bailiwick
 specify bailiwick (only valid with
 .Fl r
@@ -201,14 +190,26 @@ upon the -p argument.  -I -p json prints the raw info.  -I -p text prints
 the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
 .El
-.Sh EXAMPLES
+.Sh TIMESTAMPS FORMATS
+Timestamps may be one of following forms.
+.Bl -enum -offset indent
+.It
+positive unsigned integer : in Unix epoch format.
+.It
+negative unsigned integer : negative offset in seconds from now.
+.It
+YYYY-MM-DD [HH:MM:SS] : in absolute form, in the local time (zone), but DNSDB does its fencing using UTC time.  You should adjust your timestamps appropriately.
+.It
+%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offsite from the local time, but DNSDB does its fencing using UTC time.  You should adjust your timestamps appropriately.
+.Pp
+.El
 A few examples of how to use timefencing options.
 .Bd -literal -offset 4n
-# only responses after Aug 22, 2015
+# only responses after Aug 22, 2015 (midnight)
 $ dnsdbq ... -A 2015-08-22
-# only responses before Jan 22, 2013
+# only responses before Jan 22, 2013 (midnight)
 $ dnsdbq ... -B 2013-01-22
-# only responses from 2015
+# only responses from 2015 (midnight to midnight)
 $ dnsdbq ... -B 2016-01-01 -A 2015-01-01
 # only responses after 2015-08-22 14:36:10
 $ dnsdbq ... -A "2015-08-22 14:36:10"
@@ -219,6 +220,7 @@ $ date +%s
 1485284066
 $ dnsdbq ... -A 1485284066
 .Ed
+.Sh EXAMPLES
 .Pp
 A few examples of how to specify IP address information.
 .Bd -literal -offset 4n
