@@ -228,7 +228,6 @@ static present_t pres = present_text;
 static int limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
-static struct timezone here;
 static int nkeys, keys[MAX_KEYS];
 static writer_t writers = NULL;
 
@@ -244,7 +243,7 @@ main(int argc, char *argv[]) {
 	int ch;
 
 	/* global dynamic initialization. */
-	gettimeofday(&now, &here);
+	gettimeofday(&now, NULL);
 	program_name = strrchr(argv[0], '/');
 	if (program_name != NULL)
 		program_name++;
@@ -2104,7 +2103,7 @@ time_get(const char *src, u_long *dst) {
 	if (((ep = strptime(src, "%F %T", &tt)) != NULL && *ep == '\0') ||
 	    ((ep = strptime(src, "%F", &tt)) != NULL && *ep == '\0'))
 	{
-		*dst = (u_long)(mktime(&tt) - here.tz_minuteswest);
+		*dst = (u_long)(timegm(&tt));
 		return (1);
 	}
 	ll = strtoll(src, &ep, 10);
