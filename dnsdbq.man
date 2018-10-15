@@ -198,9 +198,9 @@ positive unsigned integer : in Unix epoch format.
 .It
 negative unsigned integer : negative offset in seconds from now.
 .It
-YYYY-MM-DD [HH:MM:SS] : in absolute form, in the local time (zone), but DNSDB does its fencing using UTC time.  You should adjust your timestamps appropriately.
+YYYY-MM-DD [HH:MM:SS] : in absolute form, in UTC time, as DNSDB does its fencing using UTC time.
 .It
-%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offsite from the local time, but DNSDB does its fencing using UTC time.  You should adjust your timestamps appropriately.
+%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offsite from UTC time, as DNSDB does its fencing using UTC time.
 .Pp
 .El
 A few examples of how to use timefencing options.
