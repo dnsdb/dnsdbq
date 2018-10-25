@@ -79,6 +79,11 @@ valid bailiwics would be
 .Ic example.com ,
 or
 .Ic com .
+.It Fl c
+by default, -A and -B (separately or together) will select partial overlaps of
+database tuples and time search criteria. To match only complete overlaps, add
+the -c ("completeness") command line option (this is also known as "strict"
+mode).
 .It Fl d
 enable debug mode.
 .It Fl f
@@ -105,30 +110,39 @@ or
 An example of how to use
 .Fl f
 is below.
+.It Fl h
+emit usage and quit.
+.It Fl I
+request information from the API server concerning the API key itself, which
+may include rate limit, query quota, query allowance, or privilege levels; the
+output format and content is dependent on the server_sys argument (see -u) and
+upon the -p argument.  -I -p json prints the raw info.  -I -p text prints
+the information in a more understandable textual form, including converting
+any epoch integer times into UTC formatted times.
+.It Fl i Ar ip
+specify rdata ip ("right-hand side") query. Valid arguments
+can an IP (v4 or v6) address, a prefix, or an IP address range. Examples are
+below.
+.It Fl J Ar input_file
+opens input_file and reads newline-separated JSON objects therefrom, in
+preference to -f (batch mode) or -r, -n, or -i (query mode). This can be
+used to reprocess the output from a prior invocation which used -j (-p json).
+.It Fl j
+specify newline delimited json output mode.
+.It Fl k Ar sort_fields
+when sorting with -s or -S, selects one or more, comma separated, sort fields, "first", "last", and/or "count".
+.It Fl l Ar limit
+clamp the number of responses to
+.Ic limit .
 .It Fl m
 used only with
 .Fl f ,
 this causes all output to be merged rather than serialized, and causes up
 to ten (10) API jobs to execute in parallel.
-.It Fl h
-emit usage and quit.
-.It Fl i Ar ip
-specify rdata ip ("right-hand side") query. Valid arguments
-can an IP (v4 or v6) address, a prefix, or an IP address range. Examples are
-below.
-.It Fl j
-specify newline delimited json output mode.
-.It Fl l Ar limit
-clamp the number of responses to
-.Ic limit .
-.It Fl u Ar server_sys
-specifies the syntax of the RESTful URL, default is "dnsdb".
 .It Fl n Ar name
 specify
 .Ic rdata
 name ("right-hand side") query.
-.It Fl k Ar sort_fields
-when sorting with -s or -S, selects sort fields (first, last, and/or count).
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -139,6 +153,10 @@ for presentation output similar to that of dig(1), or
 for newline delimited json output.
 .It Fl r Ar rdata
 specify rrset ("left-hand side") query.
+.It Fl s
+sort output in date-time order.
+.It Fl S
+sort output in reverse date-time order.
 .It Fl t Ar type
 specify type of rdata query and how
 .Ic value
@@ -167,28 +185,8 @@ The
 .Ic value
 is an even number of hexadecimal digits specifying a raw octet string.
 .El
-.It Fl J Ar input_file
-opens input_file and reads newline-separated JSON objects therefrom, in
-preference to -f (batch mode) or -r, -n, or -i (query mode). This can be
-used to reprocess the output from a prior invocation which used -j (-p json).
-.It Fl h
-display help text.
-.It Fl s
-sort output in date-time order.
-.It Fl S
-sort output in reverse date-time order.
-.It Fl c
-by default, -A and -B (separately or together) will select partial overlaps of
-database tuples and time search criteria. To match only complete overlaps, add
-the -c ("completeness") command line option (this is also known as "strict"
-mode).
-.It Fl I
-request information from the API server concerning the API key itself, which
-may include rate limit, query quota, query allowance, or privilege levels; the
-output format and content is dependent on the server_sys argument (see -u) and
-upon the -p argument.  -I -p json prints the raw info.  -I -p text prints
-the information in a more understandable textual form, including converting
-any epoch integer times into UTC formatted times.
+.It Fl u Ar server_sys
+specifies the syntax of the RESTful URL, default is "dnsdb".
 .El
 .Sh TIMESTAMPS FORMATS
 Timestamps may be one of following forms.

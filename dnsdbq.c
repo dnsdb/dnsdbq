@@ -369,6 +369,8 @@ main(int argc, char *argv[]) {
 			break;
 		case 'k': {
 			const char *tok;
+			if (nkeys > 0)
+				usage("Can only specify -k once; use commas to seperate multiple sort fields");
 
 			nkeys = 0;
 			for (tok = strtok(optarg, ",");
@@ -386,7 +388,7 @@ main(int argc, char *argv[]) {
 				else if (strcasecmp(tok, "count") == 0)
 					key = 3;
 				else
-					usage("-k !< {first,last,count}");
+					usage("-k option not one of first, last, or count");
 				keys[nkeys++] = key;
 			}
 			break;
