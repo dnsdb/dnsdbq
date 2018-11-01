@@ -125,7 +125,7 @@ struct pdns_sys {
 };
 typedef const struct pdns_sys *pdns_sys_t;
 
-typedef enum { no_mode = 0, rdata_mode, name_mode, ip_mode } mode_e;
+typedef enum { no_mode = 0, rdata_mode, name_mode, ip_mode, raw_mode } mode_e;
 
 /* Forward. */
 
@@ -236,7 +236,7 @@ static writer_t writers = NULL;
 int
 main(int argc, char *argv[]) {
 	mode_e mode = no_mode;
-	char *name = NULL, *type = NULL, *bailiwick = NULL, *length = NULL;
+	char *name = NULL, *rrtype = NULL, *bailiwick = NULL, *length = NULL;
 	u_long after = 0;
 	u_long before = 0;
 	int json_fd = -1;
@@ -252,7 +252,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:u:p:t:b:k:J:djfmsShcI")) != -1)
+			    "A:B:r:n:i:l:u:p:t:b:k:J:djfmsShcIR:")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -273,23 +273,25 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, or -i can only appear once");
+				usage("-r, -n, -i, or -R can only appear once");
 			assert(name == NULL);
 			mode = rdata_mode;
-			if (type == NULL && bailiwick == NULL)
-				p = strchr(optarg, '/');
-			else
-				p = NULL;
+
+			p = strchr(optarg, '/');
 			if (p != NULL) {
 				const char *q;
+				if (rrtype != NULL)
+					usage("can only specify rrtype one way");
 
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
+					if (bailiwick != NULL)
+						usage("can only specify bailiwick one way");
 					bailiwick = strdup(q + 1);
-					type = strndup(p + 1,
+					rrtype = strndup(p + 1,
 						       (size_t)(q - p - 1));
 				} else {
-					type = strdup(p + 1);
+					rrtype = strdup(p + 1);
 				}
 				name = strndup(optarg, (size_t)(p - optarg));
 			} else {
@@ -301,18 +303,17 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, or -i can only appear once");
+				usage("-r, -n, -i, or -R can only appear once");
 			assert(name == NULL);
 			mode = name_mode;
-			if (type == NULL)
-				p = strchr(optarg, '/');
-			else
-				p = NULL;
+			p = strchr(optarg, '/');
 			if (p != NULL) {
 				if (strchr(p + 1, '/') != NULL)
 					usage("-n must be NAME[/TYPE] only");
+				if (rrtype != NULL)
+					usage("can only specify rrtype one way");
 				name = strndup(optarg, (size_t)(p - optarg));
-				type = strdup(p + 1);
+				rrtype = strdup(p + 1);
 			} else {
 				name = strdup(optarg);
 			}
@@ -322,7 +323,7 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, or -i can only appear once");
+				usage("-r, -n, -i, or -R can only appear once");
 			assert(name == NULL);
 			mode = ip_mode;
 			p = strchr(optarg, '/');
@@ -332,6 +333,14 @@ main(int argc, char *argv[]) {
 			} else {
 				name = strdup(optarg);
 			}
+			break;
+		    }
+		case 'R': {
+			if (mode != no_mode)
+				usage("-r, -n, -i, or -R can only appear once");
+			assert(name == NULL);
+			mode = raw_mode;
+			name = strdup(optarg);
 			break;
 		    }
 		case 'l':
@@ -358,13 +367,13 @@ main(int argc, char *argv[]) {
 			}
 			break;
 		case 't':
-			if (type != NULL)
-				free(type);
-			type = strdup(optarg);
+			if (rrtype != NULL)
+				usage("can only specify rrtype one way");
+			rrtype = strdup(optarg);
 			break;
 		case 'b':
 			if (bailiwick != NULL)
-				free(bailiwick);
+				usage("can only specify bailiwick one way");
 			bailiwick = strdup(optarg);
 			break;
 		case 'k': {
@@ -443,8 +452,8 @@ main(int argc, char *argv[]) {
 	/* recondition various options for HTML use. */
 	if (name != NULL)
 		escape(&name);
-	if (type != NULL)
-		escape(&type);
+	if (rrtype != NULL)
+		escape(&rrtype);
 	if (bailiwick != NULL)
 		escape(&bailiwick);
 	if (length != NULL)
@@ -454,8 +463,8 @@ main(int argc, char *argv[]) {
 	if (debuglev > 0) {
 		if (name != NULL)
 			fprintf(stderr, "name = '%s'\n", name);
-		if (type != NULL)
-			fprintf(stderr, "type = '%s'\n", type);
+		if (rrtype != NULL)
+			fprintf(stderr, "type = '%s'\n", rrtype);
 		if (bailiwick != NULL)
 			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
 		if (length != NULL)
@@ -496,7 +505,7 @@ main(int argc, char *argv[]) {
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
 		if (mode != no_mode)
-			usage("can't mix -n, -r, or -i with -J");
+			usage("can't mix -n, -r, -i, or -R with -J");
 		if (batch)
 			usage("can't mix -f with -J");
 		if (bailiwick != NULL)
@@ -507,10 +516,10 @@ main(int argc, char *argv[]) {
 		close(json_fd);
 	} else if (batch) {
 		if (mode != no_mode)
-			usage("can't mix -n, -r, or -i with -f");
+			usage("can't mix -n, -r, -i, or -R with -f");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -f");
-		if (type != NULL)
+		if (rrtype != NULL)
 			usage("can't mix -t with -f");
 		if (info)
 			usage("can't mix -I with -f");
@@ -520,12 +529,12 @@ main(int argc, char *argv[]) {
 		unmake_curl();
 	} else if (info) {
 		if (mode != no_mode)
-			usage("can't mix -n, -r, or -i with -I");
+			usage("can't mix -n, -r, -i, or -R with -I");
 		if (pres != present_text && pres != present_json)
 			usage("info must be presented in json or text format");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -I");
-		if (type != NULL)
+		if (rrtype != NULL)
 			usage("can't mix -t with -I");
 		if (sys->info == NULL)
 			usage("there is no 'info' for this service");
@@ -537,18 +546,20 @@ main(int argc, char *argv[]) {
 		char *command;
 
 		if (mode == no_mode)
-			usage("must specify -r, -n, or -i"
+			usage("must specify -r, -n, -i, or -R"
 			      " unless -f or -J is used");
 		if (bailiwick != NULL) {
 			if (mode == ip_mode)
 				usage("can't mix -b with -i");
+			if (mode == raw_mode)
+				usage("can't mix -b with -R");
 			if (mode == name_mode)
 				usage("can't mix -b with -n");
 		}
-		if (mode == ip_mode && type != NULL)
+		if (mode == ip_mode && rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		command = makepath(mode, name, type, bailiwick, length);
+		command = makepath(mode, name, rrtype, bailiwick, length);
 		server_setup();
 		make_curl();
 		pdns_query(command, after, before);
@@ -558,7 +569,7 @@ main(int argc, char *argv[]) {
 
 	/* clean up and go. */
 	DESTROY(name);
-	DESTROY(type);
+	DESTROY(rrtype);
 	DESTROY(bailiwick);
 	DESTROY(length);
 	my_exit(0, NULL);
@@ -577,10 +588,11 @@ help(void) {
 "\t[-l LIMIT] [-A after] [-B before] [-u system] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
-"\t\t[-t type] [-b bailiwick] {\n"
+"\t\t[-t rrtype] [-b bailiwick] {\n"
 "\t\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
 "\t\t\t-n NAME[/TYPE] |\n"
 "\t\t\t-i IP[/PFXLEN]\n"
+"\t\t\t-R RAW-DATA[/TYPE] |\n"
 "\t\t}\n"
 "\t}\n"
 "for -f, stdin must contain lines of the following forms:\n"
@@ -842,7 +854,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 /* makepath -- make a RESTful URI that describes these search parameters
  */
 static char *
-makepath(mode_e mode, const char *name, const char *type,
+makepath(mode_e mode, const char *name, const char *rrtype,
 	 const char *bailiwick, const char *length)
 {
 	char *command;
@@ -850,12 +862,12 @@ makepath(mode_e mode, const char *name, const char *type,
 
 	switch (mode) {
 	case rdata_mode:
-		if (type != NULL && bailiwick != NULL)
+		if (rrtype != NULL && bailiwick != NULL)
 			x = asprintf(&command, "rrset/name/%s/%s/%s",
-				     name, type, bailiwick);
-		else if (type != NULL)
+				     name, rrtype, bailiwick);
+		else if (rrtype != NULL)
 			x = asprintf(&command, "rrset/name/%s/%s",
-				     name, type);
+				     name, rrtype);
 		else
 			x = asprintf(&command, "rrset/name/%s",
 				     name);
@@ -865,9 +877,9 @@ makepath(mode_e mode, const char *name, const char *type,
 		}
 		break;
 	case name_mode:
-		if (type != NULL)
+		if (rrtype != NULL)
 			x = asprintf(&command, "rdata/name/%s/%s",
-				     name, type);
+				     name, rrtype);
 		else
 			x = asprintf(&command, "rdata/name/%s",
 				     name);
@@ -882,6 +894,18 @@ makepath(mode_e mode, const char *name, const char *type,
 				     name, length);
 		else
 			x = asprintf(&command, "rdata/ip/%s",
+				     name);
+		if (x < 0) {
+			perror("asprintf");
+			my_exit(1, NULL);
+		}
+		break;
+	case raw_mode:
+		if (rrtype != NULL)
+			x = asprintf(&command, "rdata/raw/%s/%s",
+				     name, rrtype);
+		else
+			x = asprintf(&command, "rdata/raw/%s",
 				     name);
 		if (x < 0) {
 			perror("asprintf");

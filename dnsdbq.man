@@ -29,8 +29,9 @@
 .Op Fl n Ar name
 .Op Fl k Ar sort_fields
 .Op Fl p Ar output_type
+.Op Fl R Ar raw_rdata
 .Op Fl r Ar rdata
-.Op Fl t Ar type
+.Op Fl t Ar rrtype
 .Op Fl J Ar input_file
 .Sh DESCRIPTION
 .Nm dnsdbq
@@ -100,11 +101,15 @@ Rdata (name) query:
 .It
 Rdata (IP address) query:
 .Ic rdata/ip/ADDR[/PFXLEN]
+.It
+Rdata (raw) query:
+.Ic rdata/raw/HEX-PAIRS[/TYPE]
 .El
 .Pp
 This option cannot be mixed with
 .Fl n ,
 .Fl r ,
+.Fl R ,
 or
 .Fl i .
 An example of how to use
@@ -120,9 +125,12 @@ upon the -p argument.  -I -p json prints the raw info.  -I -p text prints
 the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
 .It Fl i Ar ip
-specify rdata ip ("right-hand side") query. Valid arguments
-can an IP (v4 or v6) address, a prefix, or an IP address range. Examples are
-below.
+specify rdata ip ("right-hand side") query.
+The value is one of an IPv4 address, an IPv6 address, an IPv4 network with prefix length, an IPv4 address range,
+or an IPv6 network with prefix length. If a network lookup is being performed,
+the delimiter between network address and prefix length is a single comma (",")
+character rather than the usual slash ("/") character to avoid clashing with
+the HTTP URI path name separator.  Examples are below.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be
@@ -142,7 +150,10 @@ to ten (10) API jobs to execute in parallel.
 .It Fl n Ar name
 specify
 .Ic rdata
-name ("right-hand side") query.
+name ("right-hand side") query.  The value is a DNS domain name in
+presentation format, or a left-hand (".example.com") or right-hand
+("www.example.") wildcard domain name. Note that left-hand wildcard
+queries are somewhat more expensive than right-hand wildcard queries.
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -151,40 +162,22 @@ for comma separated value output,
 for presentation output similar to that of dig(1), or
 .Ic json
 for newline delimited json output.
+.It Fl R Ar raw-data
+specify raw
+.Ic rdata
+data ("right-hand side") query.  The value is an even number of
+hexadecimal digits specifying a raw octet string.
 .It Fl r Ar rdata
 specify rrset ("left-hand side") query.
 .It Fl s
 sort output in date-time order.
 .It Fl S
 sort output in reverse date-time order.
-.It Fl t Ar type
-specify type of rdata query and how
-.Ic value
-specifies how the target value should be interpreted. Should be one of the
-following:
-.Bl -enum -offset indent
-.It
-.Ic name :
-The
-.Ic value
-is a DNS domain name in presentation format, or a left-hand (".example.com")
-or right-hand ("www.example.") wildcard domain name. Note that left-hand
-wildcard queries are somewhat more expensive than right-hand wildcard queries.
-.It
-.Ic ip :
-The
-.Ic value
-is one of an IPv4 address, an IPv6 address, an IPv4 network with prefix length,
-or an IPv6 network with prefix length. If a network lookup is being performed,
-the delimiter between network address and prefix length is a single comma (",")
-character rather than the usual slash ("/") character to avoid clashing with
-the HTTP URI path name separator.
-.It
-.Ic raw :
-The
-.Ic value
-is an even number of hexadecimal digits specifying a raw octet string.
-.El
+.It Fl t Ar rrtype
+specify the resource record type desired.  Valid values include those
+defined in DNS RFCs, including ANY.  A special-case supported in DNSDB
+is ANY-DNSSEC, which matches on DS, RRSIG, NSEC, DNSKEY, NSEC3,
+NSEC3PARAM, and DLV resource record types.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
 .El
@@ -263,6 +256,7 @@ rdata/name/\*.pbs.org
 rdata/name/\*.opb.org
 rdata/ip/198.35.26.96
 rdata/ip/23.21.237.247
+rdata/raw/0b763d73706631202d616c6c
 $ dnsdbq -j -f < batch.txt > batch-output.json
 $ head -1 batch-output.json | jq .
 {
