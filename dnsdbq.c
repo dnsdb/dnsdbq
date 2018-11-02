@@ -252,7 +252,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:u:p:t:b:k:J:djfmsShcIR:")) != -1)
+			    "A:B:r:n:i:l:u:p:t:b:k:J:R:djfmsShcI")) != -1)
 	{
 		switch (ch) {
 		case 'A':
