@@ -126,7 +126,7 @@ below.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be
-used to reprocess the output from a prior invocation which used -j (-p json).
+used to reprocess the output from a prior invocation which used -j (-p json).  If input_file is "-" then standard input (stdin) will be read.
 .It Fl j
 specify newline delimited json output mode.
 .It Fl k Ar sort_fields
