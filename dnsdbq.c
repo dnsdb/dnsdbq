@@ -277,11 +277,13 @@ main(int argc, char *argv[]) {
 			assert(name == NULL);
 			mode = rdata_mode;
 
-			p = strchr(optarg, '/');
+			if (rrtype == NULL)
+				p = strchr(optarg, '/');
+			else
+				p = NULL;
+
 			if (p != NULL) {
 				const char *q;
-				if (rrtype != NULL)
-					usage("can only specify rrtype one way");
 
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
@@ -306,12 +308,16 @@ main(int argc, char *argv[]) {
 				usage("-r, -n, -i, or -R can only appear once");
 			assert(name == NULL);
 			mode = name_mode;
-			p = strchr(optarg, '/');
+
+			if (rrtype == NULL)
+				p = strchr(optarg, '/');
+			else
+				p = NULL;
+
 			if (p != NULL) {
 				if (strchr(p + 1, '/') != NULL)
 					usage("-n must be NAME[/TYPE] only");
-				if (rrtype != NULL)
-					usage("can only specify rrtype one way");
+
 				name = strndup(optarg, (size_t)(p - optarg));
 				rrtype = strdup(p + 1);
 			} else {
