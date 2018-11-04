@@ -226,6 +226,7 @@ static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
 static int limit = 0;
+static int post_sort_limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static int nkeys, keys[MAX_KEYS];
@@ -353,6 +354,7 @@ main(int argc, char *argv[]) {
 			limit = atoi(optarg);
 			if (limit <= 0)
 				usage("-l must be positive");
+			post_sort_limit = limit; /* for now, use the same limit post-sort */
 			break;
 		case 'u':
 			sys = find_system(optarg);
@@ -1036,10 +1038,7 @@ launch(const char *command, writer_t writer,
 	if (url == NULL)
 		my_exit(1, NULL);
 	sep = '?';
-	/* only say ?limit= if it was specified and we aren't sorting. if we
-	 * are sorting, we'll implement this on the output of the sort.
-	 */
-	if (limit != 0 && sorted == no_sort) {
+	if (limit != 0) {
 		x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, limit);
 		if (x < 0) {
 			perror("asprintf");
@@ -1579,7 +1578,7 @@ writer_fini(writer_t writer) {
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
 			 */
-			if (limit != 0 && count >= limit)
+			if (post_sort_limit != 0 && count >= post_sort_limit)
 				continue;
 
 			char *nl, *linep;
