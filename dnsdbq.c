@@ -253,7 +253,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:u:p:t:b:k:J:R:djfmsShcI")) != -1)
+			    "A:B:r:n:i:l:L:u:p:t:b:k:J:R:djfmsShcI")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -354,7 +354,11 @@ main(int argc, char *argv[]) {
 			limit = atoi(optarg);
 			if (limit <= 0)
 				usage("-l must be positive");
-			post_sort_limit = limit; /* for now, use the same limit post-sort */
+			break;
+		case 'L':
+			post_sort_limit = atoi(optarg);
+			if (post_sort_limit <= 0)
+				usage("-L must be positive");
 			break;
 		case 'u':
 			sys = find_system(optarg);
@@ -509,6 +513,8 @@ main(int argc, char *argv[]) {
 		usage("using -k without -s or -S makes no sense.");
 	if (merge && !batch)
 		usage("using -m without -f makes no sense.");
+	if (post_sort_limit != 0 && sorted == no_sort)
+		usage("using -L without -s or -S makes no sense."); /* not really an error, just a waste */
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -593,7 +599,7 @@ help(void) {
 
 	fprintf(stderr,
 "usage: %s [-djsShcI] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l LIMIT] [-A after] [-B before] [-u system] {\n"
+"\t[-l LIMIT] [-L POST-SORT-LIMIT] [-A after] [-B before] [-u system] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t rrtype] [-b bailiwick] {\n"
