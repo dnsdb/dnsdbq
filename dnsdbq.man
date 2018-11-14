@@ -289,7 +289,16 @@ contains the user's apikey (no default)
 contains the URL of the DNSDB API server (default is https://api.dnsdb.info)
 .El
 .Sh ENVIRONMENT VARIABLES
-Optionally, the user can set the following environment variables which will
+Optionally, the user can set the following environment variable:
+.Bl -item -offset indent
+.It
+.Ic HTTPS_PROXY:
+the URL of the HTTPS proxy that you wish to use.  See man
+.Ic curl
+for information on its values.
+.Pp
+.El
+And optionally, the user can set the following environment variables which will
 override configuration file options:
 .Bl -item -offset indent
 .It
@@ -306,4 +315,5 @@ controls how human readable date times are displayed.  If "iso" then ISO8601 / R
 .El
 .Sh SEE ALSO
 .Xr dig 1 ,
-.Xr jq  1
+.Xr jq  1 ,
+.Xr curl  1
