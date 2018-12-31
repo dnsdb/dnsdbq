@@ -70,7 +70,7 @@ typedef void (*present_t)(const pdns_tuple_t, const char *, size_t, FILE *);
 
 struct rate_json {
 	json_t		*main,
-			*reset, *expires, *limit, *remaining;
+			*reset, *expires, *limit, *remaining, *burst_size, *burst_window;
 };
 
 enum ratekind {
@@ -87,7 +87,7 @@ struct rateval {
 
 struct rate_tuple {
 	struct rate_json	obj;
-	struct rateval	reset, expires, limit, remaining;
+	struct rateval	reset, expires, limit, remaining, burst_size, burst_window;
 };
 typedef struct rate_tuple *rate_tuple_t;
 
@@ -120,7 +120,8 @@ struct pdns_sys {
 	const char	*name;
 	const char	*server;
 	char *		(*url)(const char *);
-	void		(*info)(void);
+	void		(*request_info)(void);
+	void		(*write_info)(reader_t);
 	void		(*auth)(reader_t);
 };
 typedef const struct pdns_sys *pdns_sys_t;
@@ -157,18 +158,19 @@ static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, char *, size_t);
 static void print_rateval(FILE *, const char *, const struct rateval *);
+static void print_burstrate(FILE *, const char *, const struct rateval *, const struct rateval *);
 static const char *parse_rateval(const json_t *, const char *,
 				 struct rateval *);
 static const char *rate_tuple_make(rate_tuple_t, char *, size_t);
 static void rate_tuple_unmake(rate_tuple_t);
-static void write_info(reader_t);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
 static int time_get(const char *src, u_long *dst);
 static void escape(char **);
 static char *dnsdb_url(const char *);
-static void dnsdb_info(void);
+static void dnsdb_request_info(void);
+static void dnsdb_write_info(reader_t);
 static void dnsdb_auth(reader_t);
 #if WANT_PDNS_CIRCL
 static char *circl_url(const char *);
@@ -194,12 +196,12 @@ static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
 	{ "dnsdb", "https://api.dnsdb.info",
-		dnsdb_url, dnsdb_info, dnsdb_auth },
+		dnsdb_url, dnsdb_request_info, dnsdb_write_info, dnsdb_auth },
 #if WANT_PDNS_CIRCL
 	{ "circl", "https://www.circl.lu/pdns/query",
-		circl_url, NULL, circl_auth },
+		circl_url, NULL, NULL, circl_auth },
 #endif
-	{ NULL, NULL, NULL, NULL, NULL }
+	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 #define	MAX_KEYS 3
@@ -550,11 +552,11 @@ main(int argc, char *argv[]) {
 			usage("can't mix -b with -I");
 		if (rrtype != NULL)
 			usage("can't mix -t with -I");
-		if (sys->info == NULL)
+		if (sys->request_info == NULL || sys->write_info == NULL)
 			usage("there is no 'info' for this service");
 		server_setup();
 		make_curl();
-		sys->info();
+		sys->request_info();
 		unmake_curl();
 	} else {
 		char *command;
@@ -1314,10 +1316,33 @@ print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
 	fputc('\n', outstream);
 }
 
-/* write_info -- assumes that reader contains the complete json block
+/* print_burstrate -- output formatter for burst_size and burst_window ratevals
  */
 static void
-write_info(reader_t reader) {
+print_burstrate(FILE *outstream, const char *key, const struct rateval *tp_size, const struct rateval *tp_window) {
+	/* if unspecified, output nothing, not even the key name. */
+	if (tp_size->rk == rk_naught || tp_window->rk == rk_naught)
+		return;
+
+	assert(tp_size->rk == rk_int);
+	assert(tp_window->rk == rk_int);
+
+	u_long b_w = tp_window->as_int;
+	u_long b_s = tp_size->as_int;
+
+	fprintf(outstream, "\t%s: ", key);
+	if (b_w == 3600) fprintf(outstream, "%lu per hour", b_s);
+	else if (b_w == 60) fprintf(outstream, "%lu per minute", b_s);
+	else if ((b_w % 3600) == 0) fprintf(outstream, "%lu per %lu hours", b_s, b_w / 3600);
+	else if ((b_w % 60) == 0) fprintf(outstream, "%lu per %lu minutes", b_s, b_w / 60);
+	else fprintf(outstream, "%lu per %lu seconds", b_s, b_w);
+	fputc('\n', outstream);
+}
+
+/* dnsdb_write_info -- assumes that reader contains the complete json block
+ */
+static void
+dnsdb_write_info(reader_t reader) {
 	if (pres == present_text) {
 		struct rate_tuple tup;
 		const char *msg;
@@ -1330,6 +1355,7 @@ write_info(reader_t reader) {
 			print_rateval(stdout, "expires", &tup.expires);
 			print_rateval(stdout, "limit", &tup.limit);
 			print_rateval(stdout, "remaining", &tup.remaining);
+			print_burstrate(stdout, "burst rate", &tup.burst_size, &tup.burst_window);
 		}
 	} else if (pres == present_json) {
 		fwrite(reader->buf, 1, reader->len, stdout);
@@ -1386,12 +1412,6 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			reader->len = 0;
 			return (bytes);
 		}
-		if (info) {
-			write_info(reader);
-			reader->buf[0] = '\0';
-			reader->len = 0;
-			return (bytes);
-		}
 	}
 
 	after = reader->writer->after;
@@ -1402,6 +1422,13 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		struct pdns_tuple tup;
 		const char *msg, *whynot;
 		u_long first, last;
+
+		if (info) {
+			sys->write_info(reader);
+			reader->buf[0] = '\0';
+			reader->len = 0;
+			return (bytes);
+		}
 
 		pre_len = (size_t)(nl - reader->buf);
 
@@ -1693,9 +1720,9 @@ io_engine(int jobs) {
  */
 static void
 present_text(const pdns_tuple_t tup,
-	    const char *jsonbuf __attribute__ ((unused)),
-	    size_t jsonlen __attribute__ ((unused)),
-	    FILE *outf)
+	     const char *jsonbuf __attribute__ ((unused)),
+	     size_t jsonlen __attribute__ ((unused)),
+	     FILE *outf)
 {
 	bool pflag, ppflag;
 	const char *prefix;
@@ -1882,8 +1909,8 @@ tuple_make(pdns_tuple_t tup, char *buf, size_t len) {
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
 		fprintf(stderr, "%d:%d: %s %s\n",
-		       error.line, error.column,
-		       error.text, error.source);
+			error.line, error.column,
+			error.text, error.source);
 		abort();
 	}
 	if (debuglev > 3) {
@@ -1979,7 +2006,7 @@ tuple_make(pdns_tuple_t tup, char *buf, size_t len) {
 	assert(msg == NULL);
 	return (NULL);
 
- ouch:
+ouch:
 	assert(msg != NULL);
 	tuple_unmake(tup);
 	return (msg);
@@ -2048,8 +2075,8 @@ rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
 		fprintf(stderr, "%d:%d: %s %s\n",
-		       error.line, error.column,
-		       error.text, error.source);
+			error.line, error.column,
+			error.text, error.source);
 		abort();
 	}
 	if (debuglev > 3) {
@@ -2076,6 +2103,14 @@ rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
 		goto ouch;
 
 	msg = parse_rateval(rate, "remaining", &tup->remaining);
+	if (msg != NULL)
+		goto ouch;
+
+	msg = parse_rateval(rate, "burst_size", &tup->burst_size);
+	if (msg != NULL)
+		goto ouch;
+
+	msg = parse_rateval(rate, "burst_window", &tup->burst_window);
 	if (msg != NULL)
 		goto ouch;
 
@@ -2212,11 +2247,11 @@ dnsdb_url(const char *path) {
 }
 
 static void
-dnsdb_info(void) {
+dnsdb_request_info(void) {
 	writer_t writer;
 
 	if (debuglev > 0)
-		fprintf(stderr, "dnsdb_info()\n");
+		fprintf(stderr, "dnsdb_request_info()\n");
 
 	/* start a writer, which might be format functions, or POSIX sort. */
 	writer = writer_init(0, 0);
