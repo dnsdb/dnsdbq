@@ -70,7 +70,8 @@ typedef void (*present_t)(const pdns_tuple_t, const char *, size_t, FILE *);
 
 struct rate_json {
 	json_t		*main,
-			*reset, *expires, *limit, *remaining, *burst_size, *burst_window;
+			*reset, *expires, *limit, *remaining,
+			*burst_size, *burst_window;
 };
 
 enum ratekind {
@@ -87,7 +88,8 @@ struct rateval {
 
 struct rate_tuple {
 	struct rate_json	obj;
-	struct rateval	reset, expires, limit, remaining, burst_size, burst_window;
+	struct rateval	reset, expires, limit, remaining,
+			burst_size, burst_window;
 };
 typedef struct rate_tuple *rate_tuple_t;
 
@@ -158,7 +160,8 @@ static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, char *, size_t);
 static void print_rateval(FILE *, const char *, const struct rateval *);
-static void print_burstrate(FILE *, const char *, const struct rateval *, const struct rateval *);
+static void print_burstrate(FILE *, const char *, const struct rateval *,
+			    const struct rateval *);
 static const char *parse_rateval(const json_t *, const char *,
 				 struct rateval *);
 static const char *rate_tuple_make(rate_tuple_t, char *, size_t);
@@ -1319,7 +1322,9 @@ print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
 /* print_burstrate -- output formatter for burst_size and burst_window ratevals
  */
 static void
-print_burstrate(FILE *outstream, const char *key, const struct rateval *tp_size, const struct rateval *tp_window) {
+print_burstrate(FILE *outstream, const char *key,
+		const struct rateval *tp_size,
+		const struct rateval *tp_window) {
 	/* if unspecified, output nothing, not even the key name. */
 	if (tp_size->rk == rk_naught || tp_window->rk == rk_naught)
 		return;
@@ -1331,11 +1336,18 @@ print_burstrate(FILE *outstream, const char *key, const struct rateval *tp_size,
 	u_long b_s = tp_size->as_int;
 
 	fprintf(outstream, "\t%s: ", key);
-	if (b_w == 3600) fprintf(outstream, "%lu per hour", b_s);
-	else if (b_w == 60) fprintf(outstream, "%lu per minute", b_s);
-	else if ((b_w % 3600) == 0) fprintf(outstream, "%lu per %lu hours", b_s, b_w / 3600);
-	else if ((b_w % 60) == 0) fprintf(outstream, "%lu per %lu minutes", b_s, b_w / 60);
-	else fprintf(outstream, "%lu per %lu seconds", b_s, b_w);
+
+	if (b_w == 3600)
+		fprintf(outstream, "%lu per hour", b_s);
+	else if (b_w == 60)
+		fprintf(outstream, "%lu per minute", b_s);
+	else if ((b_w % 3600) == 0)
+		fprintf(outstream, "%lu per %lu hours", b_s, b_w / 3600);
+	else if ((b_w % 60) == 0)
+		fprintf(outstream, "%lu per %lu minutes", b_s, b_w / 60);
+	else
+		fprintf(outstream, "%lu per %lu seconds", b_s, b_w);
+
 	fputc('\n', outstream);
 }
 
