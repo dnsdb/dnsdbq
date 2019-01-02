@@ -230,8 +230,8 @@ static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
-static int limit = 0;
-static int post_sort_limit = 0;
+static int query_limit = 0;
+static int output_limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static int nkeys, keys[MAX_KEYS];
@@ -356,13 +356,13 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'l':
-			limit = atoi(optarg);
-			if (limit <= 0)
+			query_limit = atoi(optarg);
+			if (query_limit <= 0)
 				usage("-l must be positive");
 			break;
 		case 'L':
-			post_sort_limit = atoi(optarg);
-			if (post_sort_limit <= 0)
+			output_limit = atoi(optarg);
+			if (output_limit <= 0)
 				usage("-L must be positive");
 			break;
 		case 'u':
@@ -475,6 +475,8 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (length != NULL)
 		escape(&length);
+	if (output_limit == 0) /* if not set, default to whatever limit has */
+		output_limit = query_limit;
 
 	/* optionally dump program options as interpreted. */
 	if (debuglev > 0) {
@@ -496,8 +498,10 @@ main(int argc, char *argv[]) {
 			time_print(before, stderr);
 			putc('\n', stderr);
 		}
-		if (limit != 0)
-			fprintf(stderr, "limit = %d\n", limit);
+		if (query_limit != 0)
+			fprintf(stderr, "query_limit = %d\n", query_limit);
+		if (output_limit != 0)
+			fprintf(stderr, "output_limit = %d\n", output_limit);
 		fprintf(stderr, "batch=%d, merge=%d\n", batch, merge);
 	}
 
@@ -518,8 +522,6 @@ main(int argc, char *argv[]) {
 		usage("using -k without -s or -S makes no sense.");
 	if (merge && !batch)
 		usage("using -m without -f makes no sense.");
-	if (post_sort_limit != 0 && sorted == no_sort)
-		usage("using -L without -s or -S makes no sense."); /* not really an error, just a waste */
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -604,7 +606,7 @@ help(void) {
 
 	fprintf(stderr,
 "usage: %s [-djsShcI] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l LIMIT] [-L POST-SORT-LIMIT] [-A after] [-B before] [-u system] {\n"
+"\t[-l LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -1049,8 +1051,8 @@ launch(const char *command, writer_t writer,
 	if (url == NULL)
 		my_exit(1, NULL);
 	sep = '?';
-	if (limit != 0) {
-		x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, limit);
+	if (query_limit != 0) {
+		x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, query_limit);
 		if (x < 0) {
 			perror("asprintf");
 			my_exit(1, url, NULL);
@@ -1442,6 +1444,13 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			return (bytes);
 		}
 
+		if (output_limit != 0 && reader->writer->count >= output_limit) {
+			if (debuglev > 2)
+				fprintf(stderr, "hit output limit %d\n", output_limit);
+			reader->len = 0;
+			return (bytes);
+		}
+
 		pre_len = (size_t)(nl - reader->buf);
 
 		msg = tuple_make(&tup, reader->buf, pre_len);
@@ -1623,7 +1632,7 @@ writer_fini(writer_t writer) {
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
 			 */
-			if (post_sort_limit != 0 && count >= post_sort_limit)
+			if (output_limit != 0 && count >= output_limit)
 				continue;
 
 			char *nl, *linep;
@@ -1669,7 +1678,7 @@ writer_fini(writer_t writer) {
 		if (debuglev > 0)
 			fprintf(stderr,
 				"closed sort_stdout, read %d objs (lim %d)\n",
-				count, limit);
+				count, query_limit);
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
