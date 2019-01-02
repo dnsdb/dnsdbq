@@ -357,8 +357,8 @@ main(int argc, char *argv[]) {
 		    }
 		case 'l':
 			query_limit = atoi(optarg);
-			if (query_limit <= 0)
-				usage("-l must be positive");
+			if (query_limit < 0)
+				usage("-l must be zero or positive");
 			break;
 		case 'L':
 			output_limit = atoi(optarg);
@@ -475,8 +475,14 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (length != NULL)
 		escape(&length);
-	if (output_limit == 0) /* if not set, default to whatever limit has */
-		output_limit = query_limit;
+	if (output_limit == 0) {
+		/* If not set, default to whatever limit has, unless limit is 0
+		   in which case use a really big integer */
+		if (query_limit == 0)
+			output_limit = INT32_MAX;
+		else
+			output_limit = query_limit;
+	}
 
 	/* optionally dump program options as interpreted. */
 	if (debuglev > 0) {
