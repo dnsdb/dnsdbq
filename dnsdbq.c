@@ -71,7 +71,7 @@ typedef void (*present_t)(const pdns_tuple_t, const char *, size_t, FILE *);
 struct rate_json {
 	json_t		*main,
 			*reset, *expires, *limit, *remaining,
-			*burst_size, *burst_window;
+			*burst_size, *burst_window, *results_max;
 };
 
 enum ratekind {
@@ -89,7 +89,7 @@ struct rateval {
 struct rate_tuple {
 	struct rate_json	obj;
 	struct rateval	reset, expires, limit, remaining,
-			burst_size, burst_window;
+			burst_size, burst_window, results_max;
 };
 typedef struct rate_tuple *rate_tuple_t;
 
@@ -1375,6 +1375,7 @@ dnsdb_write_info(reader_t reader) {
 			print_rateval(stdout, "expires", &tup.expires);
 			print_rateval(stdout, "limit", &tup.limit);
 			print_rateval(stdout, "remaining", &tup.remaining);
+			print_rateval(stdout, "results_max", &tup.results_max);
 			print_burstrate(stdout, "burst rate", &tup.burst_size, &tup.burst_window);
 		}
 	} else if (pres == present_json) {
@@ -2131,6 +2132,10 @@ rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
 		goto ouch;
 
 	msg = parse_rateval(rate, "remaining", &tup->remaining);
+	if (msg != NULL)
+		goto ouch;
+
+	msg = parse_rateval(rate, "results_max", &tup->results_max);
 	if (msg != NULL)
 		goto ouch;
 
