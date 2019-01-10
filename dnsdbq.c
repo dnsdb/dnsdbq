@@ -71,7 +71,7 @@ typedef void (*present_t)(const pdns_tuple_t, const char *, size_t, FILE *);
 struct rate_json {
 	json_t		*main,
 			*reset, *expires, *limit, *remaining,
-			*burst_size, *burst_window;
+			*burst_size, *burst_window, *results_max;
 };
 
 enum ratekind {
@@ -89,7 +89,7 @@ struct rateval {
 struct rate_tuple {
 	struct rate_json	obj;
 	struct rateval	reset, expires, limit, remaining,
-			burst_size, burst_window;
+			burst_size, burst_window, results_max;
 };
 typedef struct rate_tuple *rate_tuple_t;
 
@@ -239,7 +239,7 @@ static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
-static int query_limit = 0;
+static int query_limit = -1;	/* -1 means not set on command line */
 static int output_limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
@@ -485,9 +485,9 @@ main(int argc, char *argv[]) {
 	if (length != NULL)
 		escape(&length);
 	if (output_limit == 0) {
-		/* If not set, default to whatever limit has, unless limit is 0
+		/* If not set, default to whatever limit has, unless limit is 0 or -1
 		   in which case use a really big integer */
-		if (query_limit == 0)
+		if (query_limit == 0 || query_limit == -1)
 			output_limit = INT32_MAX;
 		else
 			output_limit = query_limit;
@@ -513,7 +513,7 @@ main(int argc, char *argv[]) {
 			time_print(before, stderr);
 			putc('\n', stderr);
 		}
-		if (query_limit != 0)
+		if (query_limit != -1)
 			fprintf(stderr, "query_limit = %d\n", query_limit);
 		if (output_limit != 0)
 			fprintf(stderr, "output_limit = %d\n", output_limit);
@@ -1066,7 +1066,8 @@ launch(const char *command, writer_t writer,
 	if (url == NULL)
 		my_exit(1, NULL);
 
-	if (query_limit != 0) {
+  sep = '?';
+	if (query_limit != -1) {
 		x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, query_limit);
 		if (x < 0) {
 			perror("asprintf");
@@ -1384,6 +1385,7 @@ dnsdb_write_info(reader_t reader) {
 			print_rateval(stdout, "expires", &tup.expires);
 			print_rateval(stdout, "limit", &tup.limit);
 			print_rateval(stdout, "remaining", &tup.remaining);
+			print_rateval(stdout, "results_max", &tup.results_max);
 			print_burstrate(stdout, "burst rate", &tup.burst_size, &tup.burst_window);
 		}
 	} else if (pres == present_json) {
@@ -2140,6 +2142,10 @@ rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
 		goto ouch;
 
 	msg = parse_rateval(rate, "remaining", &tup->remaining);
+	if (msg != NULL)
+		goto ouch;
+
+	msg = parse_rateval(rate, "results_max", &tup->results_max);
 	if (msg != NULL)
 		goto ouch;
 
