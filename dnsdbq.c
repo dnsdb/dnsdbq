@@ -1066,7 +1066,6 @@ launch(const char *command, writer_t writer,
 	if (url == NULL)
 		my_exit(1, NULL);
 
-  sep = '?';
 	if (query_limit != -1) {
 		x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, query_limit);
 		if (x < 0) {
