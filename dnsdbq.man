@@ -191,7 +191,7 @@ NSEC3PARAM, and DLV resource record types.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
 .El
-.Sh TIMESTAMPS FORMATS
+.Sh "TIMESTAMP FORMATS"
 Timestamps may be one of following forms.
 .Bl -enum -offset indent
 .It
@@ -298,7 +298,7 @@ contains the user's apikey (no default)
 .Ic DNSDB_SERVER :
 contains the URL of the DNSDB API server (default is https://api.dnsdb.info)
 .El
-.Sh ENVIRONMENT VARIABLES
+.Sh ENVIRONMENT
 Optionally, the user can set the following environment variable:
 .Bl -item -offset indent
 .It
@@ -323,7 +323,13 @@ contains the URL of the DNSDB API server
 .Ic DNSDB_TIME_FORMAT
 controls how human readable date times are displayed.  If "iso" then ISO8601 / RFC3339 format is used, for example; "2018-09-06T22:48:00Z".  If "csv" then an Excel CSV compatible format is used; for example, "2018-09-06 22:48:00".
 .El
-.Sh SEE ALSO
+.Sh "EXIT STATUS"
+Success (exit status zero) occurs if a connection could be established
+to the back end database server, even if no records matched the search
+criteria. Failure (exit status nonzero) occurs if no connection could be
+established, perhaps due to a network or service failure, or a configuration
+error such as specifying the wrong server hostname.
+.Sh "SEE ALSO"
 .Xr dig 1 ,
 .Xr jq  1 ,
 .Xr curl  1
