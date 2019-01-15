@@ -25,6 +25,7 @@
 .Op Fl b Ar bailiwick
 .Op Fl i Ar ip
 .Op Fl l Ar limit
+.Op Fl L Ar output_limit
 .Op Fl u Ar server_sys
 .Op Fl n Ar name
 .Op Fl k Ar sort_fields
@@ -140,8 +141,17 @@ specify newline delimited json output mode.
 .It Fl k Ar sort_fields
 when sorting with -s or -S, selects one or more, comma separated, sort fields, "first", "last", and/or "count".
 .It Fl l Ar limit
-clamp the number of responses to
-.Ic limit .
+query for that limit's number of responses. If
+.Fl l ,
+is not specified, then the query will not specify a limit, and the DNSDB API server may use its default limit.
+.It Fl L Ar output_limit
+clamps the number of responses output to
+.Ic output_limit .
+The
+.Fl L
+output limit defaults to the
+.Fl l
+limit's value.
 .It Fl m
 used only with
 .Fl f ,
