@@ -121,7 +121,12 @@ typedef struct writer *writer_t;
 struct pdns_sys {
 	const char	*name;
 	const char	*server;
-	char *		(*url)(const char *);
+	/* first argument is the input URL path.
+	   second is an output parameter pointing to
+	   the separator character (? or &) that the caller should
+	   use between any further URL parameters.  May be
+	   NULL if the caller doesn't care */
+	char *		(*url)(const char *, char *);
 	void		(*request_info)(void);
 	void		(*write_info)(reader_t);
 	void		(*auth)(reader_t);
@@ -171,12 +176,12 @@ static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
 static int time_get(const char *src, u_long *dst);
 static void escape(char **);
-static char *dnsdb_url(const char *);
+static char *dnsdb_url(const char *, char *);
 static void dnsdb_request_info(void);
 static void dnsdb_write_info(reader_t);
 static void dnsdb_auth(reader_t);
 #if WANT_PDNS_CIRCL
-static char *circl_url(const char *);
+static char *circl_url(const char *, char *);
 static void circl_auth(reader_t);
 #endif
 
@@ -195,6 +200,10 @@ static const char json_header[] = "Accept: application/json";
 static const char env_api_key[] = "DNSDB_API_KEY";
 static const char env_dnsdb_server[] = "DNSDB_SERVER";
 static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
+
+/* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
+static const char id_swclient[] = "dnsdbq";
+static const char id_version[] = "1.1";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
@@ -1053,10 +1062,10 @@ launch(const char *command, writer_t writer,
 	char *url, *tmp, sep;
 	int x;
 
-	url = sys->url(command);
+	url = sys->url(command, &sep);
 	if (url == NULL)
 		my_exit(1, NULL);
-	sep = '?';
+
 	if (query_limit != -1) {
 		x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, query_limit);
 		if (x < 0) {
@@ -2251,7 +2260,7 @@ escape(char **src) {
  * which might have the same JSON output format but a different REST syntax.
  */
 static char *
-dnsdb_url(const char *path) {
+dnsdb_url(const char *path, char *sep) {
 	const char *lookup, *p;
 	char *ret;
 	int x;
@@ -2271,11 +2280,19 @@ dnsdb_url(const char *path) {
 	/* enforce that dnsdb_server appears to be a URL, not just a bare hostname */
 	scheme_if_needed = (strstr(dnsdb_server, "://") == NULL) ? "https://" : "" ;
 
-	x = asprintf(&ret, "%s%s%s/%s", scheme_if_needed, dnsdb_server, lookup, path);
+	/* pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
+	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s",
+		     scheme_if_needed, dnsdb_server, lookup, path, id_swclient, id_version);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
 	}
+
+	/* because we append query parameters, tell the caller to use & for
+	   any further query parameters. */
+	if (sep != NULL)
+		*sep = '&';
+
 	return (ret);
 }
 
@@ -2290,7 +2307,7 @@ dnsdb_request_info(void) {
 	writer = writer_init(0, 0);
 
 	/* start a status fetch. */
-	launch_one(writer, dnsdb_url("rate_limit"));
+	launch_one(writer, dnsdb_url("rate_limit", NULL));
 	
 	/* run all jobs to completion. */
 	io_engine(0);
@@ -2330,10 +2347,15 @@ dnsdb_auth(reader_t reader) {
  * 3. Rdata (IP address) query: rdata/ip/ADDR[/PFXLEN]
  */
 static char *
-circl_url(const char *path) {
+circl_url(const char *path, char *sep) {
 	const char *val = NULL;
 	char *ret;
 	int x;
+
+	/* because we will NOT append query parameters, tell the caller to use ? for
+	   any query parameters. */
+	if (sep != NULL)
+		*sep = '?';
 
 	if (circl_server == NULL)
 		circl_server = strdup(sys->server);
