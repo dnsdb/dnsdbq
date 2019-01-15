@@ -290,40 +290,31 @@ $ head -1 batch-output.json | jq .
 or
 .Ic /etc/dnsdb-query.conf :
 configuration file which should contain the user's apikey and server URL.
-.Bl -item -offset indent
-.It
-.Ic APIKEY :
+.Bl -tag -width ".Ev DNSDB_SERVER"
+.It Ev APIKEY
 contains the user's apikey (no default)
-.It
-.Ic DNSDB_SERVER :
+.It DNSDB_SERVER
 contains the URL of the DNSDB API server (default is https://api.dnsdb.info)
 .El
-.Sh ENVIRONMENT VARIABLES
-Optionally, the user can set the following environment variable:
-.Bl -item -offset indent
-.It
-.Ic HTTPS_PROXY:
-the URL of the HTTPS proxy that you wish to use.  See man
-.Ic curl
-for information on its values.
+.Sh ENVIRONMENT
+The following environment variables affect the execution of
+.Nm :
+.Bl -tag -width ".Ev DNSDB_TIME_FORMAT"
+.It Ev DNSDB_API_KEY , APIKEY
+contains the user's apikey. If DNSDB_API_KEY is not present, then APIKEY will
+be used. If neither variable is present, the configuration file is consulted.
+.It Ev DNSDB_SERVER
+contains the URL of the DNSDB API server. If not set, the configuration
+file is consulted.
+.It Ev DNSDB_TIME_FORMAT
+controls how human readable date times are displayed.  If "iso" then ISO8601
+(RFC3339) format is used, for example; "2018-09-06T22:48:00Z".  If "csv" then
+an Excel CSV compatible format is used; for example, "2018-09-06 22:48:00".
+.El
 .Pp
-.El
-And optionally, the user can set the following environment variables which will
-override configuration file options:
-.Bl -item -offset indent
-.It
-.Ic DNSDB_API_KEY :
-contains the user's apikey. If not present, then APIKEY, if set, will be used.
-.It
-.Ic DNSDB_SERVER :
-contains the URL of the DNSDB API server
-.El
-.Bl -item -offset indent
-.It
-.Ic DNSDB_TIME_FORMAT
-controls how human readable date times are displayed.  If "iso" then ISO8601 / RFC3339 format is used, for example; "2018-09-06T22:48:00Z".  If "csv" then an Excel CSV compatible format is used; for example, "2018-09-06 22:48:00".
-.El
+Other environment variables may be consulted by external libraries such as
+.Xr libcurl 3 .
 .Sh SEE ALSO
 .Xr dig 1 ,
-.Xr jq  1 ,
-.Xr curl  1
+.Xr jq 1 ,
+.Xr libcurl 3
