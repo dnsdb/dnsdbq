@@ -231,6 +231,7 @@ static CURLM *multi = NULL;
 static struct timeval now;
 static int nkeys, keys[MAX_KEYS];
 static writer_t writers = NULL;
+static int exit_code = 0; /* hopeful */
 
 /* Public. */
 
@@ -588,7 +589,7 @@ main(int argc, char *argv[]) {
 	DESTROY(rrtype);
 	DESTROY(bailiwick);
 	DESTROY(length);
-	my_exit(0, NULL);
+	my_exit(exit_code, NULL);
 }
 
 /* Private. */
@@ -1376,11 +1377,11 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					reader->rcode, url);
 				if (reader->rcode == 404)
 					fprintf(stderr,
-						"please note: 404 usually "
-						"just means that no records "
+						"please note: 404 might "
+						"just mean that no records "
 						"matched the search "
 						"criteria\n");
-				fputs("API: ", stderr);
+				fputs("libcurl: ", stderr);
 				reader->once = true;
 			}
 			fwrite(reader->buf, 1, reader->len, stderr);
@@ -1693,6 +1694,7 @@ io_engine(int jobs) {
 				fprintf(stderr, "libcurl failed with "
 						"curl error %d\n",
 					cm->data.result);
+			exit_code = 1;
 		}
 		if (debuglev > 3)
 			fprintf(stderr, "...info read (still %d)\n", still);
