@@ -141,7 +141,7 @@ specify newline delimited json output mode.
 .It Fl k Ar sort_fields
 when sorting with -s or -S, selects one or more, comma separated, sort fields, "first", "last", and/or "count".
 .It Fl l Ar limit
-query for that limit's number of responses. If
+query for that limit's number of responses. If specified as 0 then the DNSDB API server will return the maximum limit of results allowed.  If
 .Fl l ,
 is not specified, then the query will not specify a limit, and the DNSDB API server may use its default limit.
 .It Fl L Ar output_limit
