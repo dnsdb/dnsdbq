@@ -293,14 +293,14 @@ configuration file which should contain the user's apikey and server URL.
 .Bl -tag -width ".Ev DNSDB_SERVER"
 .It Ev APIKEY
 contains the user's apikey (no default).
-.It DNSDB_SERVER
+.It Ev DNSDB_SERVER
 contains the URL of the DNSDB API server (default is https://api.dnsdb.info),
 and optionally the URI prefix for the database (default is "/lookup").
 .El
 .Sh ENVIRONMENT
 The following environment variables affect the execution of
 .Nm :
-.Bl -tag -width ".Ev DNSDB_TIME_FORMAT"
+.Bl -tag -width ".Ev DNSDB_API_KEY , APIKEY"
 .It Ev DNSDB_API_KEY , APIKEY
 contains the user's apikey. If DNSDB_API_KEY is not present, then APIKEY will
 be used. If neither variable is present, the configuration file is consulted.
