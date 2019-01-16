@@ -141,7 +141,7 @@ specify newline delimited json output mode.
 .It Fl k Ar sort_fields
 when sorting with -s or -S, selects one or more, comma separated, sort fields, "first", "last", and/or "count".
 .It Fl l Ar limit
-query for that limit's number of responses. If
+query for that limit's number of responses. If specified as 0 then the DNSDB API server will return the maximum limit of results allowed.  If
 .Fl l ,
 is not specified, then the query will not specify a limit, and the DNSDB API server may use its default limit.
 .It Fl L Ar output_limit
@@ -191,7 +191,7 @@ NSEC3PARAM, and DLV resource record types.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
 .El
-.Sh TIMESTAMPS FORMATS
+.Sh "TIMESTAMP FORMATS"
 Timestamps may be one of following forms.
 .Bl -enum -offset indent
 .It
@@ -312,10 +312,13 @@ controls how human readable date times are displayed.  If "iso" then ISO8601
 (RFC3339) format is used, for example; "2018-09-06T22:48:00Z".  If "csv" then
 an Excel CSV compatible format is used; for example, "2018-09-06 22:48:00".
 .El
-.Pp
-Other environment variables may be consulted by external libraries such as
-.Xr libcurl 3 .
-.Sh SEE ALSO
+.Sh "EXIT STATUS"
+Success (exit status zero) occurs if a connection could be established
+to the back end database server, even if no records matched the search
+criteria. Failure (exit status nonzero) occurs if no connection could be
+established, perhaps due to a network or service failure, or a configuration
+error such as specifying the wrong server hostname.
+.Sh "SEE ALSO"
 .Xr dig 1 ,
 .Xr jq 1 ,
 .Xr libcurl 3
