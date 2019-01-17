@@ -33,6 +33,7 @@
 #include <sys/time.h>
 
 #include <assert.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -43,6 +44,7 @@
 #include <unistd.h>
 #include <wordexp.h>
 
+#include <arpa/inet.h>
 #include <curl/curl.h>
 #include <jansson.h>
 #include "ns_ttl.h"
@@ -136,6 +138,9 @@ typedef const struct pdns_sys *pdns_sys_t;
 
 typedef enum { no_mode = 0, rdata_mode, name_mode, ip_mode, raw_mode } mode_e;
 
+struct sortbuf { char *base; size_t size; };
+typedef struct sortbuf *sortbuf_t;
+
 /* Forward. */
 
 static void help(void);
@@ -178,6 +183,11 @@ static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
 static int time_get(const char *src, u_long *dst);
 static void escape(char **);
+static char *sortable_rrname(pdns_tuple_ct);
+static char *sortable_rdata(pdns_tuple_ct);
+static void sortable_rdatum(sortbuf_t, const char *, const char *);
+static void sortable_dnsname(sortbuf_t, const char *);
+static void sortable_hexify(sortbuf_t, const u_char *, size_t);
 static char *dnsdb_url(const char *, char *);
 static void dnsdb_request_info(void);
 static void dnsdb_write_info(reader_t);
@@ -218,7 +228,7 @@ static const struct pdns_sys pdns_systems[] = {
 	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
-#define	MAX_KEYS 3
+#define	MAX_KEYS 5
 #define	MAX_JOBS 8
 
 #define DESTROY(p) if (p != NULL) { free(p); p = NULL; } else {}
@@ -245,7 +255,10 @@ static int query_limit = -1;	/* -1 means not set on command line */
 static int output_limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
-static int nkeys, keys[MAX_KEYS];
+static int nkeys;
+static const char *keys[MAX_KEYS];
+static bool sort_byname = false;
+static bool sort_bydata = false;
 static writer_t writers = NULL;
 static int exit_code = 0; /* hopeful */
 
@@ -421,19 +434,28 @@ main(int argc, char *argv[]) {
 			     tok != NULL;
 			     tok = strtok(NULL, ","))
 			{
-				int key = 0;
+				const char *key = NULL;
 
 				if (nkeys == MAX_KEYS)
-					usage("too many -k options given.");
-				if (strcasecmp(tok, "first") == 0)
-					key = 1;
-				else if (strcasecmp(tok, "last") == 0)
-					key = 2;
-				else if (strcasecmp(tok, "count") == 0)
-					key = 3;
-				else
-					usage("-k option not one of "
-					      "first, last, or count");
+					usage("too many -k fields given.");
+				if (strcasecmp(tok, "first") == 0) {
+					key = "-k1n";
+				} else if (strcasecmp(tok, "last") == 0) {
+					key = "-k2n";
+				} else if (strcasecmp(tok, "count") == 0) {
+					key = "-k3n";
+				} else if (strcasecmp(tok, "name") == 0) {
+					key = "-k4";
+					sort_byname = true;
+				} else if (strcasecmp(tok, "data") == 0) {
+					key = "-k5";
+					sort_bydata = true;
+				}
+				if (key == NULL)
+					usage("-k option not one of first, "
+					      "last, count, name, or data");
+				if (nkeys == MAX_KEYS)
+					usage("too many -k options");
 				keys[nkeys++] = key;
 			}
 			break;
@@ -1277,17 +1299,8 @@ writer_init(u_long after, u_long before) {
 			close(p2[0]); close(p2[1]);
 			sap = sort_argv;
 			*sap++ = strdup("sort");
-			for (n = 0; n < nkeys; n++) {
-				char *karg = NULL;
-				int x = asprintf(&karg, "-k%d", keys[n]);
-
-				if (x < 0) {
-					perror("asprintf");
-					_exit(1);
-				}
-				*sap++ = karg;
-			}
-			*sap++ = strdup("-n");
+			for (n = 0; n < nkeys; n++)
+				*sap++ = strdup(keys[n]);
 			*sap++ = strdup("-u");
 			if (sorted == reverse_sort)
 				*sap++ = strdup("-r");
@@ -1591,19 +1604,47 @@ input_blob(const char *buf, size_t len,
 		goto next;
 
 	if (sorted) {
-		/* POSIX sort is given three integers at the
+		/* POSIX sort is given five extra fields at the
 		 * front of each line (first, last, count)
-		 * which are accessed as -k1, -k2 or -k3 on the
+		 * which are accessed as -k1 .. -k5 on the
 		 * sort command line. we strip them off later
 		 * when reading the result back. the reason
-		 * for all this old-school code is to avoid
+		 * for all this PDP11-era logic is to avoid
 		 * having to store the full result in memory.
 		 */
-		fprintf(outf, "%lu %lu %lu %*.*s\n",
+		char *dyn_rrname = NULL, *dyn_rdata = NULL;
+		if (sort_byname) {
+			dyn_rrname = sortable_rrname(&tup);
+			if (debuglev > 1) {
+				fprintf(stderr, "dyn_rrname = '%s'\n",
+					dyn_rrname);
+			}
+		}
+		if (sort_bydata) {
+			dyn_rdata = sortable_rdata(&tup);
+			if (debuglev > 1) {
+				fprintf(stderr, "dyn_rdata = '%s'\n",
+					dyn_rdata);
+			}
+		}
+		fprintf(outf, "%lu %lu %lu %s %s %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,
 			(unsigned long)tup.count,
+			(dyn_rrname != NULL) ? dyn_rrname : "n/a",
+			(dyn_rdata != NULL) ? dyn_rdata : "n/a",
 			(int)len, (int)len, buf);
+		if (debuglev > 1) {
+			fprintf(stderr, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
+				(unsigned long)first,
+				(unsigned long)last,
+				(unsigned long)tup.count,
+				(dyn_rrname != NULL) ? dyn_rrname : "n/a",
+				(dyn_rdata != NULL) ? dyn_rdata : "n/a",
+				(int)len, (int)len, buf);
+		}
+		DESTROY(dyn_rrname);
+		DESTROY(dyn_rdata);
 	} else {
 		(*pres)(&tup, buf, len, outf);
 	}
@@ -1691,7 +1732,13 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep = line;
-			/* skip first, last, and count -- the sort keys. */
+			if (debuglev > 1) {
+				fprintf(stderr, "sort1: '%*.*s'\n",
+					(int)(nl - linep),
+					(int)(nl - linep),
+					linep);
+			}
+			/* skip sort keys (first, last, count, name, data). */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"no SP found in '%s'\n", line);
@@ -1710,9 +1757,27 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr,
+					"no fourth SP found in '%s'\n", line);
+				continue;
+			}
+			linep += strspn(linep, " ");
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr,
+					"no fifth SP found in '%s'\n", line);
+				continue;
+			}
+			linep += strspn(linep, " ");
+			if (debuglev > 1) {
+				fprintf(stderr, "sort2: '%*.*s'\n",
+					(int)(nl - linep),
+					(int)(nl - linep),
+					linep);
+			}
 			msg = tuple_make(&tup, linep, (size_t)(nl - linep));
 			if (msg != NULL) {
-				puts(msg);
+				fprintf(stderr, "tuple_make: %s\n", msg);
 				continue;
 			}
 			(*pres)(&tup, linep, (size_t)(nl - linep), stdout);
@@ -2282,6 +2347,141 @@ escape(char **src) {
 	*src = strdup(escaped);
 	curl_free(escaped);
 	escaped = NULL;
+}
+
+/* sortable_rrname -- return a POSIX-sort-collatable rendition of RR name+type.
+ */
+static char *
+sortable_rrname(pdns_tuple_ct tup) {
+	struct sortbuf buf = {NULL, 0};
+
+	sortable_dnsname(&buf, tup->rrname);
+	buf.base = realloc(buf.base, buf.size+1);
+	buf.base[buf.size++] = '\0';
+	return (buf.base);
+}
+
+/* sortable_rdata -- return a POSIX-sort-collatable rendition of RR data set.
+ */
+static char *
+sortable_rdata(pdns_tuple_ct tup) {
+	struct sortbuf buf = {NULL, 0};
+
+	if (json_is_array(tup->obj.rdata)) {
+		size_t slot, nslots;
+
+		nslots = json_array_size(tup->obj.rdata);
+		for (slot = 0; slot < nslots; slot++) {
+			json_t *rr = json_array_get(tup->obj.rdata, slot);
+
+			if (json_is_string(rr))
+				sortable_rdatum(&buf, tup->rrtype,
+						json_string_value(rr));
+			else
+				fprintf(stderr, "rdata slot not a string?\n");
+		}
+	} else {
+		sortable_rdatum(&buf, tup->rrtype, tup->rdata);
+	}
+	buf.base = realloc(buf.base, buf.size+1);
+	buf.base[buf.size++] = '\0';
+	return (buf.base);
+}
+
+/* sortable_rdatum -- called only by sortable_rdata(), realloc and normalize.
+ */
+static void
+sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
+	if (strcmp(rrtype, "A") == 0) {
+		u_char a[4];
+
+		if (inet_pton(AF_INET, rdatum, a) != 1)
+			memset(a, 0, sizeof a);
+		sortable_hexify(buf, a, sizeof a);
+	} else if (strcmp(rrtype, "AAAA") == 0) {
+		u_char aaaa[16];
+
+		if (inet_pton(AF_INET6, rdatum, aaaa) != 1)
+			memset(aaaa, 0, sizeof aaaa);
+		sortable_hexify(buf, aaaa, sizeof aaaa);
+	} else if (strcmp(rrtype, "NS") == 0 ||
+		   strcmp(rrtype, "PTR") == 0 ||
+		   strcmp(rrtype, "CNAME") == 0) {
+		sortable_dnsname(buf, rdatum);
+	} else if (strcmp(rrtype, "MX") == 0 ||
+		   strcmp(rrtype, "RP") == 0) {
+		const char *space = strrchr(rdatum, ' ');
+
+		if (space != NULL)
+			sortable_dnsname(buf, space+1);
+		else
+			sortable_hexify(buf, (const u_char *)rdatum,
+					strlen(rdatum));
+	} else {
+		sortable_hexify(buf, (const u_char *)rdatum, strlen(rdatum));
+	}
+}
+
+static void
+sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
+	size_t i;
+
+	buf->base = realloc(buf->base, buf->size + len*2);
+	for (i = 0; i < len; i++) {
+		const char hex[] = "0123456789abcdef";
+		int ch = src[i];
+
+		buf->base[buf->size++] = hex[ch >> 4];
+		buf->base[buf->size++] = hex[ch & 0xf];
+	}
+}
+
+/* sortable_dnsname -- make a sortable dns name; destructive and lossy.
+ */
+static void
+sortable_dnsname(sortbuf_t buf, const char *name) {
+	const char hex[] = "0123456789abcdef";
+	signed int m, n, dots;
+	size_t len;
+	char *p;
+
+	/* to avoid calling realloc() on every label, count the dots. */
+	for (dots = 0, len = 0; name[len] != '\0'; len++) {
+		if (name[len] == '.')
+			dots++;
+	}
+
+	/* collatable names are TLD-first, all lower case. */
+	buf->base = realloc(buf->base, buf->size + len*2 - (size_t)dots);
+	p = buf->base + buf->size;
+	for (m = (int)len - 1, n = m; m >= 0; m--) {
+		/* note: actual presentation form names can have \. or \\,
+		 * but we are destructive and lossy, and will ignore that.
+		 */
+		if (name[m] == '.') {
+			int i;
+
+			for (i = m+1; i <= n; i++) {
+				int ch = tolower(name[i]);
+				*p++ = hex[ch >> 4];
+				*p++ = hex[ch & 0xf];
+			}
+			*p++ = '.';
+			n = m-1;
+		}
+	}
+	/* first label remains after loop. */
+	while (m <= n) {
+		int ch = tolower(name[m++]);
+		*p++ = hex[ch >> 4];
+		*p++ = hex[ch & 0xf];
+	}
+	buf->size = (size_t)(p - buf->base);
+	/* if no characters were written, it's the dns root zone. */
+	if (p == buf->base + buf->size) {
+		buf->base = realloc(buf->base, buf->size + 1);
+		buf->base[buf->size++] = '.';
+	}
 }
 
 /* dnsdb_url -- create a URL corresponding to a command-path string.
