@@ -708,7 +708,7 @@ my_exit(int code, ...) {
 	exit(code);
 }
 
-/* find_pdns -- locate a pdns system's metadata by name
+/* find_pdns -- locate a pdns system's metadata by name.
  */
 static pdns_sys_t
 find_system(const char *name) {
@@ -896,7 +896,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 	}
 }
 
-/* makepath -- make a RESTful URI that describes these search parameters
+/* makepath -- make a RESTful URI that describes these search parameters.
  */
 static char *
 makepath(mode_e mode, const char *name, const char *rrtype,
@@ -1140,7 +1140,7 @@ launch(const char *command, writer_t writer,
 	launch_one(writer, url);
 }
 
-/* launch_one -- given a url, tell libcurl to go fetch it
+/* launch_one -- given a url, tell libcurl to go fetch it.
  */
 static void
 launch_one(writer_t writer, char *url) {
@@ -1316,7 +1316,7 @@ writer_init(u_long after, u_long before) {
 	return (writer);
 }
 
-/* print_rateval -- output formatter for rateval
+/* print_rateval -- output formatter for rateval.
  */
 static void
 print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
@@ -1345,7 +1345,7 @@ print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
 	fputc('\n', outstream);
 }
 
-/* print_burstrate -- output formatter for burst_size and burst_window ratevals
+/* print_burstrate -- output formatter for burst_size, burst_window ratevals.
  */
 static void
 print_burstrate(FILE *outstream, const char *key,
@@ -1377,7 +1377,7 @@ print_burstrate(FILE *outstream, const char *key,
 	fputc('\n', outstream);
 }
 
-/* dnsdb_write_info -- assumes that reader contains the complete json block
+/* dnsdb_write_info -- assumes that reader contains the complete JSON block.
  */
 static void
 dnsdb_write_info(reader_t reader) {
@@ -1598,7 +1598,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	return (bytes);
 }
 
-/* writer_fini -- stop a writer's readers, and perhaps execute a "sort".
+/* writer_fini -- stop a writer's readers, and perhaps execute a POSIX "sort".
  */
 static void
 writer_fini(writer_t writer) {
