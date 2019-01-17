@@ -65,8 +65,9 @@ struct pdns_tuple {
 	json_int_t	count;
 };
 typedef struct pdns_tuple *pdns_tuple_t;
+typedef const struct pdns_tuple *pdns_tuple_ct;
 
-typedef void (*present_t)(const pdns_tuple_t, const char *, size_t, FILE *);
+typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
 
 struct rate_json {
 	json_t		*main,
@@ -160,10 +161,10 @@ static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static int input_blob(const char *, size_t, u_long, u_long, FILE *);
 static void writer_fini(writer_t);
 static void io_engine(int);
-static void present_text(const pdns_tuple_t, const char *, size_t, FILE *);
-static void present_json(const pdns_tuple_t, const char *, size_t, FILE *);
-static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
-static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
+static void present_text(pdns_tuple_ct, const char *, size_t, FILE *);
+static void present_json(pdns_tuple_ct, const char *, size_t, FILE *);
+static void present_csv(pdns_tuple_ct, const char *, size_t, FILE *);
+static void present_csv_line(pdns_tuple_ct, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, const char *, size_t);
 static void print_rateval(FILE *, const char *, const struct rateval *);
 static void print_burstrate(FILE *, const char *, const struct rateval *,
@@ -1786,7 +1787,7 @@ io_engine(int jobs) {
 /* present_text -- render one pdns tuple in "dig" style ascii text.
  */
 static void
-present_text(const pdns_tuple_t tup,
+present_text(pdns_tuple_ct tup,
 	     const char *jsonbuf __attribute__ ((unused)),
 	     size_t jsonlen __attribute__ ((unused)),
 	     FILE *outf)
@@ -1863,7 +1864,7 @@ present_text(const pdns_tuple_t tup,
 /* present_json -- render one DNSDB tuple as newline-separated JSON.
  */
 static void
-present_json(const pdns_tuple_t tup __attribute__ ((unused)),
+present_json(pdns_tuple_ct tup __attribute__ ((unused)),
 	     const char *jsonbuf,
 	     size_t jsonlen,
 	     FILE *outf)
@@ -1875,7 +1876,7 @@ present_json(const pdns_tuple_t tup __attribute__ ((unused)),
 /* present_csv -- render one DNSDB tuple as comma-separated values (CSV).
  */
 static void
-present_csv(const pdns_tuple_t tup,
+present_csv(pdns_tuple_ct tup,
 	    const char *jsonbuf __attribute__ ((unused)),
 	    size_t jsonlen __attribute__ ((unused)),
 	    FILE *outf)
@@ -1912,7 +1913,7 @@ present_csv(const pdns_tuple_t tup,
 /* present_csv_line -- display a CSV for one rdatum out of an rrset.
  */
 static void
-present_csv_line(const pdns_tuple_t tup,
+present_csv_line(pdns_tuple_ct tup,
 		 const char *rdata,
 		 FILE *outf)
 {
