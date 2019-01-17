@@ -289,7 +289,8 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, -i, or -R can only appear once");
+				usage("-r, -n, -i, or -R "
+				      "can only appear once");
 			assert(name == NULL);
 			mode = rdata_mode;
 
@@ -304,7 +305,8 @@ main(int argc, char *argv[]) {
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
 					if (bailiwick != NULL)
-						usage("can only specify bailiwick one way");
+						usage("can only specify "
+						      "one bailiwick");
 					bailiwick = strdup(q + 1);
 					rrtype = strndup(p + 1,
 						       (size_t)(q - p - 1));
@@ -321,7 +323,8 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, -i, or -R can only appear once");
+				usage("-r, -n, -i, or -R "
+				      "can only appear once");
 			assert(name == NULL);
 			mode = name_mode;
 
@@ -345,7 +348,8 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, -i, or -R can only appear once");
+				usage("-r, -n, -i, or -R "
+				      "can only appear once");
 			assert(name == NULL);
 			mode = ip_mode;
 			p = strchr(optarg, '/');
@@ -359,7 +363,8 @@ main(int argc, char *argv[]) {
 		    }
 		case 'R': {
 			if (mode != no_mode)
-				usage("-r, -n, -i, or -R can only appear once");
+				usage("-r, -n, -i, or -R "
+				      "can only appear once");
 			assert(name == NULL);
 			mode = raw_mode;
 			name = strdup(optarg);
@@ -406,7 +411,8 @@ main(int argc, char *argv[]) {
 		case 'k': {
 			const char *tok;
 			if (nkeys > 0)
-				usage("Can only specify -k once; use commas to seperate multiple sort fields");
+				usage("Can only specify -k once; use commas "
+				      "to seperate multiple sort fields");
 
 			nkeys = 0;
 			for (tok = strtok(optarg, ",");
@@ -424,7 +430,8 @@ main(int argc, char *argv[]) {
 				else if (strcasecmp(tok, "count") == 0)
 					key = 3;
 				else
-					usage("-k option not one of first, last, or count");
+					usage("-k option not one of "
+					      "first, last, or count");
 				keys[nkeys++] = key;
 			}
 			break;
@@ -486,8 +493,9 @@ main(int argc, char *argv[]) {
 	if (length != NULL)
 		escape(&length);
 	if (output_limit == 0) {
-		/* If not set, default to whatever limit has, unless limit is 0 or -1
-		   in which case use a really big integer */
+		/* If not set, default to whatever limit has, unless limit is
+		 *  0 or -1, in which case use a really big integer.
+		 */
 		if (query_limit == 0 || query_limit == -1)
 			output_limit = INT32_MAX;
 		else
@@ -1386,7 +1394,8 @@ dnsdb_write_info(reader_t reader) {
 			print_rateval(stdout, "limit", &tup.limit);
 			print_rateval(stdout, "remaining", &tup.remaining);
 			print_rateval(stdout, "results_max", &tup.results_max);
-			print_burstrate(stdout, "burst rate", &tup.burst_size, &tup.burst_window);
+			print_burstrate(stdout, "burst rate",
+					&tup.burst_size, &tup.burst_window);
 		}
 	} else if (pres == present_json) {
 		fwrite(reader->buf, 1, reader->len, stdout);
@@ -1461,9 +1470,12 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			return (bytes);
 		}
 
-		if (output_limit != 0 && reader->writer->count >= output_limit) {
+		if (output_limit != 0 &&
+		    reader->writer->count >= output_limit)
+		{
 			if (debuglev > 2)
-				fprintf(stderr, "hit output limit %d\n", output_limit);
+				fprintf(stderr,
+					"hit output limit %d\n", output_limit);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);
@@ -2196,7 +2208,9 @@ time_print(u_long x, FILE *outf) {
 		time_t t = (time_t)x;
 		struct tm *y = gmtime(&t);
 		char z[99];
-		/* only allow "iso" or "csv", but default to "csv", so only "iso" matters */
+		/* only allow "iso" or "csv", but default to "csv",
+		 * so only "iso" matters.
+		 */
 		val = getenv(env_time_fmt);
 		if (val != NULL && strcmp(val, "iso") == 0)
 			strftime(z, sizeof z, "%FT%TZ", y);
@@ -2263,10 +2277,9 @@ escape(char **src) {
  */
 static char *
 dnsdb_url(const char *path, char *sep) {
-	const char *lookup, *p;
+	const char *lookup, *p, *scheme_if_needed;
 	char *ret;
 	int x;
-	const char *scheme_if_needed;
 
 	/* if the config file didn't specify our server, do it here. */
 	if (dnsdb_server == NULL)
@@ -2279,19 +2292,23 @@ dnsdb_url(const char *path, char *sep) {
 		x += (*p == '/');
 	lookup = (x < 3) ? "/lookup" : "";
 
-	/* enforce that dnsdb_server appears to be a URL, not just a bare hostname */
-	scheme_if_needed = (strstr(dnsdb_server, "://") == NULL) ? "https://" : "" ;
+	/* supply a scheme if the server string did not. */
+	scheme_if_needed = "";
+	if (strstr(dnsdb_server, "://") == NULL)
+		scheme_if_needed = "https://";
 
-	/* pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
+	/* assist DNSDB's operator in understanding their client mix. */
 	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s",
-		     scheme_if_needed, dnsdb_server, lookup, path, id_swclient, id_version);
+		     scheme_if_needed, dnsdb_server, lookup, path,
+		     id_swclient, id_version);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
 	}
 
 	/* because we append query parameters, tell the caller to use & for
-	   any further query parameters. */
+	 * any further query parameters.
+	 */
 	if (sep != NULL)
 		*sep = '&';
 
@@ -2354,11 +2371,6 @@ circl_url(const char *path, char *sep) {
 	char *ret;
 	int x;
 
-	/* because we will NOT append query parameters, tell the caller to use ? for
-	   any query parameters. */
-	if (sep != NULL)
-		*sep = '?';
-
 	if (circl_server == NULL)
 		circl_server = strdup(sys->server);
 	if (strncasecmp(path, "rrset/name/", 11) == 0) {
@@ -2379,6 +2391,13 @@ circl_url(const char *path, char *sep) {
 		perror("asprintf");
 		ret = NULL;
 	}
+
+	/* because we will NOT append query parameters,
+	 * tell the caller to use ? for its query parameters.
+	 */
+	if (sep != NULL)
+		*sep = '?';
+
 	return (ret);
 }
 
