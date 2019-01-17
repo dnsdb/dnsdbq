@@ -157,19 +157,20 @@ static void rendezvous(reader_t);
 static void ruminate_json(int, u_long, u_long);
 static writer_t writer_init(u_long, u_long);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
+static int input_blob(const char *, size_t, u_long, u_long, FILE *);
 static void writer_fini(writer_t);
 static void io_engine(int);
 static void present_text(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_json(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv(const pdns_tuple_t, const char *, size_t, FILE *);
 static void present_csv_line(const pdns_tuple_t, const char *, FILE *);
-static const char *tuple_make(pdns_tuple_t, char *, size_t);
+static const char *tuple_make(pdns_tuple_t, const char *, size_t);
 static void print_rateval(FILE *, const char *, const struct rateval *);
 static void print_burstrate(FILE *, const char *, const struct rateval *,
 			    const struct rateval *);
 static const char *parse_rateval(const json_t *, const char *,
 				 struct rateval *);
-static const char *rate_tuple_make(rate_tuple_t, char *, size_t);
+static const char *rate_tuple_make(rate_tuple_t, const char *, size_t);
 static void rate_tuple_unmake(rate_tuple_t);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
@@ -1411,6 +1412,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	reader_t reader = (reader_t) blob;
 	size_t bytes = size * nmemb;
 	u_long after, before;
+	FILE *outf;
 	char *nl;
 
 	if (debuglev > 2)
@@ -1456,12 +1458,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 
 	after = reader->writer->after;
 	before = reader->writer->before;
+	outf = sorted ? reader->writer->sort_stdin : stdout;
 
 	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
 		size_t pre_len, post_len;
-		struct pdns_tuple tup;
-		const char *msg, *whynot;
-		u_long first, last;
 
 		if (info) {
 			sys->write_info(reader);
@@ -1482,120 +1482,135 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 
 		pre_len = (size_t)(nl - reader->buf);
-
-		msg = tuple_make(&tup, reader->buf, pre_len);
-		if (msg != NULL) {
-			puts(msg);
-			goto more;
-		}
-
-		/* there are two sets of timestamps in a tuple. we prefer
-		 * the on-the-wire times to the zone times, when possible.
-		 */
-		if (tup.time_first != 0 && tup.time_last != 0) {
-			first = (u_long)tup.time_first;
-			last = (u_long)tup.time_last;
-		} else {
-			first = (u_long)tup.zone_first;
-			last = (u_long)tup.zone_last;
-		}
-		whynot = NULL;
-		if (debuglev > 1)
-			fprintf(stderr, "filtering-- ");
-
-		/* time fencing can in some cases (-A & -B w/o -c) require
-		 * asking the server for more than we really want, and so
-		 * we have to winnow it down upon receipt. (see also -J.)
-		 */
-		if (after != 0) {
-			int first_vs_after, last_vs_after;
-
-			first_vs_after = timecmp(first, after);
-			last_vs_after = timecmp(last, after);
-			if (debuglev > 1)
-				fprintf(stderr, "FvA %d LvA %d: ",
-					first_vs_after, last_vs_after);
-
-			if (complete) {
-				if (first_vs_after < 0) {
-					whynot = "first is too early";
-				}
-			} else {
-				if (last_vs_after < 0) {
-					whynot = "last is too early";
-				}
-			}
-		}
-		if (before != 0) {
-			int first_vs_before, last_vs_before;
-
-			first_vs_before = timecmp(first, before);
-			last_vs_before = timecmp(last, before);
-			if (debuglev > 1)
-				fprintf(stderr, "FvB %d LvB %d: ",
-					first_vs_before, last_vs_before);
-
-			if (complete) {
-				if (last_vs_before > 0) {
-					whynot = "last is too late";
-				}
-			} else {
-				if (first_vs_before > 0) {
-					whynot = "first is too late";
-				}
-			}
-		}
-
-		if (whynot == NULL) {
-			if (debuglev > 1)
-				fprintf(stderr, "selected!\n");
-		} else {
-			if (debuglev > 1)
-				fprintf(stderr, "skipped (%s).\n", whynot);
-		}
-		if (debuglev > 2) {
-			fputs("\tF..L = ", stderr);
-			time_print(first, stderr);
-			fputs(" .. ", stderr);
-			time_print(last, stderr);
-			fputc('\n', stderr);
-			fputs("\tA..B = ", stderr);
-			time_print(after, stderr);
-			fputs(" .. ", stderr);
-			time_print(before, stderr);
-			fputc('\n', stderr);
-		}
-		if (whynot != NULL)
-			goto next;
-
-		if (sorted != no_sort) {
-			/* POSIX sort is given three integers at the
-			 * front of each line (first, last, count)
-			 * which are accessed as -k1, -k2 or -k3 on the
-			 * sort command line. we strip them off later
-			 * when reading the result back. the reason
-			 * for all this old-school code is to avoid
-			 * having to store the full result in memory.
-			 */
-			fprintf(reader->writer->sort_stdin,
-				"%lu %lu %lu %*.*s\n",
-				(unsigned long)first,
-				(unsigned long)last,
-				(unsigned long)tup.count,
-				(int)pre_len, (int)pre_len,
-				reader->buf);
-		} else {
-			(*pres)(&tup, reader->buf, pre_len, stdout);
-		}
-		reader->writer->count++;
- next:
-		tuple_unmake(&tup);
- more:
+		reader->writer->count += input_blob(reader->buf, pre_len,
+						    after, before, outf);
 		post_len = (reader->len - pre_len) - 1;
 		memmove(reader->buf, nl + 1, post_len);
 		reader->len = post_len;
 	}
 	return (bytes);
+}
+
+/* input_blob -- process one deblocked json blob as a counted string.
+ */
+static int
+input_blob(const char *buf, size_t len,
+	   u_long after, u_long before,
+	   FILE *outf)
+{
+	const char *msg, *whynot;
+	struct pdns_tuple tup;
+	u_long first, last;
+	int ret = 0;
+
+	msg = tuple_make(&tup, buf, len);
+	if (msg != NULL) {
+		fputs(msg, stderr);
+		fputc('\n', stderr);
+		goto more;
+	}
+
+	/* there are two sets of timestamps in a tuple. we prefer
+	 * the on-the-wire times to the zone times, when possible.
+	 */
+	if (tup.time_first != 0 && tup.time_last != 0) {
+		first = (u_long)tup.time_first;
+		last = (u_long)tup.time_last;
+	} else {
+		first = (u_long)tup.zone_first;
+		last = (u_long)tup.zone_last;
+	}
+
+	/* time fencing can in some cases (-A & -B w/o -c) require
+	 * asking the server for more than we really want, and so
+	 * we have to winnow it down upon receipt. (see also -J.)
+	 */
+	whynot = NULL;
+	if (debuglev > 1)
+		fprintf(stderr, "filtering-- ");
+	if (after != 0) {
+		int first_vs_after, last_vs_after;
+
+		first_vs_after = timecmp(first, after);
+		last_vs_after = timecmp(last, after);
+		if (debuglev > 1)
+			fprintf(stderr, "FvA %d LvA %d: ",
+				first_vs_after, last_vs_after);
+
+		if (complete) {
+			if (first_vs_after < 0) {
+				whynot = "first is too early";
+			}
+		} else {
+			if (last_vs_after < 0) {
+				whynot = "last is too early";
+			}
+		}
+	}
+	if (before != 0) {
+		int first_vs_before, last_vs_before;
+
+		first_vs_before = timecmp(first, before);
+		last_vs_before = timecmp(last, before);
+		if (debuglev > 1)
+			fprintf(stderr, "FvB %d LvB %d: ",
+				first_vs_before, last_vs_before);
+
+		if (complete) {
+			if (last_vs_before > 0) {
+				whynot = "last is too late";
+			}
+		} else {
+			if (first_vs_before > 0) {
+				whynot = "first is too late";
+			}
+		}
+	}
+
+	if (whynot == NULL) {
+		if (debuglev > 1)
+			fprintf(stderr, "selected!\n");
+	} else {
+		if (debuglev > 1)
+			fprintf(stderr, "skipped (%s).\n", whynot);
+	}
+	if (debuglev > 2) {
+		fputs("\tF..L = ", stderr);
+		time_print(first, stderr);
+		fputs(" .. ", stderr);
+		time_print(last, stderr);
+		fputc('\n', stderr);
+		fputs("\tA..B = ", stderr);
+		time_print(after, stderr);
+		fputs(" .. ", stderr);
+		time_print(before, stderr);
+		fputc('\n', stderr);
+	}
+	if (whynot != NULL)
+		goto next;
+
+	if (sorted) {
+		/* POSIX sort is given three integers at the
+		 * front of each line (first, last, count)
+		 * which are accessed as -k1, -k2 or -k3 on the
+		 * sort command line. we strip them off later
+		 * when reading the result back. the reason
+		 * for all this old-school code is to avoid
+		 * having to store the full result in memory.
+		 */
+		fprintf(outf, "%lu %lu %lu %*.*s\n",
+			(unsigned long)first,
+			(unsigned long)last,
+			(unsigned long)tup.count,
+			(int)len, (int)len, buf);
+	} else {
+		(*pres)(&tup, buf, len, outf);
+	}
+	ret = 1;
+ next:
+	tuple_unmake(&tup);
+ more:
+	return (ret);
 }
 
 /* writer_fini -- stop a writer's readers, and perhaps execute a POSIX "sort".
@@ -1950,7 +1965,7 @@ present_csv_line(const pdns_tuple_t tup,
 /* tuple_make -- create one DNSDB tuple object out of a JSON object.
  */
 static const char *
-tuple_make(pdns_tuple_t tup, char *buf, size_t len) {
+tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 
@@ -2115,7 +2130,7 @@ parse_rateval(const json_t *obj, const char *key, struct rateval *tp) {
 /* rate_tuple_make -- create one rate tuple object out of a JSON object.
  */
 static const char *
-rate_tuple_make(rate_tuple_t tup, char *buf, size_t len) {
+rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 	json_t *rate;
