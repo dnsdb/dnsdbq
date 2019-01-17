@@ -54,11 +54,13 @@ with DNSDB.
 .Sh OPTIONS
 .Bl -tag -width 3n
 .It Fl A Ar timestamp
-Specify a "time_first_after" timestamp. Only results first seen by the Farsight
-sensor network on or after this date will be emitted. See below for timestamp formats and examples.
+Specify a "time_first_after" timestamp. Only results first seen by the
+Farsight sensor network on or after this date will be emitted. See below for
+timestamp formats and examples.
 .It Fl B Ar timestamp
 Specify a "time_first_before" timestamp. Only results first seen by the
-Farsight sensor network on or before this date will be emitted. See below for timestamp formats and examples.
+Farsight sensor network on or before this date will be emitted. See below for
+timestamp formats and examples.
 .It Fl b Ar bailiwick
 specify bailiwick (only valid with
 .Fl r
@@ -134,16 +136,20 @@ character rather than the usual slash ("/") character to avoid clashing with
 the HTTP URI path name separator.  Examples are below.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
-preference to -f (batch mode) or -r, -n, or -i (query mode). This can be
-used to reprocess the output from a prior invocation which used -j (-p json).  If input_file is "-" then standard input (stdin) will be read.
+preference to -f (batch mode) or -r, -n, or -i (query mode). This can be used
+to reprocess the output from a prior invocation which used -j (-p json).  If
+inut_file is "-" then standard input (stdin) willl be read.
 .It Fl j
 specify newline delimited json output mode.
 .It Fl k Ar sort_fields
-when sorting with -s or -S, selects one or more, comma separated, sort fields, "first", "last", and/or "count".
+when sorting with -s or -S, selects one or more, comma separated, sort fields,
+"first", "last", and/or "count".
 .It Fl l Ar limit
-query for that limit's number of responses. If specified as 0 then the DNSDB API server will return the maximum limit of results allowed.  If
+query for that limit's number of responses. If specified as 0 then the DNSDB
+API server will return the maximum limit of results allowed.  If
 .Fl l ,
-is not specified, then the query will not specify a limit, and the DNSDB API server may use its default limit.
+is not specified, then the query will not specify a limit, and the DNSDB API
+server may use its default limit.
 .It Fl L Ar output_limit
 clamps the number of responses output to
 .Ic output_limit .
@@ -162,8 +168,8 @@ specify
 .Ic rdata
 name ("right-hand side") query.  The value is a DNS domain name in
 presentation format, or a left-hand (".example.com") or right-hand
-("www.example.") wildcard domain name. Note that left-hand wildcard
-queries are somewhat more expensive than right-hand wildcard queries.
+("www.example.") wildcard domain name. Note that left-hand wildcard queries
+are somewhat more expensive than right-hand wildcard queries.
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -199,9 +205,11 @@ positive unsigned integer : in Unix epoch format.
 .It
 negative unsigned integer : negative offset in seconds from now.
 .It
-YYYY-MM-DD [HH:MM:SS] : in absolute form, in UTC time, as DNSDB does its fencing using UTC time.
+YYYY-MM-DD [HH:MM:SS] : in absolute form, in UTC time, as DNSDB does its
+fencing using UTC time.
 .It
-%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offsite from UTC time, as DNSDB does its fencing using UTC time.
+%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offsite
+from UTC time, as DNSDB does its fencing using UTC time.
 .Pp
 .El
 A few examples of how to use timefencing options.
