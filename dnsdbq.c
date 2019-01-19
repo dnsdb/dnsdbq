@@ -1472,7 +1472,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 
 	after = reader->writer->after;
 	before = reader->writer->before;
-	outf = sorted ? reader->writer->sort_stdin : stdout;
+	outf = (sorted != no_sort) ? reader->writer->sort_stdin : stdout;
 
 	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
 		size_t pre_len, post_len;
@@ -1603,7 +1603,7 @@ input_blob(const char *buf, size_t len,
 	if (whynot != NULL)
 		goto next;
 
-	if (sorted) {
+	if (sorted != no_sort) {
 		/* POSIX sort is given five extra fields at the
 		 * front of each line (first, last, count)
 		 * which are accessed as -k1 .. -k5 on the
