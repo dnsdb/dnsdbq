@@ -1285,11 +1285,12 @@ writer_init(u_long after, u_long before) {
 			close(p2[0]); close(p2[1]);
 			sap = sort_argv;
 			*sap++ = strdup("sort");
-			for (n = 0; n < nkeys; n++)
-				*sap++ = strdup(keys[n]);
-			*sap++ = strdup("-u");
-			if (sorted == reverse_sort)
-				*sap++ = strdup("-r");
+			for (n = 0; n < nkeys; n++) {
+				int x = asprintf(sap++, "%s%s", keys[n],
+						 sorted==reverse_sort?"r":"");
+				if (x < 0)
+					my_panic("asprintf");
+			}
 			*sap++ = NULL;
 			putenv(strdup("LC_ALL=C"));
 			if (debuglev > 0) {
