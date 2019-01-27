@@ -507,9 +507,9 @@ main(int argc, char *argv[]) {
 		}
 	}
 	argc -= optind;
-	argv += optind; /*NOTUSED*/
 	if (argc != 0)
 		usage("there are no non-option arguments to this program");
+	argv = NULL;
 
 	/* recondition various options for HTML use. */
 	if (name != NULL)
@@ -769,9 +769,8 @@ server_setup(void) {
 static void
 read_configs(void) {
 	const char * const *conf;
-	char *cf;
+	char *cf = NULL;
 
-	cf = NULL;
 	for (conf = conf_files; *conf != NULL; conf++) {
 		wordexp_t we;
 
@@ -783,6 +782,7 @@ read_configs(void) {
 				fprintf(stderr, "conf found: '%s'\n", cf);
 			break;
 		}
+		DESTROY(cf);
 	}
 	if (*conf != NULL) {
 		char *cmd, *tok1, *tok2, *line;
@@ -1177,6 +1177,7 @@ launch_one(writer_t writer, char *url) {
 		fprintf(stderr, "launch_one(%s)\n", url);
 	CREATE(reader, sizeof *reader);
 	reader->writer = writer;
+	writer = NULL;
 	reader->easy = curl_easy_init();
 	if (reader->easy == NULL) {
 		/* an error will have been output by libcurl in this case. */
@@ -1194,11 +1195,11 @@ launch_one(writer_t writer, char *url) {
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
 	if (debuglev > 2)
 		curl_easy_setopt(reader->easy, CURLOPT_VERBOSE, 1L);
-	reader->next = writer->readers;
-	writer->readers = reader;
-	reader = NULL;
+	/* linked-list insert. */
+	reader->next = reader->writer->readers;
+	reader->writer->readers = reader;
 
-	res = curl_multi_add_handle(multi, writer->readers->easy);
+	res = curl_multi_add_handle(multi, reader->writer->readers->easy);
 	if (res != CURLM_OK) {
 		fprintf(stderr, "curl_multi_add_handle() failed: %s\n",
 			curl_multi_strerror(res));
@@ -1876,7 +1877,7 @@ present_text(pdns_tuple_ct tup,
 	}
 	if (tup->obj.bailiwick != NULL) {
 		fprintf(outf, "%s bailiwick: %s", prefix, tup->bailiwick);
-		prefix = ";";
+		prefix = NULL;
 		pflag = true;
 		ppflag = true;
 	}
@@ -2426,8 +2427,9 @@ sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
 static void
 sortable_dnsname(sortbuf_t buf, const char *name) {
 	const char hex[] = "0123456789abcdef";
-	signed int m, n, dots;
-	size_t len;
+	size_t len, new_size;
+	unsigned int dots;
+	signed int m, n;
 	char *p;
 
 	/* to avoid calling realloc() on every label, count the dots. */
@@ -2437,10 +2439,13 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 	}
 
 	/* collatable names are TLD-first, all lower case. */
-	buf->base = realloc(buf->base, buf->size + len*2 - (size_t)dots);
+	new_size = buf->size + len*2 - (size_t)dots;
+	assert(new_size != 0);
+	if (new_size != buf->size)
+		buf->base = realloc(buf->base, new_size);
 	p = buf->base + buf->size;
 	for (m = (int)len - 1, n = m; m >= 0; m--) {
-		/* note: actual presentation form names can have \. or \\,
+		/* note: actual presentation form names can have \. and \\,
 		 * but we are destructive and lossy, and will ignore that.
 		 */
 		if (name[m] == '.') {
@@ -2455,15 +2460,17 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 			n = m-1;
 		}
 	}
+	assert(m == -1);
 	/* first label remains after loop. */
-	while (m <= n) {
-		int ch = tolower(name[m++]);
+	for (m = 0; m <= n; m++) {
+		int ch = tolower(name[m]);
 		*p++ = hex[ch >> 4];
 		*p++ = hex[ch & 0xf];
 	}
 	buf->size = (size_t)(p - buf->base);
+	assert(buf->size == new_size);
 	/* if no characters were written, it's the dns root zone. */
-	if (p == buf->base + buf->size) {
+	if (len == 0) {
 		buf->base = realloc(buf->base, buf->size + 1);
 		buf->base[buf->size++] = '.';
 	}
