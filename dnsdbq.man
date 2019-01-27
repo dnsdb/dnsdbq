@@ -186,9 +186,9 @@ hexadecimal digits specifying a raw octet string.
 .It Fl r Ar rdata
 specify rrset ("left-hand side") query.
 .It Fl s
-sort output in date-time order.
+sort output in ascending key order.
 .It Fl S
-sort output in reverse date-time order.
+sort output in descending key order.
 .It Fl t Ar rrtype
 specify the resource record type desired.  Valid values include those
 defined in DNS RFCs, including ANY.  A special-case supported in DNSDB
