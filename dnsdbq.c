@@ -146,6 +146,7 @@ typedef struct sortbuf *sortbuf_t;
 static void help(void);
 static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
+static __attribute__((noreturn)) void my_panic(const char *);
 static void server_setup(void);
 static pdns_sys_t find_system(const char *);
 static void read_configs(void);
@@ -231,6 +232,9 @@ static const struct pdns_sys pdns_systems[] = {
 #define	MAX_KEYS 5
 #define	MAX_JOBS 8
 
+#define CREATE(p, s) if (p != NULL) { my_panic("non-NULL ptr"); } \
+	else if ((p = malloc(s)) == NULL) { my_panic("malloc failed"); } \
+	else { memset(p, 0, s); }
 #define DESTROY(p) if (p != NULL) { free(p); p = NULL; } else {}
 
 /* Private. */
@@ -261,6 +265,7 @@ static bool sort_byname = false;
 static bool sort_bydata = false;
 static writer_t writers = NULL;
 static int exit_code = 0; /* hopeful */
+static size_t ideal_buffer;
 
 /* Public. */
 
@@ -274,6 +279,7 @@ main(int argc, char *argv[]) {
 	int ch;
 
 	/* global dynamic initialization. */
+	ideal_buffer = 4 * (size_t) sysconf(_SC_PAGESIZE);
 	gettimeofday(&now, NULL);
 	program_name = strrchr(argv[0], '/');
 	if (program_name != NULL)
@@ -465,10 +471,8 @@ main(int argc, char *argv[]) {
 				json_fd = STDIN_FILENO;
 			else
 				json_fd = open(optarg, O_RDONLY);
-			if (json_fd < 0) {
-				perror(optarg);
-				my_exit(1, NULL);
-			}
+			if (json_fd < 0)
+				my_panic(optarg);
 			break;
 		case 'd':
 			debuglev++;
@@ -732,6 +736,14 @@ my_exit(int code, ...) {
 	exit(code);
 }
 
+/* my_panic -- display an error on diagnostic output stream, exit ungracefully
+ */
+static __attribute__((noreturn)) void
+my_panic(const char *s) {
+	perror(s);
+	my_exit(1, NULL);
+}
+
 /* find_pdns -- locate a pdns system's metadata by name.
  */
 static pdns_sys_t
@@ -787,10 +799,8 @@ read_configs(void) {
 			     "echo circls $CIRCL_SERVER;"
 #endif
 			     "exit", cf);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
+		if (x < 0)
+			my_panic("asprintf");
 		f = popen(cmd, "r");
 		if (f == NULL) {
 			perror(cmd);
@@ -940,10 +950,8 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 		else
 			x = asprintf(&command, "rrset/name/%s",
 				     name);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
+		if (x < 0)
+			my_panic("asprintf");
 		break;
 	case name_mode:
 		if (rrtype != NULL)
@@ -952,10 +960,8 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 		else
 			x = asprintf(&command, "rdata/name/%s",
 				     name);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
+		if (x < 0)
+			my_panic("asprintf");
 		break;
 	case ip_mode:
 		if (length != NULL)
@@ -964,10 +970,8 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 		else
 			x = asprintf(&command, "rdata/ip/%s",
 				     name);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
+		if (x < 0)
+			my_panic("asprintf");
 		break;
 	case raw_mode:
 		if (rrtype != NULL)
@@ -976,10 +980,8 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 		else
 			x = asprintf(&command, "rdata/raw/%s",
 				     name);
-		if (x < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
+		if (x < 0)
+			my_panic("asprintf");
 		break;
 	case no_mode:
 		/*FALLTHROUGH*/
@@ -1168,17 +1170,12 @@ launch(const char *command, writer_t writer,
  */
 static void
 launch_one(writer_t writer, char *url) {
-	reader_t reader;
+	reader_t reader = NULL;
 	CURLMcode res;
 
 	if (debuglev > 1)
 		fprintf(stderr, "launch_one(%s)\n", url);
-	reader = malloc(sizeof *reader);
-	if (reader == NULL) {
-		perror("malloc");
-		my_exit(1, NULL);
-	}
-	memset(reader, 0, sizeof *reader);
+	CREATE(reader, sizeof *reader);
 	reader->writer = writer;
 	reader->easy = curl_easy_init();
 	if (reader->easy == NULL) {
@@ -1232,24 +1229,21 @@ rendezvous(reader_t reader) {
  */
 static void
 ruminate_json(int json_fd, u_long after, u_long before) {
-	reader_t reader;
+	reader_t reader = NULL;
+	void *buf = NULL;
 	writer_t writer;
-	char buf[65536];
 	ssize_t len;
 
 	writer = writer_init(after, before);
-	reader = malloc(sizeof(struct reader));
-	if (reader == NULL) {
-		perror("malloc");
-		my_exit(1, NULL);
-	}
-	memset(reader, 0, sizeof(struct reader));
+	CREATE(reader, sizeof(struct reader));
 	reader->writer = writer;
 	writer->readers = reader;
 	reader = NULL;
+	CREATE(buf, ideal_buffer);
 	while ((len = read(json_fd, buf, sizeof buf)) > 0) {
 		writer_func(buf, 1, (size_t)len, writer->readers);
 	}
+	DESTROY(buf);
 	writer_fini(writer);
 	writer = NULL;
 }
@@ -1258,14 +1252,9 @@ ruminate_json(int json_fd, u_long after, u_long before) {
  */
 static writer_t
 writer_init(u_long after, u_long before) {
-	writer_t writer;
+	writer_t writer = NULL;
 
-	writer = malloc(sizeof(struct writer));
-	if (writer == NULL) {
-		perror("malloc");
-		my_exit(1, NULL);
-	}
-	memset(writer, 0, sizeof(struct writer));
+	CREATE(writer, sizeof(struct writer));
 
 	if (sorted != no_sort) {
 		/* sorting involves a subprocess (POSIX sort(1) command),
@@ -1278,14 +1267,10 @@ writer_init(u_long after, u_long before) {
 		 */
 		int p1[2], p2[2];
 
-		if (pipe(p1) < 0 || pipe(p2) < 0) {
-			perror("pipe");
-			my_exit(1, NULL);
-		}
-		if ((writer->sort_pid = fork()) < 0) {
-			perror("fork");
-			my_exit(1, NULL);
-		}
+		if (pipe(p1) < 0 || pipe(p2) < 0)
+			my_panic("pipe");
+		if ((writer->sort_pid = fork()) < 0)
+			my_panic("fork");
 		if (writer->sort_pid == 0) {
 			char *sort_argv[5+MAX_KEYS], **sap;
 			int n;
@@ -2556,10 +2541,8 @@ dnsdb_auth(reader_t reader) {
 	if (api_key != NULL) {
 		char *key_header;
 
-		if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0) {
-			perror("asprintf");
-			my_exit(1, NULL);
-		}
+		if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0)
+			my_panic("asprintf");
 		reader->hdrs = curl_slist_append(reader->hdrs, key_header);
 		DESTROY(key_header);
 	}
@@ -2603,10 +2586,8 @@ circl_url(const char *path, char *sep) {
 		my_exit(1, NULL);
 	}
 	x = asprintf(&ret, "%s/%s", circl_server, val);
-	if (x < 0) {
-		perror("asprintf");
-		ret = NULL;
-	}
+	if (x < 0)
+		my_panic("asprintf");
 
 	/* because we will NOT append query parameters,
 	 * tell the caller to use ? for its query parameters.
