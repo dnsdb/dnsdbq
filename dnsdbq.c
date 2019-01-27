@@ -507,7 +507,7 @@ main(int argc, char *argv[]) {
 		}
 	}
 	argc -= optind;
-	argv += optind;
+	argv += optind; /*NOTUSED*/
 	if (argc != 0)
 		usage("there are no non-option arguments to this program");
 
