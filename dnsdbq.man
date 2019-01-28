@@ -28,7 +28,7 @@
 .Op Fl L Ar output_limit
 .Op Fl u Ar server_sys
 .Op Fl n Ar name
-.Op Fl k Ar sort_fields
+.Op Fl k Ar sort_keys
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rdata
 .Op Fl r Ar rdata
@@ -141,9 +141,9 @@ to reprocess the output from a prior invocation which used -j (-p json).  If
 inut_file is "-" then standard input (stdin) willl be read.
 .It Fl j
 specify newline delimited json output mode.
-.It Fl k Ar sort_fields
-when sorting with -s or -S, selects one or more, comma separated, sort fields,
-"first", "last", and/or "count".
+.It Fl k Ar sort_keys
+when sorting with -s or -S, selects one or more comma separated sort keys,
+among "first", "last", "count", "name", and/or "data".
 .It Fl l Ar limit
 query for that limit's number of responses. If specified as 0 then the DNSDB
 API server will return the maximum limit of results allowed.  If
@@ -186,9 +186,9 @@ hexadecimal digits specifying a raw octet string.
 .It Fl r Ar rdata
 specify rrset ("left-hand side") query.
 .It Fl s
-sort output in date-time order.
+sort output in ascending key order.
 .It Fl S
-sort output in reverse date-time order.
+sort output in descending key order.
 .It Fl t Ar rrtype
 specify the resource record type desired.  Valid values include those
 defined in DNS RFCs, including ANY.  A special-case supported in DNSDB
