@@ -2376,6 +2376,12 @@ sortable_rdata(pdns_tuple_ct tup) {
 }
 
 /* sortable_rdatum -- called only by sortable_rdata(), realloc and normalize.
+ *
+ * this converts (lossily) addresses into hex strings, and extracts the
+ * server-name component of a few other types like MX. all other rdata
+ * are left in their normal string form, because it's hard to know what
+ * to sort by with something like TXT, and extracting the serial number
+ * from an SOA using a language like C is a bit ugly.
  */
 static void
 sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
@@ -2393,10 +2399,12 @@ sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
 		sortable_hexify(buf, aaaa, sizeof aaaa);
 	} else if (strcmp(rrtype, "NS") == 0 ||
 		   strcmp(rrtype, "PTR") == 0 ||
-		   strcmp(rrtype, "CNAME") == 0) {
+		   strcmp(rrtype, "CNAME") == 0)
+	{
 		sortable_dnsname(buf, rdatum);
 	} else if (strcmp(rrtype, "MX") == 0 ||
-		   strcmp(rrtype, "RP") == 0) {
+		   strcmp(rrtype, "RP") == 0)
+	{
 		const char *space = strrchr(rdatum, ' ');
 
 		if (space != NULL)
@@ -2416,7 +2424,7 @@ sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
 	buf->base = realloc(buf->base, buf->size + len*2);
 	for (i = 0; i < len; i++) {
 		const char hex[] = "0123456789abcdef";
-		int ch = src[i];
+		unsigned int ch = src[i];
 
 		buf->base[buf->size++] = hex[ch >> 4];
 		buf->base[buf->size++] = hex[ch & 0xf];
@@ -2424,6 +2432,11 @@ sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
 }
 
 /* sortable_dnsname -- make a sortable dns name; destructive and lossy.
+ *
+ * to be lexicographically sortable, a dnsname has to be converted to
+ * TLD-first, all uppercase letters must be converted to lower case,
+ * and all characters except dots then converted to hexadecimal. this
+ * transformation is for POSIX sort's use, and is irreversibly lossy.
  */
 static void
 sortable_dnsname(sortbuf_t buf, const char *name) {
@@ -2470,7 +2483,9 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 	}
 	buf->size = (size_t)(p - buf->base);
 	assert(buf->size == new_size);
-	/* if no characters were written, it's the dns root zone. */
+	/* if no characters were written, it's the empty string,
+	 * meaning the dns root zone.
+	 */
 	if (len == 0) {
 		buf->base = realloc(buf->base, buf->size + 1);
 		buf->base[buf->size++] = '.';
