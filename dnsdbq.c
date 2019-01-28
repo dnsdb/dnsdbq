@@ -1471,7 +1471,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			return (bytes);
 		}
 
-		if (output_limit != 0 &&
+		if (sorted == no_sort &&
+		    output_limit != 0 &&
 		    reader->writer->count >= output_limit)
 		{
 			if (debuglev > 2)
