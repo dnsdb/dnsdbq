@@ -51,20 +51,8 @@ inverse or rdata searches.
 You'll need to get an API key from Farsight to use
 .Ic dnsdbq
 with DNSDB.
-.Sh OPTIONS
-.Bl -tag -width 3n
-.It Fl A Ar timestamp
-Specify a "time_first_after" timestamp. Only results first seen by the
-Farsight sensor network on or after this date will be emitted. See below for
-timestamp formats and examples.
-.It Fl B Ar timestamp
-Specify a "time_first_before" timestamp. Only results first seen by the
-Farsight sensor network on or before this date will be emitted. See below for
-timestamp formats and examples.
-.It Fl b Ar bailiwick
-specify bailiwick (only valid with
-.Fl r
-queries). Farsight's passive DNS infrastructure performs a complex process
+.Pp
+Farsight's passive DNS infrastructure performs a complex process
 of "bailiwick reconstruction" where an RRset's position within the DNS
 hierarchy is approximated. This serves two purposes:
 .Bl -enum -offset indent
@@ -78,11 +66,25 @@ consumers.
 .Pp
 For example, given the fully qualified domain name
 .Ic www.dachshund.example.com ,
-valid bailiwics would be
+valid bailiwicks would be
 .Ic dachshund.example.com ,
 .Ic example.com ,
 or
 .Ic com .
+.Sh OPTIONS
+.Bl -tag -width 3n
+.It Fl A Ar timestamp
+Specify a "time_first_after" timestamp. Only results first seen by the
+Farsight sensor network on or after this date will be emitted. See below for
+timestamp formats and examples.
+.It Fl B Ar timestamp
+Specify a "time_first_before" timestamp. Only results first seen by the
+Farsight sensor network on or before this date will be emitted. See below for
+timestamp formats and examples.
+.It Fl b Ar bailiwick
+specify bailiwick (only valid with
+.Fl r
+queries).  If bailiwick is specified, but rrtype is not specified, then a default rrtype of ANY will be used.
 .It Fl c
 by default, -A and -B (separately or together) will select partial overlaps of
 database tuples and time search criteria. To match only complete overlaps, add
@@ -97,16 +99,16 @@ one of the following formats:
 .Bl -enum -offset indent
 .It
 RRSet query:
-.Ic rrset/name/NAME[/TYPE[/BAILIWICK]]
+.Ic rrset/name/NAME[/RRTYPE[/BAILIWICK]]
 .It
 Rdata (name) query:
-.Ic rdata/name/NAME[/TYPE]
+.Ic rdata/name/NAME[/RRTYPE]
 .It
 Rdata (IP address) query:
 .Ic rdata/ip/ADDR[/PFXLEN]
 .It
 Rdata (raw) query:
-.Ic rdata/raw/HEX-PAIRS[/TYPE]
+.Ic rdata/raw/HEX-PAIRS[/RRTYPE]
 .El
 .Pp
 This option cannot be mixed with
