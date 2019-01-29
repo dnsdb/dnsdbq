@@ -947,6 +947,9 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 		else if (rrtype != NULL)
 			x = asprintf(&command, "rrset/name/%s/%s",
 				     name, rrtype);
+		else if (bailiwick != NULL)
+			x = asprintf(&command, "rrset/name/%s/ANY/%s",
+				     name, bailiwick);
 		else
 			x = asprintf(&command, "rrset/name/%s",
 				     name);
