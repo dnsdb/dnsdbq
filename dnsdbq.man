@@ -19,6 +19,7 @@
 .Nm dnsdbq
 .Nd DNSDB query tool
 .Sh SYNOPSIS
+.Nm dnsdbq
 .Op Fl dfmhjsShcI
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
@@ -146,6 +147,8 @@ specify newline delimited json output mode.
 .It Fl k Ar sort_keys
 when sorting with -s or -S, selects one or more comma separated sort keys,
 among "first", "last", "count", "name", and/or "data".
+If sorting was specified, but this -k option is not specified, then will default
+to sorting by first, last, count.
 .It Fl l Ar limit
 query for that limit's number of responses. If specified as 0 then the DNSDB
 API server will return the maximum limit of results allowed.  If
