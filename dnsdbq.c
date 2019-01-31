@@ -148,6 +148,7 @@ static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
 static __attribute__((noreturn)) void my_panic(const char *);
 static void server_setup(void);
+static const char *add_sort_key(const char *tok);
 static pdns_sys_t find_system(const char *);
 static void read_configs(void);
 static void read_environ(void);
@@ -259,7 +260,7 @@ static int query_limit = -1;	/* -1 means not set on command line */
 static int output_limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
-static int nkeys;
+static int nkeys = 0;
 static const char *keys[MAX_KEYS];
 static bool sort_byname = false;
 static bool sort_bydata = false;
@@ -440,29 +441,10 @@ main(int argc, char *argv[]) {
 			     tok != NULL;
 			     tok = strtok(NULL, ","))
 			{
-				const char *key = NULL;
+				const char *msg;
 
-				if (nkeys == MAX_KEYS)
-					usage("too many -k fields given.");
-				if (strcasecmp(tok, "first") == 0) {
-					key = "-k1n";
-				} else if (strcasecmp(tok, "last") == 0) {
-					key = "-k2n";
-				} else if (strcasecmp(tok, "count") == 0) {
-					key = "-k3n";
-				} else if (strcasecmp(tok, "name") == 0) {
-					key = "-k4";
-					sort_byname = true;
-				} else if (strcasecmp(tok, "data") == 0) {
-					key = "-k5";
-					sort_bydata = true;
-				}
-				if (key == NULL)
-					usage("-k option not one of first, "
-					      "last, count, name, or data");
-				if (nkeys == MAX_KEYS)
-					usage("too many -k options");
-				keys[nkeys++] = key;
+				if ((msg = add_sort_key(tok)) != NULL)
+					usage(msg);
 			}
 			break;
 		    }
@@ -570,10 +552,15 @@ main(int argc, char *argv[]) {
 	}
 	if (complete && !after && !before)
 		usage("-c without -A or -B makes no sense.");
-	if (nkeys > 0 && sorted == no_sort)
-		usage("using -k without -s or -S makes no sense.");
 	if (merge && !batch)
 		usage("using -m without -f makes no sense.");
+	if (nkeys > 0 && sorted == no_sort)
+		usage("using -k without -s or -S makes no sense.");
+	if (nkeys == 0 && sorted != no_sort) {
+		(void) add_sort_key("first");
+		(void) add_sort_key("last");
+		(void) add_sort_key("count");
+	}
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -742,6 +729,36 @@ static __attribute__((noreturn)) void
 my_panic(const char *s) {
 	perror(s);
 	my_exit(1, NULL);
+}
+
+/* add_sort_key -- add a key for use by POSIX sort.
+ */
+static const char *
+add_sort_key(const char *tok) {
+	const char *key = NULL;
+
+	if (nkeys == MAX_KEYS)
+		return ("too many sort keys given.");
+	if (strcasecmp(tok, "first") == 0) {
+		key = "-k1n";
+	} else if (strcasecmp(tok, "last") == 0) {
+		key = "-k2n";
+	} else if (strcasecmp(tok, "count") == 0) {
+		key = "-k3n";
+	} else if (strcasecmp(tok, "name") == 0) {
+		key = "-k4";
+		sort_byname = true;
+	} else if (strcasecmp(tok, "data") == 0) {
+		key = "-k5";
+		sort_bydata = true;
+	}
+	if (key == NULL)
+		return ("key must be one of first, "
+		      "last, count, name, or data");
+	if (nkeys == MAX_KEYS)
+		return ("too many -k options");
+	keys[nkeys++] = key;
+	return (NULL);
 }
 
 /* find_pdns -- locate a pdns system's metadata by name.
