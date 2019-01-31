@@ -755,8 +755,6 @@ add_sort_key(const char *tok) {
 	if (key == NULL)
 		return ("key must be one of first, "
 		      "last, count, name, or data");
-	if (nkeys == MAX_KEYS)
-		return ("too many -k options");
 	keys[nkeys++] = key;
 	return (NULL);
 }
