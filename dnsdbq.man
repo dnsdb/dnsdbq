@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl dfmhjsShcI
+.Op Fl dfmhjsShcIU
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -199,6 +199,8 @@ specify the resource record type desired.  Valid values include those
 defined in DNS RFCs, including ANY.  A special-case supported in DNSDB
 is ANY-DNSSEC, which matches on DS, RRSIG, NSEC, DNSKEY, NSEC3,
 NSEC3PARAM, and DLV resource record types.
+.It Fl U
+return Unaggregated results.  Default is to return aggregated results.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
 .El

@@ -252,6 +252,7 @@ static bool batch = false;
 static bool merge = false;
 static bool complete = false;
 static bool info = false;
+static bool unaggregate = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
@@ -290,7 +291,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:u:p:t:b:k:J:R:djfmsShcI")) != -1)
+			    "A:B:r:n:i:l:L:u:p:t:b:k:J:R:djfmsShcIU")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -481,6 +482,9 @@ main(int argc, char *argv[]) {
 			info = true;
 			pres = present_text;
 			break;
+		case 'U':
+			unaggregate = true;
+			break;
 		case 'h':
 			help();
 			my_exit(0, NULL);
@@ -644,7 +648,7 @@ help(void) {
 	pdns_sys_t t;
 
 	fprintf(stderr,
-"usage: %s [-djsShcI] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
+"usage: %s [-djsShcIU] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
 "\t[-l LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
@@ -668,7 +672,8 @@ help(void) {
 "use -h to reliably display this helpful text.\n"
 "use -c to get complete (vs. partial) time matching for -A and -B\n"
 "use -d one or more times to ramp up the diagnostic output\n"
-"use -I to see a system-specific account or key summary in JSON format\n",
+"use -I to see a system-specific account or key summary in JSON format\n"
+"use -U to get unaggregated results.\n",
 		program_name);
 	fprintf(stderr, "\nsystem must be one of:");
 	for (t = pdns_systems; t->name != NULL; t++)
@@ -2520,7 +2525,7 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
  */
 static char *
 dnsdb_url(const char *path, char *sep) {
-	const char *lookup, *p, *scheme_if_needed;
+	const char *lookup, *p, *scheme_if_needed, *aggr_if_needed;
 	char *ret;
 	int x;
 
@@ -2540,10 +2545,16 @@ dnsdb_url(const char *path, char *sep) {
 	if (strstr(dnsdb_server, "://") == NULL)
 		scheme_if_needed = "https://";
 
-	/* assist DNSDB's operator in understanding their client mix. */
-	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s",
+	aggr_if_needed = "";
+	if (unaggregate)
+		aggr_if_needed = "&aggr=f";
+
+	/* assist DNSDB's operator in understanding their client mix.
+	 * and provide aggr(egate) flag if needed.
+	 */
+	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s",
 		     scheme_if_needed, dnsdb_server, lookup, path,
-		     id_swclient, id_version);
+		     id_swclient, id_version, aggr_if_needed);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
