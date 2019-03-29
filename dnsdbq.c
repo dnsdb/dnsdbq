@@ -217,7 +217,7 @@ static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 /* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
 static const char id_swclient[] = "dnsdbq";
-static const char id_version[] = "1.1";
+static const char id_version[] = "1.2";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
@@ -253,6 +253,7 @@ static bool merge = false;
 static bool complete = false;
 static bool info = false;
 static bool unaggregate = false;
+static int page = 0;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
@@ -291,7 +292,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:u:p:t:b:k:J:R:djfmsShcIU")) != -1)
+			    "A:B:r:n:i:l:L:u:p:t:b:k:J:P:R:djfmsShcIU")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -402,6 +403,11 @@ main(int argc, char *argv[]) {
 			output_limit = atoi(optarg);
 			if (output_limit <= 0)
 				usage("-L must be positive");
+			break;
+		case 'P':
+			page = atoi(optarg);
+			if (page <= 0)
+				usage("-P must be positive");
 			break;
 		case 'u':
 			sys = find_system(optarg);
@@ -565,6 +571,8 @@ main(int argc, char *argv[]) {
 		(void) add_sort_key("last");
 		(void) add_sort_key("count");
 	}
+	if (page > 0 && query_limit == 0)
+		usage("If -P page is set then -l query-limit must be non-zero.");
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -649,7 +657,7 @@ help(void) {
 
 	fprintf(stderr,
 "usage: %s [-djsShcIU] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] {\n"
+"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -673,7 +681,8 @@ help(void) {
 "use -c to get complete (vs. partial) time matching for -A and -B\n"
 "use -d one or more times to ramp up the diagnostic output\n"
 "use -I to see a system-specific account or key summary in JSON format\n"
-"use -U to get unaggregated results.\n",
+"use -U to get unaggregated results\n"
+"use -P # to query that page # of results.\n",
 		program_name);
 	fprintf(stderr, "\nsystem must be one of:");
 	for (t = pdns_systems; t->name != NULL; t++)
@@ -2549,12 +2558,20 @@ dnsdb_url(const char *path, char *sep) {
 	if (unaggregate)
 		aggr_if_needed = "&aggr=f";
 
-	/* assist DNSDB's operator in understanding their client mix.
+	/* if page > 0, we already ensured the query_limit > 0,
+	 * so skip that many rows of results.
+	 * assist DNSDB's operator in understanding their client mix
+	 * by sending the client name and version.
 	 * and provide aggr(egate) flag if needed.
 	 */
-	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s",
-		     scheme_if_needed, dnsdb_server, lookup, path,
-		     id_swclient, id_version, aggr_if_needed);
+	if (page > 0)
+		x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s&skip=%d",
+			     scheme_if_needed, dnsdb_server, lookup, path,
+			     id_swclient, id_version, aggr_if_needed, page * query_limit);
+	else
+		x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s",
+			     scheme_if_needed, dnsdb_server, lookup, path,
+			     id_swclient, id_version, aggr_if_needed);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
