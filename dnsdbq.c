@@ -252,7 +252,7 @@ static bool batch = false;
 static bool merge = false;
 static bool complete = false;
 static bool info = false;
-static bool unaggregate = false;
+static bool gravel = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
@@ -291,7 +291,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:u:p:t:b:k:J:R:djfmsShcIU")) != -1)
+			    "A:B:r:n:i:l:L:u:p:t:b:k:J:R:djfmsShcIg")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -460,6 +460,9 @@ main(int argc, char *argv[]) {
 		case 'd':
 			debuglev++;
 			break;
+		case 'g':
+			gravel = true;
+			break;
 		case 'j':
 			pres = present_json;
 			break;
@@ -481,9 +484,6 @@ main(int argc, char *argv[]) {
 		case 'I':
 			info = true;
 			pres = present_text;
-			break;
-		case 'U':
-			unaggregate = true;
 			break;
 		case 'h':
 			help();
@@ -648,7 +648,7 @@ help(void) {
 	pdns_sys_t t;
 
 	fprintf(stderr,
-"usage: %s [-djsShcIU] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
+"usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
 "\t[-l LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
@@ -673,7 +673,7 @@ help(void) {
 "use -c to get complete (vs. partial) time matching for -A and -B\n"
 "use -d one or more times to ramp up the diagnostic output\n"
 "use -I to see a system-specific account or key summary in JSON format\n"
-"use -U to get unaggregated results.\n",
+"use -g to get graveled results.\n",
 		program_name);
 	fprintf(stderr, "\nsystem must be one of:");
 	for (t = pdns_systems; t->name != NULL; t++)
@@ -2546,7 +2546,7 @@ dnsdb_url(const char *path, char *sep) {
 		scheme_if_needed = "https://";
 
 	aggr_if_needed = "";
-	if (unaggregate)
+	if (gravel)
 		aggr_if_needed = "&aggr=f";
 
 	/* assist DNSDB's operator in understanding their client mix.
