@@ -122,6 +122,8 @@ or
 An example of how to use
 .Fl f
 is below.
+.It Fl g
+return graveled results.  Default is to return ungraveled (aggregated) results.
 .It Fl h
 emit usage and quit.
 .It Fl I
@@ -216,8 +218,6 @@ specify the resource record type desired.  Valid values include those
 defined in DNS RFCs, including ANY.  A special-case supported in DNSDB
 is ANY-DNSSEC, which matches on DS, RRSIG, NSEC, DNSKEY, NSEC3,
 NSEC3PARAM, and DLV resource record types.
-.It Fl U
-return Unaggregated results.  Default is to return aggregated results.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
 .El
