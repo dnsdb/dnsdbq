@@ -35,12 +35,14 @@
 .Op Fl R Ar raw_rdata
 .Op Fl r Ar rdata
 .Op Fl t Ar rrtype
+.Op Fl V Ar verb
 .Op Fl J Ar input_file
 .Sh DESCRIPTION
-.Nm dnsdbq
-constructs and issues queries to the Farsight DNSDB and displays responses. It
-is commonly used as a production command line interface to the DNSDB API
-server.
+.Nm dnsdbqv
+constructs and issues queries to the Farsight DNSDB and displays
+responses. It is commonly used as a production command line interface
+to the DNSDB API server. Its default query type is a "lookup" query.
+As an option, it can issue a "summarize" query type.
 .Pp
 DNSDB is a database that stores and indexes both the passive DNS data
 available via Farsight Security's Security Information Exchange as well as the
@@ -221,6 +223,12 @@ is ANY-DNSSEC, which matches on DS, RRSIG, NSEC, DNSKEY, NSEC3,
 NSEC3PARAM, and DLV resource record types.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
+.It Fl V Ar verb
+The verb to perform, what type of query, either "lookup" or
+"summarize".  The default is the "lookup" verb.  As an option, you can
+request a "summarize" verb.
+.It Fl v
+report the version of dnsdbq and exit.
 .El
 .Sh "TIMESTAMP FORMATS"
 Timestamps may be one of following forms.

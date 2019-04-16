@@ -71,6 +71,11 @@ typedef const struct pdns_tuple *pdns_tuple_ct;
 
 typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
 
+enum verb {
+    verb_lookup = 0,
+    verb_summarize
+};
+
 struct rate_json {
 	json_t		*main,
 			*reset, *expires, *limit, *remaining,
@@ -149,6 +154,7 @@ typedef const struct sortkey *sortkey_ct;
 /* Forward. */
 
 static void help(void);
+static void report_version(void);
 static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
 static __attribute__((noreturn)) void my_panic(const char *);
@@ -223,7 +229,7 @@ static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 /* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
 static const char id_swclient[] = "dnsdbq";
-static const char id_version[] = "1.2";
+static const char id_version[] = "1.3";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
@@ -275,6 +281,7 @@ static bool sort_bydata = false;
 static writer_t writers = NULL;
 static int exit_code = 0; /* hopeful */
 static size_t ideal_buffer;
+static enum verb verb = verb_lookup;
 
 /* Public. */
 
@@ -298,7 +305,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:u:p:t:b:k:J:P:R:djfmsShcIg")) != -1)
+			    "A:B:r:n:i:l:L:u:p:t:b:k:J:P:R:V:djfmsShcIgv")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -398,6 +405,16 @@ main(int argc, char *argv[]) {
 			assert(name == NULL);
 			mode = raw_mode;
 			name = strdup(optarg);
+			break;
+		    }
+		case 'V': {
+                        /*$$$ maybe accept "l" and "s" as synonyms? */
+			if (strcmp(optarg, "lookup") == 0)
+                                verb = verb_lookup;
+			else if (strcmp(optarg, "summarize") == 0)
+                                verb = verb_summarize;
+                        else
+				usage("-V must be followed by 'lookup' or 'summarize'");
 			break;
 		    }
 		case 'l':
@@ -500,6 +517,9 @@ main(int argc, char *argv[]) {
 			info = true;
 			pres = present_text;
 			break;
+		case 'v':
+			report_version();
+			my_exit(0, NULL);
 		case 'h':
 			help();
 			my_exit(0, NULL);
@@ -591,6 +611,12 @@ main(int argc, char *argv[]) {
 	if (page > 0 && query_limit < 1)
 		usage("If -P page is set then -l query-limit must be positive.");
 
+        if (verb == verb_summarize && pres != present_json)
+                usage("Only json output mode is supposed with a summarize query type");
+        if (verb == verb_summarize && sorted != no_sort)
+                usage("Sorting with a summarize query type makes no sense");
+        /*$$$ add more verb exclusions? */
+
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
 		if (mode != no_mode)
@@ -631,6 +657,7 @@ main(int argc, char *argv[]) {
 		make_curl();
 		sys->request_info();
 		unmake_curl();
+/*$$$	} else if (verb == verb_summarize) { */
 	} else {
 		char *command;
 
@@ -674,7 +701,7 @@ help(void) {
 
 	fprintf(stderr,
 "usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] {\n"
+"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] [-V verb] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -708,6 +735,10 @@ help(void) {
 		"\nAPIKEY=\"YOURAPIKEYHERE\"");
 	fprintf(stderr, "\n\ntry   man %s   for a longer description\n",
 		program_name);
+}
+
+static void report_version(void) {
+	fprintf(stderr, "%s version %s\n", id_swclient, id_version);
 }
 
 /* usage -- display a usage error message, brief usage help text; then exit.
