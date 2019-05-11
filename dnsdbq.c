@@ -670,9 +670,11 @@ help(void) {
 "use -d one or more times to ramp up the diagnostic output\n"
 "use -I to see a system-specific account or key summary in JSON format\n",
 		program_name);
-	fprintf(stderr, "\nsystem must be one of:");
+	fprintf(stderr, "\nsystem must be one of:\n");
 	for (t = pdns_systems; t->name != NULL; t++)
-		fprintf(stderr, " %s", t->name);
+		fprintf(stderr, " %s\n", t->name);
+	fprintf(stderr, "\n\nGetting Started: \nAdd the API key to ~/.dnsdb-query.conf in the below given format,\n"
+		"\nAPIKEY=\"YOURAPIKEYHERE\"");
 	fprintf(stderr, "\n\ntry   man %s   for a longer description\n",
 		program_name);
 }
