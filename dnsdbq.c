@@ -686,6 +686,9 @@ usage(const char *error) {
 "\n"
 "try   %s -h   for a short description of program usage.\n",
 		error, program_name);
+"\n"
+"try   Add the API key to ~/.dnsdb-query.conf in the below given format,
+	APIKEY=YOURAPIKEYHERE\n",
 	my_exit(1, NULL);
 }
 
