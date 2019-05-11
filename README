@@ -51,4 +51,4 @@ Usage notes:
 
 Getting Started 
 	Add the API key to ~/.dnsdb-query.conf in the below given format,
-	APIKEY=YOURAPIKEYHERE
+	APIKEY="YOURAPIKEYHERE"
