@@ -20,16 +20,17 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl dfmhjsShcI
+.Op Fl dfgmhjsShcI
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
 .Op Fl i Ar ip
-.Op Fl l Ar limit
+.Op Fl l Ar query_limit
 .Op Fl L Ar output_limit
 .Op Fl u Ar server_sys
 .Op Fl n Ar name
 .Op Fl k Ar sort_keys
+.Op Fl P Ar page
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rdata
 .Op Fl r Ar rdata
@@ -92,7 +93,7 @@ database tuples and time search criteria. To match only complete overlaps, add
 the -c ("completeness") command line option (this is also known as "strict"
 mode).
 .It Fl d
-enable debug mode.
+enable debug mode.  Repeat for more debug output.
 .It Fl f
 specify batch lookup mode allowing one or more queries to be performed.
 Queries will be read from standard input and are expected to be be in
@@ -121,13 +122,21 @@ or
 An example of how to use
 .Fl f
 is below.
+.It Fl g
+return graveled results.  Default is to return ungraveled (aggregated) results.
 .It Fl h
 emit usage and quit.
 .It Fl I
 request information from the API server concerning the API key itself, which
 may include rate limit, query quota, query allowance, or privilege levels; the
 output format and content is dependent on the server_sys argument (see -u) and
-upon the -p argument.  -I -p json prints the raw info.  -I -p text prints
+upon the
+.Fl p
+argument.
+.Fl I -p json
+prints the raw info.
+.Fl I -p text
+prints
 the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
 .It Fl i Ar ip
@@ -140,7 +149,9 @@ the HTTP URI path name separator.  Examples are below.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be used
-to reprocess the output from a prior invocation which used -j (-p json).  If
+to reprocess the output from a prior invocation which used
+.Fl j
+(-p json).  If
 inut_file is "-" then standard input (stdin) willl be read.
 .It Fl j
 specify newline delimited json output mode.
@@ -150,7 +161,7 @@ among "first", "last", "count", "name", and/or "data".
 If sorting was specified, but this -k option is not specified, then will default
 to sorting by first, last, count.
 Each sort key may only be specified once.
-.It Fl l Ar limit
+.It Fl l Ar query_limit
 query for that limit's number of responses. If specified as 0 then the DNSDB
 API server will return the maximum limit of results allowed.  If
 .Fl l ,
@@ -176,6 +187,14 @@ name ("right-hand side") query.  The value is a DNS domain name in
 presentation format, or a left-hand (".example.com") or right-hand
 ("www.example.") wildcard domain name. Note that left-hand wildcard queries
 are somewhat more expensive than right-hand wildcard queries.
+.It Fl P Ar page_number
+query for the specified page of results, where a page is a
+.Fl l
+limit's worth of results.  If
+.Fl P
+is specified then
+.Fl l
+must also be specified, with a non-zero limit.
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -296,6 +315,11 @@ $ head -1 batch-output.json | jq .
     "ns2.wikimedia.org."
   ]
 }
+.Ed
+.Pp
+Query for the second page of results where each page is 1000 rows
+.Bd -literal -offset 4n
+$ dnsdbq -P 2 -l 1000 -r ...
 .Ed
 .Sh FILES
 .Ic ~/.isc-dnsdb-query.conf ,
