@@ -217,7 +217,7 @@ static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 /* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
 static const char id_swclient[] = "dnsdbq";
-static const char id_version[] = "1.1";
+static const char id_version[] = "1.2";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
@@ -252,6 +252,7 @@ static bool batch = false;
 static bool merge = false;
 static bool complete = false;
 static bool info = false;
+static int page = 0;
 static bool gravel = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
@@ -291,7 +292,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:u:p:t:b:k:J:R:djfmsShcIg")) != -1)
+			    "A:B:r:n:i:l:L:u:p:t:b:k:J:P:R:djfmsShcIg")) != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -402,6 +403,11 @@ main(int argc, char *argv[]) {
 			output_limit = atoi(optarg);
 			if (output_limit <= 0)
 				usage("-L must be positive");
+			break;
+		case 'P':
+			page = atoi(optarg);
+			if (page <= 0)
+				usage("-P must be positive");
 			break;
 		case 'u':
 			sys = find_system(optarg);
@@ -565,6 +571,8 @@ main(int argc, char *argv[]) {
 		(void) add_sort_key("last");
 		(void) add_sort_key("count");
 	}
+	if (page > 0 && query_limit < 1)
+		usage("If -P page is set then -l query-limit must be positive.");
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -649,7 +657,7 @@ help(void) {
 
 	fprintf(stderr,
 "usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] {\n"
+"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -673,11 +681,14 @@ help(void) {
 "use -c to get complete (vs. partial) time matching for -A and -B\n"
 "use -d one or more times to ramp up the diagnostic output\n"
 "use -I to see a system-specific account or key summary in JSON format\n"
-"use -g to get graveled results.\n",
+"use -g to get graveled results\n"
+"use -P # to query that page # of results.\n",
 		program_name);
-	fprintf(stderr, "\nsystem must be one of:");
+	fprintf(stderr, "\nsystem must be one of:\n");
 	for (t = pdns_systems; t->name != NULL; t++)
-		fprintf(stderr, " %s", t->name);
+		fprintf(stderr, " %s\n", t->name);
+	fprintf(stderr, "\n\nGetting Started: \nAdd the API key to ~/.dnsdb-query.conf in the below given format,\n"
+		"\nAPIKEY=\"YOURAPIKEYHERE\"");
 	fprintf(stderr, "\n\ntry   man %s   for a longer description\n",
 		program_name);
 }
@@ -2526,6 +2537,7 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 static char *
 dnsdb_url(const char *path, char *sep) {
 	const char *lookup, *p, *scheme_if_needed, *aggr_if_needed;
+	char skip_if_needed[sizeof("&skip=##################")] = "";
 	char *ret;
 	int x;
 
@@ -2549,12 +2561,25 @@ dnsdb_url(const char *path, char *sep) {
 	if (gravel)
 		aggr_if_needed = "&aggr=f";
 
-	/* assist DNSDB's operator in understanding their client mix.
+	/* if page > 0, we already ensured the query_limit > 0,
+	 * so skip that many rows of results.
+	 */
+	if (page > 0) {
+		x = snprintf(skip_if_needed, sizeof(skip_if_needed),
+			     "&skip=%d", page * query_limit);
+		if (x < 0) {
+			perror("snprintf");
+			ret = NULL;
+		}
+	}
+
+	/* assist DNSDB's operator in understanding their client mix
+	 * by sending the client name and version.
 	 * and provide aggr(egate) flag if needed.
 	 */
-	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s",
+	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s",
 		     scheme_if_needed, dnsdb_server, lookup, path,
-		     id_swclient, id_version, aggr_if_needed);
+		     id_swclient, id_version, aggr_if_needed, skip_if_needed);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;

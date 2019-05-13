@@ -48,3 +48,7 @@ Usage notes:
 	./dnsdbq -t ptr -r 1.0/1.0.168.192.in-addr.arpa
 	
 	Note that this is currently order-dependent (-t and -b must be first).
+
+Getting Started
+	Add the API key to ~/.dnsdb-query.conf in the below given format,
+	APIKEY="YOURAPIKEYHERE"
