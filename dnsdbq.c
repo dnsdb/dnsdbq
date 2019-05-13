@@ -440,7 +440,7 @@ main(int argc, char *argv[]) {
 			const char *tok;
 			if (nkeys > 0)
 				usage("Can only specify -k once; use commas "
-				      "to seperate multiple sort fields");
+				      "to separate multiple sort fields");
 
 			nkeys = 0;
 			for (tok = strtok(optarg, ",");
@@ -448,6 +448,9 @@ main(int argc, char *argv[]) {
 			     tok = strtok(NULL, ","))
 			{
 				const char *msg;
+
+				if (find_sort_key(tok) != NULL)
+					usage("Each sort key may only be specified once");
 
 				if ((msg = add_sort_key(tok)) != NULL)
 					usage(msg);
