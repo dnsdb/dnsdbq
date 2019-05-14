@@ -125,10 +125,11 @@ struct pdns_sys {
 	const char	*name;
 	const char	*server;
 	/* first argument is the input URL path.
-	   second is an output parameter pointing to
-	   the separator character (? or &) that the caller should
-	   use between any further URL parameters.  May be
-	   NULL if the caller doesn't care */
+	 * second is an output parameter pointing to
+	 * the separator character (? or &) that the caller should
+	 * use between any further URL parameters.  May be
+	 * NULL if the caller doesn't care.
+	 */
 	char *		(*url)(const char *, char *);
 	void		(*request_info)(void);
 	void		(*write_info)(reader_t);
@@ -141,6 +142,10 @@ typedef enum { no_mode = 0, rdata_mode, name_mode, ip_mode, raw_mode } mode_e;
 struct sortbuf { char *base; size_t size; };
 typedef struct sortbuf *sortbuf_t;
 
+struct sortkey { char *specified, *computed; };
+typedef struct sortkey *sortkey_t;
+typedef const struct sortkey *sortkey_ct;
+
 /* Forward. */
 
 static void help(void);
@@ -149,6 +154,7 @@ static __attribute__((noreturn)) void my_exit(int, ...);
 static __attribute__((noreturn)) void my_panic(const char *);
 static void server_setup(void);
 static const char *add_sort_key(const char *tok);
+static sortkey_ct find_sort_key(const char *tok);
 static pdns_sys_t find_system(const char *);
 static void read_configs(void);
 static void read_environ(void);
@@ -263,7 +269,7 @@ static int output_limit = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static int nkeys = 0;
-static const char *keys[MAX_KEYS];
+static struct sortkey keys[MAX_KEYS];
 static bool sort_byname = false;
 static bool sort_bydata = false;
 static writer_t writers = NULL;
@@ -441,7 +447,7 @@ main(int argc, char *argv[]) {
 			const char *tok;
 			if (nkeys > 0)
 				usage("Can only specify -k once; use commas "
-				      "to seperate multiple sort fields");
+				      "to separate multiple sort fields");
 
 			nkeys = 0;
 			for (tok = strtok(optarg, ",");
@@ -449,6 +455,9 @@ main(int argc, char *argv[]) {
 			     tok = strtok(NULL, ","))
 			{
 				const char *msg;
+
+				if (find_sort_key(tok) != NULL)
+					usage("Each sort key may only be specified once");
 
 				if ((msg = add_sort_key(tok)) != NULL)
 					usage(msg);
@@ -566,10 +575,18 @@ main(int argc, char *argv[]) {
 		usage("using -m without -f makes no sense.");
 	if (nkeys > 0 && sorted == no_sort)
 		usage("using -k without -s or -S makes no sense.");
-	if (nkeys == 0 && sorted != no_sort) {
-		(void) add_sort_key("first");
-		(void) add_sort_key("last");
-		(void) add_sort_key("count");
+	if (nkeys < MAX_KEYS && sorted != no_sort) {
+		/* if sorting, all keys must be specified, to enable -u. */
+		if (find_sort_key("first") == NULL)
+			(void) add_sort_key("first");
+		if (find_sort_key("last") == NULL)
+			(void) add_sort_key("last");
+		if (find_sort_key("count") == NULL)
+			(void) add_sort_key("count");
+		if (find_sort_key("name") == NULL)
+			(void) add_sort_key("name");
+		if (find_sort_key("data") == NULL)
+			(void) add_sort_key("data");
 	}
 	if (page > 0 && query_limit < 1)
 		usage("If -P page is set then -l query-limit must be positive.");
@@ -711,6 +728,7 @@ static __attribute__((noreturn)) void
 my_exit(int code, ...) {
 	va_list ap;
 	void *p;
+	int n;
 
 	/* our varargs are things to be free()'d. */
 	va_start(ap, code);
@@ -732,6 +750,12 @@ my_exit(int code, ...) {
 	DESTROY(circl_server);
 	DESTROY(circl_authinfo);
 #endif
+
+	/* sort key specifications and computations, are to be free()'d. */
+	for (n = 0; n < nkeys; n++) {
+		DESTROY(keys[n].specified);
+		DESTROY(keys[n].computed);
+	}
 
 	/* terminate process. */
 	if (debuglev > 0)
@@ -771,7 +795,20 @@ add_sort_key(const char *tok) {
 	if (key == NULL)
 		return ("key must be one of first, "
 		      "last, count, name, or data");
-	keys[nkeys++] = key;
+	keys[nkeys++] = (struct sortkey){strdup(tok), strdup(key)};
+	return (NULL);
+}
+
+/* find_sort_key -- return pointer to a sort key, or NULL if it's not specified
+ */
+static sortkey_ct
+find_sort_key(const char *tok) {
+	int n;
+
+	for (n = 0; n < nkeys; n++) {
+		if (strcmp(keys[n].specified, tok) == 0)
+			return (&keys[n]);
+	}
 	return (NULL);
 }
 
@@ -1307,7 +1344,7 @@ writer_init(u_long after, u_long before) {
 		if ((writer->sort_pid = fork()) < 0)
 			my_panic("fork");
 		if (writer->sort_pid == 0) {
-			char *sort_argv[5+MAX_KEYS], **sap;
+			char *sort_argv[3+MAX_KEYS], **sap;
 			int n;
 
 			if (dup2(p1[0], STDIN_FILENO) < 0 ||
@@ -1319,8 +1356,10 @@ writer_init(u_long after, u_long before) {
 			close(p2[0]); close(p2[1]);
 			sap = sort_argv;
 			*sap++ = strdup("sort");
+			*sap++ = strdup("-u");
 			for (n = 0; n < nkeys; n++) {
-				int x = asprintf(sap++, "%s%s", keys[n],
+				int x = asprintf(sap++, "%s%s",
+						 keys[n].computed,
 						 sorted==reverse_sort?"r":"");
 				if (x < 0)
 					my_panic("asprintf");

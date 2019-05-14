@@ -160,6 +160,7 @@ when sorting with -s or -S, selects one or more comma separated sort keys,
 among "first", "last", "count", "name", and/or "data".
 If sorting was specified, but this -k option is not specified, then will default
 to sorting by first, last, count.
+Each sort key may only be specified once.
 .It Fl l Ar query_limit
 query for that limit's number of responses. If specified as 0 then the DNSDB
 API server will return the maximum limit of results allowed.  If
