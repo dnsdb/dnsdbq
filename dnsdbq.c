@@ -2536,8 +2536,8 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
  */
 static char *
 dnsdb_url(const char *path, char *sep) {
-        const char *lookup, *p, *scheme_if_needed, *aggr_if_needed;
-        char skip_if_needed[sizeof("&skip=##################")] = "";
+	const char *lookup, *p, *scheme_if_needed, *aggr_if_needed;
+	char skip_if_needed[sizeof("&skip=##################")] = "";
 	char *ret;
 	int x;
 
@@ -2563,23 +2563,23 @@ dnsdb_url(const char *path, char *sep) {
 
 	/* if page > 0, we already ensured the query_limit > 0,
 	 * so skip that many rows of results.
-         */
+	 */
 	if (page > 0) {
-                x = snprintf(skip_if_needed, sizeof(skip_if_needed),
-                             "&skip=%d", page * query_limit);
-                if (x < 0) {
-                        perror("snprintf");
-                        ret = NULL;
-                }
-        }
+		x = snprintf(skip_if_needed, sizeof(skip_if_needed),
+			     "&skip=%d", page * query_limit);
+		if (x < 0) {
+			perror("snprintf");
+			ret = NULL;
+		}
+	}
 
 	/* assist DNSDB's operator in understanding their client mix
 	 * by sending the client name and version.
 	 * and provide aggr(egate) flag if needed.
 	 */
-        x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s",
-                     scheme_if_needed, dnsdb_server, lookup, path,
-                     id_swclient, id_version, aggr_if_needed, skip_if_needed);
+	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s",
+		     scheme_if_needed, dnsdb_server, lookup, path,
+		     id_swclient, id_version, aggr_if_needed, skip_if_needed);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;

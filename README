@@ -49,6 +49,6 @@ Usage notes:
 	
 	Note that this is currently order-dependent (-t and -b must be first).
 
-Getting Started 
+Getting Started
 	Add the API key to ~/.dnsdb-query.conf in the below given format,
 	APIKEY="YOURAPIKEYHERE"

@@ -123,7 +123,7 @@ An example of how to use
 .Fl f
 is below.
 .It Fl g
-return graveled results.  Default is to return ungraveled (aggregated) results.
+return graveled results.  Default is to return aggregated results (rocks, vs. gravel).
 .It Fl h
 emit usage and quit.
 .It Fl I
