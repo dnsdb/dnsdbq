@@ -69,14 +69,10 @@ struct pdns_tuple {
 typedef struct pdns_tuple *pdns_tuple_t;
 typedef const struct pdns_tuple *pdns_tuple_ct;
 
+/* presentation formatter function for a passive DNS tuple */
 typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
 
-enum verb {
-    verb_lookup = 0,
-    verb_summarize
-};
-
-struct rate_json {
+struct dnsdb_rate_json {
 	json_t		*main,
 			*reset, *expires, *limit, *remaining,
 			*burst_size, *burst_window, *results_max;
@@ -94,12 +90,12 @@ struct rateval {
 	u_long			as_int;		/* only for rk == rk_int. */
 };
 
-struct rate_tuple {
-	struct rate_json	obj;
+struct dnsdb_rate_tuple {
+	struct dnsdb_rate_json	obj;
 	struct rateval	reset, expires, limit, remaining,
 			burst_size, burst_window, results_max;
 };
-typedef struct rate_tuple *rate_tuple_t;
+typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
 
 struct reader {
 	struct reader		*next;
@@ -126,9 +122,17 @@ struct writer {
 };
 typedef struct writer *writer_t;
 
+struct verb {
+	const char  *cmd_opt_val;
+	const char  *url_fragment;
+	void	   (*validate_cmd_opts)(void);
+};
+typedef const struct verb *verb_t;
+
+
 struct pdns_sys {
 	const char	*name;
-	const char	*server;
+	const char	*base_url;
 	/* first argument is the input URL path.
 	 * second is an output parameter pointing to
 	 * the separator character (? or &) that the caller should
@@ -159,9 +163,10 @@ static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
 static __attribute__((noreturn)) void my_panic(const char *);
 static void server_setup(void);
-static const char *add_sort_key(const char *tok);
-static sortkey_ct find_sort_key(const char *tok);
+static const char *add_sort_key(const char *);
+static sortkey_ct find_sort_key(const char *);
 static pdns_sys_t find_system(const char *);
+static verb_t find_verb(const char *);
 static void read_configs(void);
 static void read_environ(void);
 static void do_batch(FILE *, u_long, u_long);
@@ -190,8 +195,8 @@ static void print_burstrate(FILE *, const char *, const struct rateval *,
 			    const struct rateval *);
 static const char *parse_rateval(const json_t *, const char *,
 				 struct rateval *);
-static const char *rate_tuple_make(rate_tuple_t, const char *, size_t);
-static void rate_tuple_unmake(rate_tuple_t);
+static const char *dnsdb_rate_tuple_make(dnsdb_rate_tuple_t, const char *, size_t);
+static void dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
@@ -202,6 +207,8 @@ static char *sortable_rdata(pdns_tuple_ct);
 static void sortable_rdatum(sortbuf_t, const char *, const char *);
 static void sortable_dnsname(sortbuf_t, const char *);
 static void sortable_hexify(sortbuf_t, const u_char *, size_t);
+static void validate_cmd_opts_lookup(void);
+static void validate_cmd_opts_summarize(void);
 static char *dnsdb_url(const char *, char *);
 static void dnsdb_request_info(void);
 static void dnsdb_write_info(reader_t);
@@ -224,7 +231,7 @@ static const char * const conf_files[] = {
 static const char path_sort[] = "/usr/bin/sort";
 static const char json_header[] = "Accept: application/json";
 static const char env_api_key[] = "DNSDB_API_KEY";
-static const char env_dnsdb_server[] = "DNSDB_SERVER";
+static const char env_dnsdb_base_url[] = "DNSDB_SERVER";
 static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 /* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
@@ -242,6 +249,13 @@ static const struct pdns_sys pdns_systems[] = {
 	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
+static const struct verb verbs[] = {
+	/* note: element [0] of this array is the default. */
+	{ "lookup", "/lookup", validate_cmd_opts_lookup },
+	{ "summarize", "/summarize", validate_cmd_opts_summarize },
+	{ NULL, NULL, NULL }
+};
+
 #define	MAX_KEYS 5
 #define	MAX_JOBS 8
 
@@ -254,9 +268,10 @@ static const struct pdns_sys pdns_systems[] = {
 
 static const char *program_name = NULL;
 static char *api_key = NULL;
-static char *dnsdb_server = NULL;
+static verb_t choosen_verb = &verbs[0];
+static char *dnsdb_base_url = NULL;
 #if WANT_PDNS_CIRCL
-static char *circl_server = NULL;
+static char *circl_base_url = NULL;
 static char *circl_authinfo = NULL;
 #endif
 static pdns_sys_t sys = pdns_systems;
@@ -281,7 +296,6 @@ static bool sort_bydata = false;
 static writer_t writers = NULL;
 static int exit_code = 0; /* hopeful */
 static size_t ideal_buffer;
-static enum verb verb = verb_lookup;
 
 /* Public. */
 
@@ -408,13 +422,9 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'V': {
-                        /*$$$ maybe accept "l" and "s" as synonyms? */
-			if (strcmp(optarg, "lookup") == 0)
-                                verb = verb_lookup;
-			else if (strcmp(optarg, "summarize") == 0)
-                                verb = verb_summarize;
-                        else
-				usage("-V must be followed by 'lookup' or 'summarize'");
+			choosen_verb = find_verb(optarg);
+			if (choosen_verb == NULL)
+				usage("Unsupported verb for -V argument");
 			break;
 		    }
 		case 'l':
@@ -611,11 +621,8 @@ main(int argc, char *argv[]) {
 	if (page > 0 && query_limit < 1)
 		usage("If -P page is set then -l query-limit must be positive.");
 
-        if (verb == verb_summarize && pres != present_json)
-                usage("Only json output mode is supposed with a summarize query type");
-        if (verb == verb_summarize && sorted != no_sort)
-                usage("Sorting with a summarize query type makes no sense");
-        /*$$$ add more verb exclusions? */
+	if (choosen_verb != NULL && choosen_verb->validate_cmd_opts != NULL)
+		(*choosen_verb->validate_cmd_opts)();
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -657,7 +664,6 @@ main(int argc, char *argv[]) {
 		make_curl();
 		sys->request_info();
 		unmake_curl();
-/*$$$	} else if (verb == verb_summarize) { */
 	} else {
 		char *command;
 
@@ -698,6 +704,7 @@ main(int argc, char *argv[]) {
 static void
 help(void) {
 	pdns_sys_t t;
+	verb_t v;
 
 	fprintf(stderr,
 "usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
@@ -731,6 +738,9 @@ help(void) {
 	fprintf(stderr, "\nsystem must be one of:\n");
 	for (t = pdns_systems; t->name != NULL; t++)
 		fprintf(stderr, " %s\n", t->name);
+	fprintf(stderr, "\nverb must be one of:\n");
+	for (v = verbs; v->cmd_opt_val != NULL; v++)
+		fprintf(stderr, " %s\n", v->cmd_opt_val);
 	fprintf(stderr, "\n\nGetting Started: \nAdd the API key to ~/.dnsdb-query.conf in the below given format,\n"
 		"\nAPIKEY=\"YOURAPIKEYHERE\"");
 	fprintf(stderr, "\n\ntry   man %s   for a longer description\n",
@@ -776,9 +786,9 @@ my_exit(int code, ...) {
 
 	/* globals which may have been initialized, are to be free()'d. */
 	DESTROY(api_key);
-	DESTROY(dnsdb_server);
+	DESTROY(dnsdb_base_url);
 #if WANT_PDNS_CIRCL
-	DESTROY(circl_server);
+	DESTROY(circl_base_url);
 	DESTROY(circl_authinfo);
 #endif
 
@@ -800,6 +810,20 @@ static __attribute__((noreturn)) void
 my_panic(const char *s) {
 	perror(s);
 	my_exit(1, NULL);
+}
+
+void validate_cmd_opts_lookup(void)
+{
+	/* $$$ too many local variables would need to be global */
+}
+
+void validate_cmd_opts_summarize(void)
+{
+	if (pres != present_json)
+		usage("Only json output mode is supposed with a summarize verb");
+	if (sorted != no_sort)
+		usage("Sorting with a summarize verb makes no sense");
+	/*$$$ add more validations? */
 }
 
 /* add_sort_key -- add a key for use by POSIX sort.
@@ -825,7 +849,7 @@ add_sort_key(const char *tok) {
 	}
 	if (key == NULL)
 		return ("key must be one of first, "
-		      "last, count, name, or data");
+			"last, count, name, or data");
 	keys[nkeys++] = (struct sortkey){strdup(tok), strdup(key)};
 	return (NULL);
 }
@@ -852,6 +876,18 @@ find_system(const char *name) {
 	for (t = pdns_systems; t->name != NULL; t++)
 		if (strcasecmp(t->name, name) == 0)
 			return (t);
+	return (NULL);
+}
+
+/* find_verb -- locate a verb by option parameter
+ */
+static verb_t
+find_verb(const char *option) {
+	verb_t v;
+
+	for (v = verbs; v->cmd_opt_val != NULL; v++)
+		if (strcasecmp(option, v->cmd_opt_val) == 0)
+			return (v);
 	return (NULL);
 }
 
@@ -932,12 +968,12 @@ read_configs(void) {
 			if (strcmp(tok1, "apikey") == 0) {
 				pp = &api_key;
 			} else if (strcmp(tok1, "server") == 0) {
-				pp = &dnsdb_server;
+				pp = &dnsdb_base_url;
 #if WANT_PDNS_CIRCL
 			} else if (strcmp(tok1, "circla") == 0) {
 				pp = &circl_authinfo;
 			} else if (strcmp(tok1, "circls") == 0) {
-				pp = &circl_server;
+				pp = &circl_base_url;
 #endif
 			} else
 				abort();
@@ -964,14 +1000,14 @@ read_environ() {
 		if (debuglev > 0)
 			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
 	}
-	val = getenv(env_dnsdb_server);
+	val = getenv(env_dnsdb_base_url);
 	if (val != NULL) {
-		if (dnsdb_server != NULL)
-			free(dnsdb_server);
-		dnsdb_server = strdup(val);
+		if (dnsdb_base_url != NULL)
+			free(dnsdb_base_url);
+		dnsdb_base_url = strdup(val);
 		if (debuglev > 0)
 			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
-				dnsdb_server);
+				dnsdb_base_url);
 	}
 	if (api_key == NULL) {
 		fprintf(stderr, "no API key given\n");
@@ -1488,9 +1524,9 @@ print_burstrate(FILE *outstream, const char *key,
 static void
 dnsdb_write_info(reader_t reader) {
 	if (pres == present_text) {
-		struct rate_tuple tup;
+		struct dnsdb_rate_tuple tup;
 		const char *msg;
-		msg = rate_tuple_make(&tup, reader->buf, reader->len);
+		msg = dnsdb_rate_tuple_make(&tup, reader->buf, reader->len);
 		if (msg != NULL) { /* there was an error */
 			puts(msg);
 		} else {
@@ -2285,10 +2321,10 @@ parse_rateval(const json_t *obj, const char *key, struct rateval *tp) {
 	return (NULL);
 }
 
-/* rate_tuple_make -- create one rate tuple object out of a JSON object.
+/* dnsdb_rate_tuple_make -- create one rate tuple object out of a JSON object.
  */
 static const char *
-rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
+dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 	json_t *rate;
@@ -2348,14 +2384,14 @@ rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 
  ouch:
 	assert(msg != NULL);
-	rate_tuple_unmake(tup);
+	dnsdb_rate_tuple_unmake(tup);
 	return (msg);
 }
 
-/* rate_tuple_unmake -- deallocate heap storage associated with one rate tuple.
+/* dnsdb_rate_tuple_unmake -- deallocate heap storage associated with one rate tuple.
  */
 static void
-rate_tuple_unmake(rate_tuple_t tup) {
+dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
@@ -2606,25 +2642,38 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
  */
 static char *
 dnsdb_url(const char *path, char *sep) {
-	const char *lookup, *p, *scheme_if_needed, *aggr_if_needed;
+	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
 	char skip_if_needed[sizeof("&skip=##################")] = "";
 	char *ret;
 	int x;
 
 	/* if the config file didn't specify our server, do it here. */
-	if (dnsdb_server == NULL)
-		dnsdb_server = strdup(sys->server);
-	assert(dnsdb_server != NULL);
+	if (dnsdb_base_url == NULL)
+		dnsdb_base_url = strdup(sys->base_url);
+	assert(dnsdb_base_url != NULL);
 
-	/* if there's a /path after the host, don't add /lookup here. */
+	/* count the number of slashes in the url, 2 is the base line,
+	 * from "//".  3 or more means there's a /path after the host.
+	 * In that case, don't add /[verb] here, but don't allow
+	 * selecting a verb that's not lookup since the /path could
+	 * include its own verb
+	 */
 	x = 0;
-	for (p = dnsdb_server; *p != '\0'; p++)
+	for (p = dnsdb_base_url; *p != '\0'; p++)
 		x += (*p == '/');
-	lookup = (x < 3) ? "/lookup" : "";
+	if (x < 3)
+		if (choosen_verb != NULL && choosen_verb->url_fragment != NULL)
+			verb_path = choosen_verb->url_fragment;
+		else
+			verb_path = "/lookup";
+	else if (choosen_verb != &verbs[0])
+		usage("Cannot specify a verb other than 'lookup' if the server contains a path");
+	else
+		verb_path = "";
 
 	/* supply a scheme if the server string did not. */
 	scheme_if_needed = "";
-	if (strstr(dnsdb_server, "://") == NULL)
+	if (strstr(dnsdb_base_url, "://") == NULL)
 		scheme_if_needed = "https://";
 
 	aggr_if_needed = "";
@@ -2648,7 +2697,7 @@ dnsdb_url(const char *path, char *sep) {
 	 * and provide aggr(egate) flag if needed.
 	 */
 	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s",
-		     scheme_if_needed, dnsdb_server, lookup, path,
+		     scheme_if_needed, dnsdb_base_url, verb_path, path,
 		     id_swclient, id_version, aggr_if_needed, skip_if_needed);
 	if (x < 0) {
 		perror("asprintf");
@@ -2707,7 +2756,7 @@ dnsdb_auth(reader_t reader) {
  * CIRCL pDNS only "understands IP addresses, hostnames or domain names
  * (please note that CIDR block queries are not supported)". exit with an
  * error message if asked to do something the CIRCL server does not handle.
- * 
+ *
  * 1. RRSet query: rrset/name/NAME[/TYPE[/BAILIWICK]]
  * 2. Rdata (name) query: rdata/name/NAME[/TYPE]
  * 3. Rdata (IP address) query: rdata/ip/ADDR[/PFXLEN]
@@ -2717,15 +2766,18 @@ circl_url(const char *path, char *sep) {
 	const char *val = NULL;
 	char *ret;
 	int x;
+	const char rrset_name[] = "rrset/name/";
+	const char rdata_name[] = "rdata/name/";
+	const char rdata_ip[] = "rdata/ip/";
 
-	if (circl_server == NULL)
-		circl_server = strdup(sys->server);
-	if (strncasecmp(path, "rrset/name/", 11) == 0) {
-		val = path + 11;
-	} else if (strncasecmp(path, "rdata/name/", 11) == 0) {
-		val = path + 11;
-	} else if (strncasecmp(path, "rdata/ip/", 9) == 0) {
-		val = path + 9;
+	if (circl_base_url == NULL)
+		circl_base_url = strdup(sys->base_url);
+	if (strncasecmp(path, rrset_name, sizeof(rrset_name)) == 0) {
+		val = path + sizeof(rrset_name);
+	} else if (strncasecmp(path, rdata_name, sizeof(rdata_name)) == 0) {
+		val = path + sizeof(rdata_name);
+	} else if (strncasecmp(path, rdata_ip, sizeof(rdata_ip)) == 0) {
+		val = path + sizeof(rdata_ip);
 	} else
 		abort();
 	if (strchr(val, '/') != NULL) {
@@ -2733,7 +2785,7 @@ circl_url(const char *path, char *sep) {
 			val);
 		my_exit(1, NULL);
 	}
-	x = asprintf(&ret, "%s/%s", circl_server, val);
+	x = asprintf(&ret, "%s/%s", circl_base_url, val);
 	if (x < 0)
 		my_panic("asprintf");
 

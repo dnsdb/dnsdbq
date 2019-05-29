@@ -154,7 +154,7 @@ preference to -f (batch mode) or -r, -n, or -i (query mode). This can be used
 to reprocess the output from a prior invocation which used
 .Fl j
 (-p json).  If
-inut_file is "-" then standard input (stdin) willl be read.
+input_file is "-" then standard input (stdin) will be read.
 .It Fl j
 specify newline delimited json output mode.
 .It Fl k Ar sort_keys
