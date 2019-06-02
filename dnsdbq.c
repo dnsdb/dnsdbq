@@ -53,18 +53,19 @@ extern char **environ;
 
 /* Types. */
 
+/* conforms to the fields in the IETF passive DNS COF draft */
 struct pdns_json {
-	json_t		*main,
-			*time_first, *time_last, *zone_first, *zone_last,
-			*bailiwick, *rrname, *rrtype, *rdata,
-			*count;
+	json_t	*main,
+		*time_first, *time_last, *zone_first, *zone_last,
+		*bailiwick, *rrname, *rrtype, *rdata,
+		*count;
 };
 
 struct pdns_tuple {
 	struct pdns_json  obj;
-	u_long		time_first, time_last, zone_first, zone_last;
-	const char	*bailiwick, *rrname, *rrtype, *rdata;
-	json_int_t	count;
+	u_long		  time_first, time_last, zone_first, zone_last;
+	const char	 *bailiwick, *rrname, *rrtype, *rdata;
+	json_int_t	  count;
 };
 typedef struct pdns_tuple *pdns_tuple_t;
 typedef const struct pdns_tuple *pdns_tuple_ct;
@@ -72,30 +73,16 @@ typedef const struct pdns_tuple *pdns_tuple_ct;
 /* presentation formatter function for a passive DNS tuple */
 typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
 
-struct dnsdb_rate_json {
-	json_t		*main,
-			*reset, *expires, *limit, *remaining,
-			*burst_size, *burst_window, *results_max;
-};
-
-enum ratekind {
-	rk_naught = 0,		/* not present. */
-	rk_na,			/* "n/a". */
-	rk_unlimited,		/* "unlimited". */
-	rk_int			/* some integer. */
-};
-
 struct rateval {
-	enum ratekind		rk;
-	u_long			as_int;		/* only for rk == rk_int. */
+	enum {
+		rk_naught = 0,		/* not present. */
+		rk_na,			/* "n/a". */
+		rk_unlimited,		/* "unlimited". */
+		rk_int			/* some integer in as_int. */
+	} rk;
+	u_long	as_int;		/* only for rk == rk_int. */
 };
-
-struct dnsdb_rate_tuple {
-	struct dnsdb_rate_json	obj;
-	struct rateval	reset, expires, limit, remaining,
-			burst_size, burst_window, results_max;
-};
-typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
+typedef struct rateval *rateval_t;
 
 struct reader {
 	struct reader		*next;
@@ -125,10 +112,12 @@ typedef struct writer *writer_t;
 struct verb {
 	const char  *cmd_opt_val;
 	const char  *url_fragment;
+	/* validate_cmd_opts can review the command line options and exit
+	 * if some verb-specific command line option constraint is not met.
+	 */
 	void	   (*validate_cmd_opts)(void);
 };
 typedef const struct verb *verb_t;
-
 
 struct pdns_sys {
 	const char	*name;
@@ -154,6 +143,22 @@ typedef struct sortbuf *sortbuf_t;
 struct sortkey { char *specified, *computed; };
 typedef struct sortkey *sortkey_t;
 typedef const struct sortkey *sortkey_ct;
+
+/* DNSDB specific Types. */
+
+struct dnsdb_rate_json {
+	json_t	*main,
+		*reset, *expires, *limit, *remaining,
+		*burst_size, *burst_window, *results_max;
+};
+
+struct dnsdb_rate_tuple {
+	struct dnsdb_rate_json	obj;
+	struct rateval	reset, expires, limit, remaining,
+			burst_size, burst_window, results_max;
+};
+typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
+
 
 /* Forward. */
 
@@ -190,13 +195,10 @@ static void present_json(pdns_tuple_ct, const char *, size_t, FILE *);
 static void present_csv(pdns_tuple_ct, const char *, size_t, FILE *);
 static void present_csv_line(pdns_tuple_ct, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, const char *, size_t);
-static void print_rateval(FILE *, const char *, const struct rateval *);
-static void print_burstrate(FILE *, const char *, const struct rateval *,
-			    const struct rateval *);
-static const char *parse_rateval(const json_t *, const char *,
-				 struct rateval *);
-static const char *dnsdb_rate_tuple_make(dnsdb_rate_tuple_t, const char *, size_t);
-static void dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t);
+static void print_rateval(FILE *, const char *, const rateval_t);
+static void print_burstrate(FILE *, const char *, const rateval_t,
+			    const rateval_t);
+static const char *rateval_make(rateval_t, const json_t *, const char *);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
@@ -209,11 +211,20 @@ static void sortable_dnsname(sortbuf_t, const char *);
 static void sortable_hexify(sortbuf_t, const u_char *, size_t);
 static void validate_cmd_opts_lookup(void);
 static void validate_cmd_opts_summarize(void);
+
+/* DNSDB specific Forward. */
+
+static const char *dnsdb_rate_tuple_make(dnsdb_rate_tuple_t, const char *,
+					 size_t);
+static void dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t);
 static char *dnsdb_url(const char *, char *);
 static void dnsdb_request_info(void);
 static void dnsdb_write_info(reader_t);
 static void dnsdb_auth(reader_t);
+
 #if WANT_PDNS_CIRCL
+/* CIRCL specific Forward. */
+
 static char *circl_url(const char *, char *);
 static void circl_auth(reader_t);
 #endif
@@ -302,7 +313,8 @@ static size_t ideal_buffer;
 int
 main(int argc, char *argv[]) {
 	mode_e mode = no_mode;
-	char *name = NULL, *rrtype = NULL, *bailiwick = NULL, *length = NULL;
+	char *name = NULL, *rrtype = NULL, *bailiwick = NULL,
+		*cidr_length = NULL;
 	u_long after = 0;
 	u_long before = 0;
 	int json_fd = -1;
@@ -406,7 +418,7 @@ main(int argc, char *argv[]) {
 			p = strchr(optarg, '/');
 			if (p != NULL) {
 				name = strndup(optarg, (size_t)(p - optarg));
-				length = strdup(p + 1);
+				cidr_length = strdup(p + 1);
 			} else {
 				name = strdup(optarg);
 			}
@@ -484,7 +496,8 @@ main(int argc, char *argv[]) {
 				const char *msg;
 
 				if (find_sort_key(tok) != NULL)
-					usage("Each sort key may only be specified once");
+					usage("Each sort key may only be "
+					      "specified once");
 
 				if ((msg = add_sort_key(tok)) != NULL)
 					usage(msg);
@@ -525,7 +538,6 @@ main(int argc, char *argv[]) {
 			break;
 		case 'I':
 			info = true;
-			pres = present_text;
 			break;
 		case 'v':
 			report_version();
@@ -549,8 +561,8 @@ main(int argc, char *argv[]) {
 		escape(&rrtype);
 	if (bailiwick != NULL)
 		escape(&bailiwick);
-	if (length != NULL)
-		escape(&length);
+	if (cidr_length != NULL)
+		escape(&cidr_length);
 	if (output_limit == 0) {
 		/* If not set, default to whatever limit has, unless limit is
 		 *  0 or -1, in which case use a really big integer.
@@ -569,8 +581,8 @@ main(int argc, char *argv[]) {
 			fprintf(stderr, "type = '%s'\n", rrtype);
 		if (bailiwick != NULL)
 			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
-		if (length != NULL)
-			fprintf(stderr, "length = '%s'\n", length);
+		if (cidr_length != NULL)
+			fprintf(stderr, "cidr_length = '%s'\n", cidr_length);
 		if (after != 0) {
 			fprintf(stderr, "after = %ld : ", (long)after);
 			time_print(after, stderr);
@@ -681,7 +693,7 @@ main(int argc, char *argv[]) {
 		if (mode == ip_mode && rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		command = makepath(mode, name, rrtype, bailiwick, length);
+		command = makepath(mode, name, rrtype, bailiwick, cidr_length);
 		server_setup();
 		make_curl();
 		pdns_query(command, after, before);
@@ -693,7 +705,7 @@ main(int argc, char *argv[]) {
 	DESTROY(name);
 	DESTROY(rrtype);
 	DESTROY(bailiwick);
-	DESTROY(length);
+	DESTROY(cidr_length);
 	my_exit(exit_code, NULL);
 }
 
@@ -1069,7 +1081,7 @@ do_batch(FILE *f, u_long after, u_long before) {
  */
 static char *
 makepath(mode_e mode, const char *name, const char *rrtype,
-	 const char *bailiwick, const char *length)
+	 const char *bailiwick, const char *cidr_length)
 {
 	char *command;
 	int x;
@@ -1102,9 +1114,9 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			my_panic("asprintf");
 		break;
 	case ip_mode:
-		if (length != NULL)
+		if (cidr_length != NULL)
 			x = asprintf(&command, "rdata/ip/%s,%s",
-				     name, length);
+				     name, cidr_length);
 		else
 			x = asprintf(&command, "rdata/ip/%s",
 				     name);
@@ -1461,7 +1473,7 @@ writer_init(u_long after, u_long before) {
 /* print_rateval -- output formatter for rateval.
  */
 static void
-print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
+print_rateval(FILE *outstream, const char *key, const rateval_t tp) {
 	/* if unspecified, output nothing, not even the key name. */
 	if (tp->rk == rk_naught)
 		return;
@@ -1491,8 +1503,8 @@ print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
  */
 static void
 print_burstrate(FILE *outstream, const char *key,
-		const struct rateval *tp_size,
-		const struct rateval *tp_window) {
+		const rateval_t tp_size,
+		const rateval_t tp_window) {
 	/* if unspecified, output nothing, not even the key name. */
 	if (tp_size->rk == rk_naught || tp_window->rk == rk_naught)
 		return;
@@ -2280,12 +2292,12 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-/* parse_rateval: parse an optional key value json object.
+/* rateval_make: make an optional key value from the json object.
  *
  * note: a missing key means the corresponding key's value is a "no value".
  */
 static const char *
-parse_rateval(const json_t *obj, const char *key, struct rateval *tp) {
+rateval_make(rateval_t tp, const json_t *obj, const char *key) {
 	json_t *jvalue;
 
 	jvalue = json_object_get(obj, key);
@@ -2306,8 +2318,7 @@ parse_rateval(const json_t *obj, const char *key, struct rateval *tp) {
 					tp->rk = rk_na;
 					ok = true;
 				} else if (strcasecmp(strvalue,
-						      "unlimited") == 0)
-				{
+						      "unlimited") == 0) {
 					memset(tp, 0, sizeof *tp);
 					tp->rk = rk_unlimited;
 					ok = true;
@@ -2351,31 +2362,31 @@ dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 		goto ouch;
 	}
 
-	msg = parse_rateval(rate, "reset", &tup->reset);
+	msg = rateval_make(&tup->reset, rate, "reset");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "expires", &tup->expires);
+	msg = rateval_make(&tup->expires, rate, "expires");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "limit", &tup->limit);
+	msg = rateval_make(&tup->limit, rate, "limit");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "remaining", &tup->remaining);
+	msg = rateval_make(&tup->remaining, rate, "remaining");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "results_max", &tup->results_max);
+	msg = rateval_make(&tup->results_max, rate, "results_max");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "burst_size", &tup->burst_size);
+	msg = rateval_make(&tup->burst_size, rate, "burst_size");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "burst_window", &tup->burst_window);
+	msg = rateval_make(&tup->burst_window, rate, "burst_window");
 	if (msg != NULL)
 		goto ouch;
 
@@ -2388,7 +2399,8 @@ dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 	return (msg);
 }
 
-/* dnsdb_rate_tuple_unmake -- deallocate heap storage associated with one rate tuple.
+/* dnsdb_rate_tuple_unmake -- deallocate heap storage associated with
+ * one rate tuple.
  */
 static void
 dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t tup) {
@@ -2667,7 +2679,8 @@ dnsdb_url(const char *path, char *sep) {
 		else
 			verb_path = "/lookup";
 	else if (choosen_verb != &verbs[0])
-		usage("Cannot specify a verb other than 'lookup' if the server contains a path");
+		usage("Cannot specify a verb other than 'lookup' "
+		      "if the server contains a path");
 	else
 		verb_path = "";
 
