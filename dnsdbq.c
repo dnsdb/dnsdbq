@@ -128,10 +128,11 @@ struct pdns_sys {
 	 * use between any further URL parameters.  May be
 	 * NULL if the caller doesn't care.
 	 */
-	char *		(*url)(const char *, char *);
+	char		*(*url)(const char *, char *);
 	void		(*request_info)(void);
 	void		(*write_info)(reader_t);
 	void		(*auth)(reader_t);
+	bool		(*validate_verb)(const char *verb);
 };
 typedef const struct pdns_sys *pdns_sys_t;
 
@@ -221,12 +222,14 @@ static char *dnsdb_url(const char *, char *);
 static void dnsdb_request_info(void);
 static void dnsdb_write_info(reader_t);
 static void dnsdb_auth(reader_t);
+static bool dnsdb_validate_verb(const char*);
 
 #if WANT_PDNS_CIRCL
 /* CIRCL specific Forward. */
 
 static char *circl_url(const char *, char *);
 static void circl_auth(reader_t);
+static bool circl_validate_verb(const char*);
 #endif
 
 /* Constants. */
@@ -252,12 +255,12 @@ static const char id_version[] = "1.3";
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
 	{ "dnsdb", "https://api.dnsdb.info",
-		dnsdb_url, dnsdb_request_info, dnsdb_write_info, dnsdb_auth },
+	  dnsdb_url, dnsdb_request_info, dnsdb_write_info, dnsdb_auth, dnsdb_validate_verb },
 #if WANT_PDNS_CIRCL
 	{ "circl", "https://www.circl.lu/pdns/query",
-		circl_url, NULL, NULL, circl_auth },
+	  circl_url, NULL, NULL, circl_auth, circl_validate_verb },
 #endif
-	{ NULL, NULL, NULL, NULL, NULL, NULL }
+	{ NULL, NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 static const struct verb verbs[] = {
@@ -633,8 +636,12 @@ main(int argc, char *argv[]) {
 	if (page > 0 && query_limit < 1)
 		usage("If -P page is set then -l query-limit must be positive.");
 
-	if (choosen_verb != NULL && choosen_verb->validate_cmd_opts != NULL)
+	assert(choosen_verb != NULL);
+	if (choosen_verb->validate_cmd_opts != NULL)
 		(*choosen_verb->validate_cmd_opts)();
+	if (sys->validate_verb != NULL)
+		if (sys->validate_verb(choosen_verb->cmd_opt_val) == false)
+			usage("That verb is not supported by that system");
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -2738,7 +2745,7 @@ dnsdb_request_info(void) {
 
 	/* start a status fetch. */
 	launch_one(writer, dnsdb_url("rate_limit", NULL));
-	
+
 	/* run all jobs to completion. */
 	io_engine(0);
 
@@ -2756,6 +2763,12 @@ dnsdb_auth(reader_t reader) {
 		reader->hdrs = curl_slist_append(reader->hdrs, key_header);
 		DESTROY(key_header);
 	}
+}
+
+static bool dnsdb_validate_verb(__attribute__((unused)) const char *verb_name)
+{
+	/* All verbs are valid (currently) */
+	return (true);
 }
 
 #if WANT_PDNS_CIRCL
@@ -2778,23 +2791,29 @@ static char *
 circl_url(const char *path, char *sep) {
 	const char *val = NULL;
 	char *ret;
-	int x;
-	const char rrset_name[] = "rrset/name/";
-	const char rdata_name[] = "rdata/name/";
-	const char rdata_ip[] = "rdata/ip/";
+	int x, pi;
+	/* NULL-terminate array of valid query paths for CIRCL */
+	const char *valid_paths[] =
+		{ "rrset/name/", "rdata/name/", "rdata/ip/", NULL };
 
 	if (circl_base_url == NULL)
 		circl_base_url = strdup(sys->base_url);
-	if (strncasecmp(path, rrset_name, sizeof(rrset_name)) == 0) {
-		val = path + sizeof(rrset_name);
-	} else if (strncasecmp(path, rdata_name, sizeof(rdata_name)) == 0) {
-		val = path + sizeof(rdata_name);
-	} else if (strncasecmp(path, rdata_ip, sizeof(rdata_ip)) == 0) {
-		val = path + sizeof(rdata_ip);
-	} else
-		abort();
+
+	for (pi = 0; valid_paths[pi] != NULL; pi++)
+		if (strncasecmp(path, valid_paths[pi], strlen(valid_paths[pi]))
+		    == 0) {
+			val = path + strlen(valid_paths[pi]);
+			break;
+		}
+	if (valid_paths[pi] == NULL) {
+		fprintf(stderr,
+			"Unsupported type of query for CIRCL pDNS: %s\n",
+			path);
+		my_exit(1, NULL);
+	}
+
 	if (strchr(val, '/') != NULL) {
-		fprintf(stderr, "qualifiers not supported by CIRCL pDNS: %s\n",
+		fprintf(stderr, "Qualifiers not supported by CIRCL pDNS: %s\n",
 			val);
 		my_exit(1, NULL);
 	}
@@ -2820,4 +2839,13 @@ circl_auth(reader_t reader) {
 				 CURLAUTH_BASIC);
 	}
 }
+
+static bool circl_validate_verb(const char *verb_name)
+{
+	/* Only "lookup" is valid */
+	if (strcasecmp(verb_name, "lookup") == 0)
+		return (true);
+	return (false);
+}
+
 #endif /*WANT_PDNS_CIRCL*/
