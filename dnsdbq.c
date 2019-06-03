@@ -2706,7 +2706,7 @@ dnsdb_url(const char *path, char *sep) {
 	 */
 	if (page > 0) {
 		x = snprintf(skip_if_needed, sizeof(skip_if_needed),
-			     "&skip=%d", page * query_limit);
+			     "&skip=%lu", (u_long)(page * query_limit));
 		if (x < 0) {
 			perror("snprintf");
 			ret = NULL;
