@@ -726,7 +726,7 @@ help(void) {
 	verb_t v;
 
 	fprintf(stderr,
-"usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
+"usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count|name|data)[,...]]\n"
 "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] [-V verb] {\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
@@ -736,33 +736,34 @@ help(void) {
 "\t\t\t-i IP[/PFXLEN]\n"
 "\t\t\t-R RAW-DATA[/TYPE] |\n"
 "\t\t}\n"
-"\t}\n"
-"for -f, stdin must contain lines of the following forms:\n"
-"\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
-"\trdata/name/NAME[/TYPE]\n"
-"\trdata/ip/ADDR[/PFXLEN]\n"
-"for -f, output format will be determined by -p, using --\\n framing\n"
-"for -J, input format is newline-separated JSON, as for -j output\n"
-"for -A and -B, use abs. YYYY-MM-DD[ HH:MM:SS] "
-		"or rel. %%dw%%dd%%dh%%dm%%ds format\n"
-"use -j as a synonym for -p json.\n"
-"use -s to sort in ascending order, or -S for descending order.\n"
-"use -h to reliably display this helpful text.\n"
-"use -c to get complete (vs. partial) time matching for -A and -B\n"
-"use -d one or more times to ramp up the diagnostic output\n"
-"use -I to see a system-specific account or key summary in JSON format\n"
-"use -g to get graveled results\n"
-"use -P # to query that page # of results.\n",
+"\t}\n",
 		program_name);
-	fprintf(stderr, "\nsystem must be one of:\n");
+        fprintf(stderr,
+"for -A and -B, use abs. YYYY-MM-DD[ HH:MM:SS] "
+		"or rel. %%dw%%dd%%dh%%dm%%ds format.\n"
+"use -c to get complete (vs. partial) time matching for -A and -B.\n"
+"use -d one or more times to ramp up the diagnostic output.\n"
+"for -f, stdin must contain lines of the following forms:\n"
+"\t  rrset/name/NAME[/TYPE[/BAILIWICK]]\n"
+"\t  rdata/name/NAME[/TYPE]\n"
+"\t  rdata/ip/ADDR[/PFXLEN]\n"
+"\t output format will be determined by -p, using --\\n framing.\n"
+"use -g to get graveled results.\n"
+"use -h to reliably display this helpful text.\n"
+"use -I to see a system-specific account or key summary in JSON format.\n"
+"for -J, input format is newline-separated JSON, as from -j output.\n"
+"use -j as a synonym for -p json.\n"
+"use -P # to query that page # of results.\n"
+"use -s to sort in ascending order, or -S for descending order.\n");
+	fprintf(stderr, "for -u, system must be one of:\n");
 	for (t = pdns_systems; t->name != NULL; t++)
-		fprintf(stderr, " %s\n", t->name);
-	fprintf(stderr, "\nverb must be one of:\n");
+		fprintf(stderr, "\t%s\n", t->name);
+	fprintf(stderr, "for -V, verb must be one of:\n");
 	for (v = verbs; v->cmd_opt_val != NULL; v++)
-		fprintf(stderr, " %s\n", v->cmd_opt_val);
-	fprintf(stderr, "\n\nGetting Started: \nAdd the API key to ~/.dnsdb-query.conf in the below given format,\n"
-		"\nAPIKEY=\"YOURAPIKEYHERE\"");
-	fprintf(stderr, "\n\ntry   man %s   for a longer description\n",
+		fprintf(stderr, "\t%s\n", v->cmd_opt_val);
+	fprintf(stderr, "\nGetting Started: \n\tAdd your API key to ~/.dnsdb-query.conf in the below given format:\n"
+		"\tAPIKEY=\"YOURAPIKEYHERE\"");
+	fprintf(stderr, "\n\nTry   man %s   for full documentation.\n",
 		program_name);
 }
 
