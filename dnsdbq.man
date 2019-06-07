@@ -30,6 +30,7 @@
 .Op Fl u Ar server_sys
 .Op Fl n Ar name
 .Op Fl k Ar sort_keys
+.Op Fl M Ar max_count
 .Op Fl P Ar page
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rdata
@@ -177,6 +178,8 @@ The
 output limit defaults to the
 .Fl l
 limit's value.
+.It Fl M Ar max_count
+for the summarize verb, stops summarizing when the count reaches that max_count, which must be a positive integer.  The resulting total count may exceed max_count as it will include the entire count from the last rrset examined.  The default is to not constrain the maximum count.  The number of rrsets summarized is also limited by the query_limit.
 .It Fl m
 used only with
 .Fl f ,

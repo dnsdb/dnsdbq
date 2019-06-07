@@ -301,6 +301,7 @@ static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
 static int query_limit = -1;	/* -1 means not set on command line */
 static int output_limit = 0;
+static int max_count = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static int nkeys = 0;
@@ -334,7 +335,8 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:u:p:t:b:k:J:P:R:V:djfmsShcIgv")) != -1)
+			    "A:B:r:n:i:l:L:M:u:p:t:b:k:J:P:R:V:djfmsShcIgv"))
+	       != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -451,6 +453,11 @@ main(int argc, char *argv[]) {
 			output_limit = atoi(optarg);
 			if (output_limit <= 0)
 				usage("-L must be positive");
+			break;
+		case 'M':
+			max_count = atoi(optarg);
+			if (max_count <= 0)
+				usage("-M must be positive");
 			break;
 		case 'P':
 			page = atoi(optarg);
@@ -727,7 +734,7 @@ help(void) {
 
 	fprintf(stderr,
 "usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count|name|data)[,...]]\n"
-"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] [-V verb] {\n"
+"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] [-V verb] [-M max_count]{\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -753,6 +760,7 @@ help(void) {
 "use -I to see a system-specific account or key summary in JSON format.\n"
 "for -J, input format is newline-separated JSON, as from -j output.\n"
 "use -j as a synonym for -p json.\n"
+"use -M # to stop a summarize verb when count exceeds that max_count.\n"
 "use -P # to query that page # of results.\n"
 "use -s to sort in ascending order, or -S for descending order.\n");
 	fprintf(stderr, "for -u, system must be one of:\n");
@@ -834,7 +842,10 @@ my_panic(const char *s) {
 
 void validate_cmd_opts_lookup(void)
 {
-	/* $$$ too many local variables would need to be global */
+	/* $$$ too many local variables would need to be global to check more here */
+
+        if (max_count > 0)
+		usage("max_count only allowed for a summarize verb");
 }
 
 void validate_cmd_opts_summarize(void)
@@ -2664,6 +2675,7 @@ static char *
 dnsdb_url(const char *path, char *sep) {
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
 	char skip_if_needed[sizeof("&skip=##################")] = "";
+        char max_count_if_needed[sizeof("&skip=##################")] = "";
 	char *ret;
 	int x;
 
@@ -2713,13 +2725,24 @@ dnsdb_url(const char *path, char *sep) {
 		}
 	}
 
+        if (max_count > 0) {
+		x = snprintf(max_count_if_needed, sizeof(max_count_if_needed),
+			     "&max_count=%lu", (u_long)(max_count));
+		if (x < 0) {
+			perror("snprintf");
+			ret = NULL;
+		}
+	}
+
+
+
 	/* assist DNSDB's operator in understanding their client mix
 	 * by sending the client name and version.
 	 * and provide aggr(egate) flag if needed.
 	 */
-	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s",
+	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s%s",
 		     scheme_if_needed, dnsdb_base_url, verb_path, path,
-		     id_swclient, id_version, aggr_if_needed, skip_if_needed);
+		     id_swclient, id_version, aggr_if_needed, skip_if_needed, max_count_if_needed);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
