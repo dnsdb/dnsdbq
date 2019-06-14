@@ -2674,8 +2674,8 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 static char *
 dnsdb_url(const char *path, char *sep) {
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
-	char skip_if_needed[sizeof("&skip=##################")] = "";
-        char max_count_if_needed[sizeof("&skip=##################")] = "";
+	char offset_if_needed[sizeof("&offset=##################")] = "";
+        char max_count_if_needed[sizeof("&max_count=##################")] = "";
 	char *ret;
 	int x;
 
@@ -2714,11 +2714,11 @@ dnsdb_url(const char *path, char *sep) {
 		aggr_if_needed = "&aggr=f";
 
 	/* if page > 0, we already ensured the query_limit > 0,
-	 * so skip that many rows of results.
+	 * so offset (e.g. skip) that many rows of results.
 	 */
 	if (page > 0) {
-		x = snprintf(skip_if_needed, sizeof(skip_if_needed),
-			     "&skip=%lu", (u_long)(page * query_limit));
+		x = snprintf(offset_if_needed, sizeof(offset_if_needed),
+			     "&offset=%lu", (u_long)(page * query_limit));
 		if (x < 0) {
 			perror("snprintf");
 			ret = NULL;
@@ -2742,7 +2742,7 @@ dnsdb_url(const char *path, char *sep) {
 	 */
 	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s%s",
 		     scheme_if_needed, dnsdb_base_url, verb_path, path,
-		     id_swclient, id_version, aggr_if_needed, skip_if_needed, max_count_if_needed);
+		     id_swclient, id_version, aggr_if_needed, offset_if_needed, max_count_if_needed);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
