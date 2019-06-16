@@ -745,7 +745,7 @@ help(void) {
 "\t\t}\n"
 "\t}\n",
 		program_name);
-        fprintf(stderr,
+	fprintf(stderr,
 "for -A and -B, use abs. YYYY-MM-DD[ HH:MM:SS] "
 		"or rel. %%dw%%dd%%dh%%dm%%ds format.\n"
 "use -c to get complete (vs. partial) time matching for -A and -B.\n"
@@ -844,7 +844,7 @@ void validate_cmd_opts_lookup(void)
 {
 	/* $$$ too many local variables would need to be global to check more here */
 
-        if (max_count > 0)
+	if (max_count > 0)
 		usage("max_count only allowed for a summarize verb");
 }
 
@@ -2675,7 +2675,7 @@ static char *
 dnsdb_url(const char *path, char *sep) {
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
 	char offset_if_needed[sizeof("&offset=##################")] = "";
-        char max_count_if_needed[sizeof("&max_count=##################")] = "";
+	char max_count_if_needed[sizeof("&max_count=##################")] = "";
 	char *ret;
 	int x;
 
@@ -2725,7 +2725,7 @@ dnsdb_url(const char *path, char *sep) {
 		}
 	}
 
-        if (max_count > 0) {
+	if (max_count > 0) {
 		x = snprintf(max_count_if_needed, sizeof(max_count_if_needed),
 			     "&max_count=%lu", (u_long)(max_count));
 		if (x < 0) {
