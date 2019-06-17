@@ -128,7 +128,7 @@ struct pdns_sys {
 	 * use between any further URL parameters.  May be
 	 * NULL if the caller doesn't care.
 	 */
-	char		*(*url)(const char *, char *);
+	char *		(*url)(const char *, char *);
 	void		(*request_info)(void);
 	void		(*write_info)(reader_t);
 	void		(*auth)(reader_t);
@@ -293,7 +293,6 @@ static bool batch = false;
 static bool merge = false;
 static bool complete = false;
 static bool info = false;
-static int page = 0;
 static bool gravel = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
@@ -301,6 +300,7 @@ static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
 static int query_limit = -1;	/* -1 means not set on command line */
 static int output_limit = 0;
+static int offset = 0;
 static int max_count = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
@@ -318,7 +318,7 @@ int
 main(int argc, char *argv[]) {
 	mode_e mode = no_mode;
 	char *name = NULL, *rrtype = NULL, *bailiwick = NULL,
-		*cidr_length = NULL;
+		*prefix_length = NULL;
 	u_long after = 0;
 	u_long before = 0;
 	int json_fd = -1;
@@ -335,7 +335,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:M:u:p:t:b:k:J:P:R:V:djfmsShcIgv"))
+			    "A:B:r:n:i:l:L:M:u:p:t:b:k:J:O:R:V:djfmsShcIgv"))
 	       != -1)
 	{
 		switch (ch) {
@@ -423,7 +423,7 @@ main(int argc, char *argv[]) {
 			p = strchr(optarg, '/');
 			if (p != NULL) {
 				name = strndup(optarg, (size_t)(p - optarg));
-				cidr_length = strdup(p + 1);
+				prefix_length = strdup(p + 1);
 			} else {
 				name = strdup(optarg);
 			}
@@ -459,10 +459,10 @@ main(int argc, char *argv[]) {
 			if (max_count <= 0)
 				usage("-M must be positive");
 			break;
-		case 'P':
-			page = atoi(optarg);
-			if (page <= 0)
-				usage("-P must be positive");
+		case 'O':
+			offset = atoi(optarg);
+			if (offset < 0)
+				usage("-O must be zero or positive");
 			break;
 		case 'u':
 			sys = find_system(optarg);
@@ -571,8 +571,8 @@ main(int argc, char *argv[]) {
 		escape(&rrtype);
 	if (bailiwick != NULL)
 		escape(&bailiwick);
-	if (cidr_length != NULL)
-		escape(&cidr_length);
+	if (prefix_length != NULL)
+		escape(&prefix_length);
 	if (output_limit == 0) {
 		/* If not set, default to whatever limit has, unless limit is
 		 *  0 or -1, in which case use a really big integer.
@@ -591,8 +591,8 @@ main(int argc, char *argv[]) {
 			fprintf(stderr, "type = '%s'\n", rrtype);
 		if (bailiwick != NULL)
 			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
-		if (cidr_length != NULL)
-			fprintf(stderr, "cidr_length = '%s'\n", cidr_length);
+		if (prefix_length != NULL)
+			fprintf(stderr, "prefix_length = '%s'\n", prefix_length);
 		if (after != 0) {
 			fprintf(stderr, "after = %ld : ", (long)after);
 			time_print(after, stderr);
@@ -640,8 +640,6 @@ main(int argc, char *argv[]) {
 		if (find_sort_key("data") == NULL)
 			(void) add_sort_key("data");
 	}
-	if (page > 0 && query_limit < 1)
-		usage("If -P page is set then -l query-limit must be positive.");
 
 	assert(choosen_verb != NULL);
 	if (choosen_verb->validate_cmd_opts != NULL)
@@ -707,7 +705,8 @@ main(int argc, char *argv[]) {
 		if (mode == ip_mode && rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		command = makepath(mode, name, rrtype, bailiwick, cidr_length);
+		command = makepath(mode, name, rrtype, bailiwick,
+				   prefix_length);
 		server_setup();
 		make_curl();
 		pdns_query(command, after, before);
@@ -719,7 +718,7 @@ main(int argc, char *argv[]) {
 	DESTROY(name);
 	DESTROY(rrtype);
 	DESTROY(bailiwick);
-	DESTROY(cidr_length);
+	DESTROY(prefix_length);
 	my_exit(exit_code, NULL);
 }
 
@@ -734,7 +733,7 @@ help(void) {
 
 	fprintf(stderr,
 "usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count|name|data)[,...]]\n"
-"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] [-V verb] [-M max_count]{\n"
+"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-O offset] [-V verb] [-M max_count]{\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -761,7 +760,7 @@ help(void) {
 "for -J, input format is newline-separated JSON, as from -j output.\n"
 "use -j as a synonym for -p json.\n"
 "use -M # to stop a summarize verb when count exceeds that max_count.\n"
-"use -P # to query that page # of results.\n"
+"use -O # to offset by #results the results returned by the query.\n"
 "use -s to sort in ascending order, or -S for descending order.\n");
 	fprintf(stderr, "for -u, system must be one of:\n");
 	for (t = pdns_systems; t->name != NULL; t++)
@@ -840,21 +839,29 @@ my_panic(const char *s) {
 	my_exit(1, NULL);
 }
 
-void validate_cmd_opts_lookup(void)
+/* validate_cmd_opts_lookup -- validate command line options for
+ * a lookup verb
+ */
+static void
+validate_cmd_opts_lookup(void)
 {
-	/* $$$ too many local variables would need to be global to check more here */
+	/* TODO too many local variables would need to be global to check more here */
 
 	if (max_count > 0)
 		usage("max_count only allowed for a summarize verb");
 }
 
-void validate_cmd_opts_summarize(void)
+/* validate_cmd_opts_summarize -- validate command line options for
+ * a summarize verb
+ */
+static void
+validate_cmd_opts_summarize(void)
 {
 	if (pres != present_json)
 		usage("Only json output mode is supposed with a summarize verb");
 	if (sorted != no_sort)
 		usage("Sorting with a summarize verb makes no sense");
-	/*$$$ add more validations? */
+	/*TODO add more validations? */
 }
 
 /* add_sort_key -- add a key for use by POSIX sort.
@@ -1100,7 +1107,7 @@ do_batch(FILE *f, u_long after, u_long before) {
  */
 static char *
 makepath(mode_e mode, const char *name, const char *rrtype,
-	 const char *bailiwick, const char *cidr_length)
+	 const char *bailiwick, const char *prefix_length)
 {
 	char *command;
 	int x;
@@ -1133,9 +1140,9 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			my_panic("asprintf");
 		break;
 	case ip_mode:
-		if (cidr_length != NULL)
+		if (prefix_length != NULL)
 			x = asprintf(&command, "rdata/ip/%s,%s",
-				     name, cidr_length);
+				     name, prefix_length);
 		else
 			x = asprintf(&command, "rdata/ip/%s",
 				     name);
@@ -2337,7 +2344,8 @@ rateval_make(rateval_t tp, const json_t *obj, const char *key) {
 					tp->rk = rk_na;
 					ok = true;
 				} else if (strcasecmp(strvalue,
-						      "unlimited") == 0) {
+						      "unlimited") == 0)
+				{
 					memset(tp, 0, sizeof *tp);
 					tp->rk = rk_unlimited;
 					ok = true;
@@ -2713,12 +2721,9 @@ dnsdb_url(const char *path, char *sep) {
 	if (gravel)
 		aggr_if_needed = "&aggr=f";
 
-	/* if page > 0, we already ensured the query_limit > 0,
-	 * so offset (e.g. skip) that many rows of results.
-	 */
-	if (page > 0) {
+	if (offset > 0) {
 		x = snprintf(offset_if_needed, sizeof(offset_if_needed),
-			     "&offset=%lu", (u_long)(page * query_limit));
+			     "&offset=%d", offset);
 		if (x < 0) {
 			perror("snprintf");
 			ret = NULL;
@@ -2727,14 +2732,12 @@ dnsdb_url(const char *path, char *sep) {
 
 	if (max_count > 0) {
 		x = snprintf(max_count_if_needed, sizeof(max_count_if_needed),
-			     "&max_count=%lu", (u_long)(max_count));
+			     "&max_count=%d", max_count);
 		if (x < 0) {
 			perror("snprintf");
 			ret = NULL;
 		}
 	}
-
-
 
 	/* assist DNSDB's operator in understanding their client mix
 	 * by sending the client name and version.

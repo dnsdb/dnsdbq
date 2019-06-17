@@ -31,7 +31,7 @@
 .Op Fl n Ar name
 .Op Fl k Ar sort_keys
 .Op Fl M Ar max_count
-.Op Fl P Ar page
+.Op Fl O Ar offset
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rdata
 .Op Fl r Ar rdata
@@ -192,14 +192,8 @@ name ("right-hand side") query.  The value is a DNS domain name in
 presentation format, or a left-hand (".example.com") or right-hand
 ("www.example.") wildcard domain name. Note that left-hand wildcard queries
 are somewhat more expensive than right-hand wildcard queries.
-.It Fl P Ar page_number
-query for the specified page of results, where a page is a
-.Fl l
-limit's worth of results.  If
-.Fl P
-is specified then
-.Fl l
-must also be specified, with a non-zero limit.
+.It Fl O Ar offset
+to offset by #results the results returned by the query.  Cannot be negative.  The default is 0.
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -326,11 +320,6 @@ $ head -1 batch-output.json | jq .
     "ns2.wikimedia.org."
   ]
 }
-.Ed
-.Pp
-Query for the second page of results where each page is 1000 rows
-.Bd -literal -offset 4n
-$ dnsdbq -P 2 -l 1000 -r ...
 .Ed
 .Sh FILES
 .Ic ~/.isc-dnsdb-query.conf ,
