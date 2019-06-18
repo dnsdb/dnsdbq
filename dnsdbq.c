@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <sys/errno.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -166,6 +167,7 @@ typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
 /* Forward. */
 
 static void help(void);
+static bool parse_long(const char *, long *);
 static void report_version(void);
 static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
@@ -302,8 +304,8 @@ static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
 static int query_limit = -1;	/* -1 means not set on command line */
 static int output_limit = 0;
-static int offset = 0;
-static int max_count = 0;
+static long offset = 0;
+static long max_count = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static int nkeys = 0;
@@ -457,13 +459,11 @@ main(int argc, char *argv[]) {
 				usage("-L must be positive");
 			break;
 		case 'M':
-			max_count = atoi(optarg);
-			if (max_count <= 0)
+			if (!parse_long(optarg, &max_count) || (max_count <= 0))
 				usage("-M must be positive");
 			break;
 		case 'O':
-			offset = atoi(optarg);
-			if (offset < 0)
+			if (!parse_long(optarg, &offset) || (offset < 0))
 				usage("-O must be zero or positive");
 			break;
 		case 'u':
@@ -839,6 +839,21 @@ static __attribute__((noreturn)) void
 my_panic(const char *s) {
 	perror(s);
 	my_exit(1, NULL);
+}
+
+/* parse a base 10 long value.	Return true if ok, else return false.
+ */
+static bool parse_long(const char *in, long *out)
+{
+	char *ep;
+	long result = strtol(in, &ep, 10);
+
+	if ((errno == ERANGE && (result == LONG_MAX || result == LONG_MIN))
+	    || (errno != 0 && result == 0)
+	    || (ep == in))
+		return false;
+	*out = result;
+	return true;
 }
 
 /* validate_cmd_opts_lookup -- validate command line options for
@@ -2730,7 +2745,7 @@ dnsdb_url(const char *path, char *sep) {
 
 	if (offset > 0) {
 		x = snprintf(offset_if_needed, sizeof(offset_if_needed),
-			     "&offset=%d", offset);
+			     "&offset=%ld", offset);
 		if (x < 0) {
 			perror("snprintf");
 			ret = NULL;
@@ -2739,7 +2754,7 @@ dnsdb_url(const char *path, char *sep) {
 
 	if (max_count > 0) {
 		x = snprintf(max_count_if_needed, sizeof(max_count_if_needed),
-			     "&max_count=%d", max_count);
+			     "&max_count=%ld", max_count);
 		if (x < 0) {
 			perror("snprintf");
 			ret = NULL;
