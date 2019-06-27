@@ -150,13 +150,15 @@ typedef const struct sortkey *sortkey_ct;
 struct dnsdb_rate_json {
 	json_t	*main,
 		*reset, *expires, *limit, *remaining,
-		*burst_size, *burst_window, *results_max;
+		*burst_size, *burst_window, *results_max,
+		*offset_max;
 };
 
 struct dnsdb_rate_tuple {
 	struct dnsdb_rate_json	obj;
 	struct rateval	reset, expires, limit, remaining,
-			burst_size, burst_window, results_max;
+			burst_size, burst_window, results_max,
+			offset_max;
 };
 typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
 
@@ -1574,6 +1576,7 @@ dnsdb_write_info(reader_t reader) {
 			print_rateval(stdout, "limit", &tup.limit);
 			print_rateval(stdout, "remaining", &tup.remaining);
 			print_rateval(stdout, "results_max", &tup.results_max);
+			print_rateval(stdout, "offset_max", &tup.offset_max);
 			print_burstrate(stdout, "burst rate",
 					&tup.burst_size, &tup.burst_window);
 		}
@@ -2406,6 +2409,10 @@ dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 		goto ouch;
 
 	msg = rateval_make(&tup->results_max, rate, "results_max");
+	if (msg != NULL)
+		goto ouch;
+
+	msg = rateval_make(&tup->offset_max, rate, "offset_max");
 	if (msg != NULL)
 		goto ouch;
 
