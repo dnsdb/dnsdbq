@@ -848,9 +848,9 @@ static bool parse_long(const char *in, long *out)
 	char *ep;
 	long result = strtol(in, &ep, 10);
 
-	if ((errno == ERANGE && (result == LONG_MAX || result == LONG_MIN))
-	    || (errno != 0 && result == 0)
-	    || (ep == in))
+	if ((errno == ERANGE && (result == LONG_MAX || result == LONG_MIN)) ||
+	    (errno != 0 && result == 0) ||
+	    (ep == in))
 		return false;
 	*out = result;
 	return true;
