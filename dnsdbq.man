@@ -126,8 +126,8 @@ An example of how to use
 .Fl f
 is below.
 .It Fl g
-return graveled results.  Default is to return aggregated results (rocks, vs. gravel).  Gravel is a feature for providing Volume Across Time.
-
+return graveled results.  Default is to return aggregated results (rocks,
+vs. gravel).  Gravel is a feature for providing Volume Across Time.
 .It Fl h
 emit usage and quit.
 .It Fl I
@@ -144,12 +144,13 @@ prints
 the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
 .It Fl i Ar ip
-specify rdata ip ("right-hand side") query.
-The value is one of an IPv4 address, an IPv6 address, an IPv4 network with prefix length, an IPv4 address range,
-or an IPv6 network with prefix length. If a network lookup is being performed,
-the delimiter between network address and prefix length is a single comma (",")
-character rather than the usual slash ("/") character to avoid clashing with
-the HTTP URI path name separator.  Examples are below.
+specify rdata ip ("right-hand side") query.  The value is one of an
+IPv4 address, an IPv6 address, an IPv4 network with prefix length, an
+IPv4 address range, or an IPv6 network with prefix length. If a
+network lookup is being performed, the delimiter between network
+address and prefix length is a single comma (",") character rather
+than the usual slash ("/") character to avoid clashing with the HTTP
+URI path name separator.  Examples are below.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be used
@@ -180,7 +181,12 @@ output limit defaults to the
 .Fl l
 limit's value.
 .It Fl M Ar max_count
-for the summarize verb, stops summarizing when the count reaches that max_count, which must be a positive integer.  The resulting total count may exceed max_count as it will include the entire count from the last rrset examined.  The default is to not constrain the maximum count.  The number of rrsets summarized is also limited by the query_limit.
+for the summarize verb, stops summarizing when the count reaches that
+max_count, which must be a positive integer.  The resulting total
+count may exceed max_count as it will include the entire count from
+the last rrset examined.  The default is to not constrain the maximum
+count.  The number of rrsets summarized is also limited by the
+query_limit.
 .It Fl m
 used only with
 .Fl f ,
@@ -194,7 +200,9 @@ presentation format, or a left-hand (".example.com") or right-hand
 ("www.example.") wildcard domain name. Note that left-hand wildcard queries
 are somewhat more expensive than right-hand wildcard queries.
 .It Fl O Ar offset
-to offset by #offset the results returned by the query.  This gives you incremental results transfers.  Cannot be negative.  The default is 0.
+to offset by #offset the results returned by the query.  
+This gives you incremental results transfers.
+Cannot be negative.  The default is 0.
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -224,7 +232,11 @@ specifies the syntax of the RESTful URL, default is "dnsdb".
 .It Fl V Ar verb
 The verb to perform, what type of query, either "lookup" or
 "summarize".  The default is the "lookup" verb.  As an option, you can
-request a "summarize" verb.  "summarize" gives you an estimate of result size.  At-a glance, it provides information on when a given domain name, IP address or other DNS asset was first-seen and last-seen by the global sensor network, as well as the total observation count.
+request a "summarize" verb.  "summarize" gives you an estimate of
+result size.  At-a glance, it provides information on when a given
+domain name, IP address or other DNS asset was first-seen and
+last-seen by the global sensor network, as well as the total
+observation count.
 .It Fl v
 report the version of dnsdbq and exit.
 .El
