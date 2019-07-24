@@ -126,7 +126,8 @@ An example of how to use
 .Fl f
 is below.
 .It Fl g
-return graveled results.  Default is to return aggregated results (rocks, vs. gravel).
+return graveled results.  Default is to return aggregated results (rocks, vs. gravel).  Gravel is a feature for providing Volume Across Time.
+
 .It Fl h
 emit usage and quit.
 .It Fl I
@@ -193,7 +194,7 @@ presentation format, or a left-hand (".example.com") or right-hand
 ("www.example.") wildcard domain name. Note that left-hand wildcard queries
 are somewhat more expensive than right-hand wildcard queries.
 .It Fl O Ar offset
-to offset by #results the results returned by the query.  Cannot be negative.  The default is 0.
+to offset by #offset the results returned by the query.  This gives you incremental results transfers.  Cannot be negative.  The default is 0.
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -223,7 +224,7 @@ specifies the syntax of the RESTful URL, default is "dnsdb".
 .It Fl V Ar verb
 The verb to perform, what type of query, either "lookup" or
 "summarize".  The default is the "lookup" verb.  As an option, you can
-request a "summarize" verb.
+request a "summarize" verb.  "summarize" gives you an estimate of result size.  At-a glance, it provides information on when a given domain name, IP address or other DNS asset was first-seen and last-seen by the global sensor network, as well as the total observation count.
 .It Fl v
 report the version of dnsdbq and exit.
 .El
