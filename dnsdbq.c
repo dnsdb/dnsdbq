@@ -366,19 +366,16 @@ main(int argc, char *argv[]) {
 			assert(name == NULL);
 			mode = rdata_mode;
 
-			if (rrtype == NULL)
-				p = strchr(optarg, '/');
-			else
-				p = NULL;
-
+			p = strchr(optarg, '/');
 			if (p != NULL) {
+			    if (rrtype != NULL || bailiwick != NULL)
+				usage("if -b or -t are specified then -r "
+				      "cannot contain a slash");
+
 				const char *q;
 
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
-					if (bailiwick != NULL)
-						usage("can only specify "
-						      "one bailiwick");
 					bailiwick = strdup(q + 1);
 					rrtype = strndup(p + 1,
 						       (size_t)(q - p - 1));
