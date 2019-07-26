@@ -487,6 +487,8 @@ main(int argc, char *argv[]) {
 		case 't':
 			if (rrtype != NULL)
 				usage("can only specify rrtype one way");
+			if (mode != no_mode && mode != ip_mode)
+				fprintf(stderr, "Warning: -t option should be before the -R, -r, or -n options\n");
 			rrtype = strdup(optarg);
 			break;
 		case 'b':

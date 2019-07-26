@@ -223,10 +223,18 @@ sort output in ascending key order.
 .It Fl S
 sort output in descending key order.
 .It Fl t Ar rrtype
-specify the resource record type desired.  Valid values include those
-defined in DNS RFCs, including ANY.  A special-case supported in DNSDB
-is ANY-DNSSEC, which matches on DS, RRSIG, NSEC, DNSKEY, NSEC3,
-NSEC3PARAM, and DLV resource record types.
+specify the resource record type desired.  If present, this option
+should be before any
+.Fl R ,
+.Fl r ,
+or
+.Fl n
+options.  This option is not allowed if the
+.Fl i
+option is present.  Valid values include those defined in DNS RFCs,
+including ANY.  A special-case supported in DNSDB is ANY-DNSSEC, which
+matches on DS, RRSIG, NSEC, DNSKEY, NSEC3, NSEC3PARAM, and DLV
+resource record types.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
 .It Fl V Ar verb
