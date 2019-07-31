@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl dfgmhjsShcI
+.Op Fl dfgmhjsShcIv
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -30,17 +30,20 @@
 .Op Fl u Ar server_sys
 .Op Fl n Ar name
 .Op Fl k Ar sort_keys
-.Op Fl P Ar page
+.Op Fl M Ar max_count
+.Op Fl O Ar offset
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rdata
 .Op Fl r Ar rdata
 .Op Fl t Ar rrtype
+.Op Fl V Ar verb
 .Op Fl J Ar input_file
 .Sh DESCRIPTION
 .Nm dnsdbq
-constructs and issues queries to the Farsight DNSDB and displays responses. It
-is commonly used as a production command line interface to the DNSDB API
-server.
+constructs and issues queries to the Farsight DNSDB and displays
+responses. It is commonly used as a production command line interface
+to the DNSDB API server. Its default query type is a "lookup" query.
+As an option, it can issue a "summarize" query type.
 .Pp
 DNSDB is a database that stores and indexes both the passive DNS data
 available via Farsight Security's Security Information Exchange as well as the
@@ -100,7 +103,7 @@ Queries will be read from standard input and are expected to be be in
 one of the following formats:
 .Bl -enum -offset indent
 .It
-RRSet query:
+RRset query:
 .Ic rrset/name/NAME[/RRTYPE[/BAILIWICK]]
 .It
 Rdata (name) query:
@@ -123,7 +126,8 @@ An example of how to use
 .Fl f
 is below.
 .It Fl g
-return graveled results.  Default is to return aggregated results (rocks, vs. gravel).
+return graveled results.  Default is to return aggregated results (rocks,
+vs. gravel).  Gravel is a feature for providing Volume Across Time.
 .It Fl h
 emit usage and quit.
 .It Fl I
@@ -140,19 +144,20 @@ prints
 the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
 .It Fl i Ar ip
-specify rdata ip ("right-hand side") query.
-The value is one of an IPv4 address, an IPv6 address, an IPv4 network with prefix length, an IPv4 address range,
-or an IPv6 network with prefix length. If a network lookup is being performed,
-the delimiter between network address and prefix length is a single comma (",")
-character rather than the usual slash ("/") character to avoid clashing with
-the HTTP URI path name separator.  Examples are below.
+specify rdata ip ("right-hand side") query.  The value is one of an
+IPv4 address, an IPv6 address, an IPv4 network with prefix length, an
+IPv4 address range, or an IPv6 network with prefix length. If a
+network lookup is being performed, the delimiter between network
+address and prefix length is a single comma (",") character rather
+than the usual slash ("/") character to avoid clashing with the HTTP
+URI path name separator.  Examples are below.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be used
 to reprocess the output from a prior invocation which used
 .Fl j
 (-p json).  If
-inut_file is "-" then standard input (stdin) willl be read.
+input_file is "-" then standard input (stdin) will be read.
 .It Fl j
 specify newline delimited json output mode.
 .It Fl k Ar sort_keys
@@ -175,6 +180,13 @@ The
 output limit defaults to the
 .Fl l
 limit's value.
+.It Fl M Ar max_count
+for the summarize verb, stops summarizing when the count reaches that
+max_count, which must be a positive integer.  The resulting total
+count may exceed max_count as it will include the entire count from
+the last rrset examined.  The default is to not constrain the maximum
+count.  The number of rrsets summarized is also limited by the
+query_limit.
 .It Fl m
 used only with
 .Fl f ,
@@ -187,14 +199,10 @@ name ("right-hand side") query.  The value is a DNS domain name in
 presentation format, or a left-hand (".example.com") or right-hand
 ("www.example.") wildcard domain name. Note that left-hand wildcard queries
 are somewhat more expensive than right-hand wildcard queries.
-.It Fl P Ar page_number
-query for the specified page of results, where a page is a
-.Fl l
-limit's worth of results.  If
-.Fl P
-is specified then
-.Fl l
-must also be specified, with a non-zero limit.
+.It Fl O Ar offset
+to offset by #offset the results returned by the query.  
+This gives you incremental results transfers.
+Cannot be negative.  The default is 0.
 .It Fl p Ar output_type
 select output type. Specify
 .Ic csv
@@ -215,12 +223,30 @@ sort output in ascending key order.
 .It Fl S
 sort output in descending key order.
 .It Fl t Ar rrtype
-specify the resource record type desired.  Valid values include those
-defined in DNS RFCs, including ANY.  A special-case supported in DNSDB
-is ANY-DNSSEC, which matches on DS, RRSIG, NSEC, DNSKEY, NSEC3,
-NSEC3PARAM, and DLV resource record types.
+specify the resource record type desired.  If present, this option
+should be before any
+.Fl R ,
+.Fl r ,
+or
+.Fl n
+options.  This option is not allowed if the
+.Fl i
+option is present.  Valid values include those defined in DNS RFCs,
+including ANY.  A special-case supported in DNSDB is ANY-DNSSEC, which
+matches on DS, RRSIG, NSEC, DNSKEY, NSEC3, NSEC3PARAM, and DLV
+resource record types.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
+.It Fl V Ar verb
+The verb to perform, i.e. the type of query, either "lookup" or
+"summarize".  The default is the "lookup" verb.  As an option, you can
+specify the "summarize" verb, which gives you an estimate of
+result size.  At-a-glance, it provides information on when a given
+domain name, IP address or other DNS asset was first-seen and
+last-seen by the global sensor network, as well as the total
+observation count.
+.It Fl v
+report the version of dnsdbq and exit.
 .El
 .Sh "TIMESTAMP FORMATS"
 Timestamps may be one of following forms.
@@ -233,7 +259,7 @@ negative unsigned integer : negative offset in seconds from now.
 YYYY-MM-DD [HH:MM:SS] : in absolute form, in UTC time, as DNSDB does its
 fencing using UTC time.
 .It
-%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offsite
+%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offset
 from UTC time, as DNSDB does its fencing using UTC time.
 .Pp
 .El
@@ -315,11 +341,6 @@ $ head -1 batch-output.json | jq .
     "ns2.wikimedia.org."
   ]
 }
-.Ed
-.Pp
-Query for the second page of results where each page is 1000 rows
-.Bd -literal -offset 4n
-$ dnsdbq -P 2 -l 1000 -r ...
 .Ed
 .Sh FILES
 .Ic ~/.isc-dnsdb-query.conf ,

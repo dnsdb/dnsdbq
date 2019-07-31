@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <sys/errno.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -53,48 +54,36 @@ extern char **environ;
 
 /* Types. */
 
+/* conforms to the fields in the IETF passive DNS COF draft */
 struct pdns_json {
-	json_t		*main,
-			*time_first, *time_last, *zone_first, *zone_last,
-			*bailiwick, *rrname, *rrtype, *rdata,
-			*count;
+	json_t	*main,
+		*time_first, *time_last, *zone_first, *zone_last,
+		*bailiwick, *rrname, *rrtype, *rdata,
+		*count;
 };
 
 struct pdns_tuple {
 	struct pdns_json  obj;
-	u_long		time_first, time_last, zone_first, zone_last;
-	const char	*bailiwick, *rrname, *rrtype, *rdata;
-	json_int_t	count;
+	u_long		  time_first, time_last, zone_first, zone_last;
+	const char	 *bailiwick, *rrname, *rrtype, *rdata;
+	json_int_t	  count;
 };
 typedef struct pdns_tuple *pdns_tuple_t;
 typedef const struct pdns_tuple *pdns_tuple_ct;
 
+/* presentation formatter function for a passive DNS tuple */
 typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
 
-struct rate_json {
-	json_t		*main,
-			*reset, *expires, *limit, *remaining,
-			*burst_size, *burst_window, *results_max;
-};
-
-enum ratekind {
-	rk_naught = 0,		/* not present. */
-	rk_na,			/* "n/a". */
-	rk_unlimited,		/* "unlimited". */
-	rk_int			/* some integer. */
-};
-
 struct rateval {
-	enum ratekind		rk;
-	u_long			as_int;		/* only for rk == rk_int. */
+	enum {
+		rk_naught = 0,		/* not present. */
+		rk_na,			/* "n/a". */
+		rk_unlimited,		/* "unlimited". */
+		rk_int			/* some integer in as_int. */
+	} rk;
+	u_long	as_int;		/* only for rk == rk_int. */
 };
-
-struct rate_tuple {
-	struct rate_json	obj;
-	struct rateval	reset, expires, limit, remaining,
-			burst_size, burst_window, results_max;
-};
-typedef struct rate_tuple *rate_tuple_t;
+typedef struct rateval *rateval_t;
 
 struct reader {
 	struct reader		*next;
@@ -121,9 +110,19 @@ struct writer {
 };
 typedef struct writer *writer_t;
 
+struct verb {
+	const char  *cmd_opt_val;
+	const char  *url_fragment;
+	/* validate_cmd_opts can review the command line options and exit
+	 * if some verb-specific command line option constraint is not met.
+	 */
+	void	   (*validate_cmd_opts)(void);
+};
+typedef const struct verb *verb_t;
+
 struct pdns_sys {
 	const char	*name;
-	const char	*server;
+	const char	*base_url;
 	/* first argument is the input URL path.
 	 * second is an output parameter pointing to
 	 * the separator character (? or &) that the caller should
@@ -134,6 +133,7 @@ struct pdns_sys {
 	void		(*request_info)(void);
 	void		(*write_info)(reader_t);
 	void		(*auth)(reader_t);
+	bool		(*validate_verb)(const char *verb);
 };
 typedef const struct pdns_sys *pdns_sys_t;
 
@@ -146,16 +146,37 @@ struct sortkey { char *specified, *computed; };
 typedef struct sortkey *sortkey_t;
 typedef const struct sortkey *sortkey_ct;
 
+/* DNSDB specific Types. */
+
+struct dnsdb_rate_json {
+	json_t	*main,
+		*reset, *expires, *limit, *remaining,
+		*burst_size, *burst_window, *results_max,
+		*offset_max;
+};
+
+struct dnsdb_rate_tuple {
+	struct dnsdb_rate_json	obj;
+	struct rateval	reset, expires, limit, remaining,
+			burst_size, burst_window, results_max,
+			offset_max;
+};
+typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
+
+
 /* Forward. */
 
 static void help(void);
+static bool parse_long(const char *, long *);
+static void report_version(void);
 static __attribute__((noreturn)) void usage(const char *);
 static __attribute__((noreturn)) void my_exit(int, ...);
 static __attribute__((noreturn)) void my_panic(const char *);
 static void server_setup(void);
-static const char *add_sort_key(const char *tok);
-static sortkey_ct find_sort_key(const char *tok);
+static const char *add_sort_key(const char *);
+static sortkey_ct find_sort_key(const char *);
 static pdns_sys_t find_system(const char *);
+static verb_t find_verb(const char *);
 static void read_configs(void);
 static void read_environ(void);
 static void do_batch(FILE *, u_long, u_long);
@@ -179,13 +200,10 @@ static void present_json(pdns_tuple_ct, const char *, size_t, FILE *);
 static void present_csv(pdns_tuple_ct, const char *, size_t, FILE *);
 static void present_csv_line(pdns_tuple_ct, const char *, FILE *);
 static const char *tuple_make(pdns_tuple_t, const char *, size_t);
-static void print_rateval(FILE *, const char *, const struct rateval *);
-static void print_burstrate(FILE *, const char *, const struct rateval *,
-			    const struct rateval *);
-static const char *parse_rateval(const json_t *, const char *,
-				 struct rateval *);
-static const char *rate_tuple_make(rate_tuple_t, const char *, size_t);
-static void rate_tuple_unmake(rate_tuple_t);
+static void print_rateval(FILE *, const char *, const rateval_t);
+static void print_burstrate(FILE *, const char *, const rateval_t,
+			    const rateval_t);
+static const char *rateval_make(rateval_t, const json_t *, const char *);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
 static void time_print(u_long x, FILE *);
@@ -196,13 +214,26 @@ static char *sortable_rdata(pdns_tuple_ct);
 static void sortable_rdatum(sortbuf_t, const char *, const char *);
 static void sortable_dnsname(sortbuf_t, const char *);
 static void sortable_hexify(sortbuf_t, const u_char *, size_t);
+static void validate_cmd_opts_lookup(void);
+static void validate_cmd_opts_summarize(void);
+
+/* DNSDB specific Forward. */
+
+static const char *dnsdb_rate_tuple_make(dnsdb_rate_tuple_t, const char *,
+					 size_t);
+static void dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t);
 static char *dnsdb_url(const char *, char *);
 static void dnsdb_request_info(void);
 static void dnsdb_write_info(reader_t);
 static void dnsdb_auth(reader_t);
+static bool dnsdb_validate_verb(const char*);
+
 #if WANT_PDNS_CIRCL
+/* CIRCL specific Forward. */
+
 static char *circl_url(const char *, char *);
 static void circl_auth(reader_t);
+static bool circl_validate_verb(const char*);
 #endif
 
 /* Constants. */
@@ -218,22 +249,29 @@ static const char * const conf_files[] = {
 static const char path_sort[] = "/usr/bin/sort";
 static const char json_header[] = "Accept: application/json";
 static const char env_api_key[] = "DNSDB_API_KEY";
-static const char env_dnsdb_server[] = "DNSDB_SERVER";
+static const char env_dnsdb_base_url[] = "DNSDB_SERVER";
 static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 /* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
 static const char id_swclient[] = "dnsdbq";
-static const char id_version[] = "1.2";
+static const char id_version[] = "1.3";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
 	{ "dnsdb", "https://api.dnsdb.info",
-		dnsdb_url, dnsdb_request_info, dnsdb_write_info, dnsdb_auth },
+	  dnsdb_url, dnsdb_request_info, dnsdb_write_info, dnsdb_auth, dnsdb_validate_verb },
 #if WANT_PDNS_CIRCL
 	{ "circl", "https://www.circl.lu/pdns/query",
-		circl_url, NULL, NULL, circl_auth },
+	  circl_url, NULL, NULL, circl_auth, circl_validate_verb },
 #endif
-	{ NULL, NULL, NULL, NULL, NULL, NULL }
+	{ NULL, NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+static const struct verb verbs[] = {
+	/* note: element [0] of this array is the default. */
+	{ "lookup", "/lookup", validate_cmd_opts_lookup },
+	{ "summarize", "/summarize", validate_cmd_opts_summarize },
+	{ NULL, NULL, NULL }
 };
 
 #define	MAX_KEYS 5
@@ -248,9 +286,10 @@ static const struct pdns_sys pdns_systems[] = {
 
 static const char *program_name = NULL;
 static char *api_key = NULL;
-static char *dnsdb_server = NULL;
+static verb_t chosen_verb = &verbs[0];
+static char *dnsdb_base_url = NULL;
 #if WANT_PDNS_CIRCL
-static char *circl_server = NULL;
+static char *circl_base_url = NULL;
 static char *circl_authinfo = NULL;
 #endif
 static pdns_sys_t sys = pdns_systems;
@@ -258,7 +297,6 @@ static bool batch = false;
 static bool merge = false;
 static bool complete = false;
 static bool info = false;
-static int page = 0;
 static bool gravel = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
@@ -266,6 +304,8 @@ static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
 static int query_limit = -1;	/* -1 means not set on command line */
 static int output_limit = 0;
+static long offset = 0;
+static long max_count = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
 static int nkeys = 0;
@@ -281,7 +321,8 @@ static size_t ideal_buffer;
 int
 main(int argc, char *argv[]) {
 	mode_e mode = no_mode;
-	char *name = NULL, *rrtype = NULL, *bailiwick = NULL, *length = NULL;
+	char *name = NULL, *rrtype = NULL, *bailiwick = NULL,
+		*prefix_length = NULL;
 	u_long after = 0;
 	u_long before = 0;
 	int json_fd = -1;
@@ -298,7 +339,8 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:u:p:t:b:k:J:P:R:djfmsShcIg")) != -1)
+			    "A:B:r:n:i:l:L:M:u:p:t:b:k:J:O:R:V:djfmsShcIgv"))
+	       != -1)
 	{
 		switch (ch) {
 		case 'A':
@@ -324,19 +366,16 @@ main(int argc, char *argv[]) {
 			assert(name == NULL);
 			mode = rdata_mode;
 
-			if (rrtype == NULL)
-				p = strchr(optarg, '/');
-			else
-				p = NULL;
-
+			p = strchr(optarg, '/');
 			if (p != NULL) {
+				if (rrtype != NULL || bailiwick != NULL)
+					usage("if -b or -t are specified then "
+					      "-r cannot contain a slash");
+
 				const char *q;
 
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
-					if (bailiwick != NULL)
-						usage("can only specify "
-						      "one bailiwick");
 					bailiwick = strdup(q + 1);
 					rrtype = strndup(p + 1,
 						       (size_t)(q - p - 1));
@@ -385,7 +424,7 @@ main(int argc, char *argv[]) {
 			p = strchr(optarg, '/');
 			if (p != NULL) {
 				name = strndup(optarg, (size_t)(p - optarg));
-				length = strdup(p + 1);
+				prefix_length = strdup(p + 1);
 			} else {
 				name = strdup(optarg);
 			}
@@ -400,6 +439,12 @@ main(int argc, char *argv[]) {
 			name = strdup(optarg);
 			break;
 		    }
+		case 'V': {
+			chosen_verb = find_verb(optarg);
+			if (chosen_verb == NULL)
+				usage("Unsupported verb for -V argument");
+			break;
+		    }
 		case 'l':
 			query_limit = atoi(optarg);
 			if (query_limit < 0)
@@ -410,10 +455,13 @@ main(int argc, char *argv[]) {
 			if (output_limit <= 0)
 				usage("-L must be positive");
 			break;
-		case 'P':
-			page = atoi(optarg);
-			if (page <= 0)
-				usage("-P must be positive");
+		case 'M':
+			if (!parse_long(optarg, &max_count) || (max_count <= 0))
+				usage("-M must be positive");
+			break;
+		case 'O':
+			if (!parse_long(optarg, &offset) || (offset < 0))
+				usage("-O must be zero or positive");
 			break;
 		case 'u':
 			sys = find_system(optarg);
@@ -436,6 +484,8 @@ main(int argc, char *argv[]) {
 		case 't':
 			if (rrtype != NULL)
 				usage("can only specify rrtype one way");
+			if (mode != no_mode && mode != ip_mode)
+				fprintf(stderr, "Warning: -t option should be before the -R, -r, or -n options\n");
 			rrtype = strdup(optarg);
 			break;
 		case 'b':
@@ -457,7 +507,8 @@ main(int argc, char *argv[]) {
 				const char *msg;
 
 				if (find_sort_key(tok) != NULL)
-					usage("Each sort key may only be specified once");
+					usage("Each sort key may only be "
+					      "specified once");
 
 				if ((msg = add_sort_key(tok)) != NULL)
 					usage(msg);
@@ -498,8 +549,10 @@ main(int argc, char *argv[]) {
 			break;
 		case 'I':
 			info = true;
-			pres = present_text;
 			break;
+		case 'v':
+			report_version();
+			my_exit(0, NULL);
 		case 'h':
 			help();
 			my_exit(0, NULL);
@@ -519,8 +572,8 @@ main(int argc, char *argv[]) {
 		escape(&rrtype);
 	if (bailiwick != NULL)
 		escape(&bailiwick);
-	if (length != NULL)
-		escape(&length);
+	if (prefix_length != NULL)
+		escape(&prefix_length);
 	if (output_limit == 0) {
 		/* If not set, default to whatever limit has, unless limit is
 		 *  0 or -1, in which case use a really big integer.
@@ -539,8 +592,8 @@ main(int argc, char *argv[]) {
 			fprintf(stderr, "type = '%s'\n", rrtype);
 		if (bailiwick != NULL)
 			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
-		if (length != NULL)
-			fprintf(stderr, "length = '%s'\n", length);
+		if (prefix_length != NULL)
+			fprintf(stderr, "prefix_length = '%s'\n", prefix_length);
 		if (after != 0) {
 			fprintf(stderr, "after = %ld : ", (long)after);
 			time_print(after, stderr);
@@ -588,8 +641,13 @@ main(int argc, char *argv[]) {
 		if (find_sort_key("data") == NULL)
 			(void) add_sort_key("data");
 	}
-	if (page > 0 && query_limit < 1)
-		usage("If -P page is set then -l query-limit must be positive.");
+
+	assert(chosen_verb != NULL);
+	if (chosen_verb->validate_cmd_opts != NULL)
+		(*chosen_verb->validate_cmd_opts)();
+	if (sys->validate_verb != NULL)
+		if (sys->validate_verb(chosen_verb->cmd_opt_val) == false)
+			usage("That verb is not supported by that system");
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -648,7 +706,8 @@ main(int argc, char *argv[]) {
 		if (mode == ip_mode && rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		command = makepath(mode, name, rrtype, bailiwick, length);
+		command = makepath(mode, name, rrtype, bailiwick,
+				   prefix_length);
 		server_setup();
 		make_curl();
 		pdns_query(command, after, before);
@@ -660,7 +719,7 @@ main(int argc, char *argv[]) {
 	DESTROY(name);
 	DESTROY(rrtype);
 	DESTROY(bailiwick);
-	DESTROY(length);
+	DESTROY(prefix_length);
 	my_exit(exit_code, NULL);
 }
 
@@ -671,10 +730,11 @@ main(int argc, char *argv[]) {
 static void
 help(void) {
 	pdns_sys_t t;
+	verb_t v;
 
 	fprintf(stderr,
-"usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count)[,...]]\n"
-"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-P page_number] {\n"
+"usage: %s [-djsShcIgv] [-p dns|json|csv] [-k (first|last|count|name|data)[,...]]\n"
+"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-O offset] [-V verb] [-M max_count]{\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
 "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -683,31 +743,40 @@ help(void) {
 "\t\t\t-i IP[/PFXLEN]\n"
 "\t\t\t-R RAW-DATA[/TYPE] |\n"
 "\t\t}\n"
-"\t}\n"
-"for -f, stdin must contain lines of the following forms:\n"
-"\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
-"\trdata/name/NAME[/TYPE]\n"
-"\trdata/ip/ADDR[/PFXLEN]\n"
-"for -f, output format will be determined by -p, using --\\n framing\n"
-"for -J, input format is newline-separated JSON, as for -j output\n"
+"\t}\n",
+		program_name);
+	fprintf(stderr,
 "for -A and -B, use abs. YYYY-MM-DD[ HH:MM:SS] "
-		"or rel. %%dw%%dd%%dh%%dm%%ds format\n"
-"use -j as a synonym for -p json.\n"
-"use -s to sort in ascending order, or -S for descending order.\n"
+		"or rel. %%dw%%dd%%dh%%dm%%ds format.\n"
+"use -c to get complete (vs. partial) time matching for -A and -B.\n"
+"use -d one or more times to ramp up the diagnostic output.\n"
+"for -f, stdin must contain lines of the following forms:\n"
+"\t  rrset/name/NAME[/TYPE[/BAILIWICK]]\n"
+"\t  rdata/name/NAME[/TYPE]\n"
+"\t  rdata/ip/ADDR[/PFXLEN]\n"
+"\t output format will be determined by -p, using --\\n framing.\n"
+"use -g to get graveled results.\n"
 "use -h to reliably display this helpful text.\n"
-"use -c to get complete (vs. partial) time matching for -A and -B\n"
-"use -d one or more times to ramp up the diagnostic output\n"
-"use -I to see a system-specific account or key summary in JSON format\n"
-"use -g to get graveled results\n"
-"use -P # to query that page # of results.\n",
-		program_name);
-	fprintf(stderr, "\nsystem must be one of:\n");
+"use -I to see a system-specific account or key summary in JSON format.\n"
+"for -J, input format is newline-separated JSON, as from -j output.\n"
+"use -j as a synonym for -p json.\n"
+"use -M # to stop a summarize verb when count exceeds that max_count.\n"
+"use -O # to offset by #results the results returned by the query.\n"
+"use -s to sort in ascending order, or -S for descending order.\n");
+	fprintf(stderr, "for -u, system must be one of:\n");
 	for (t = pdns_systems; t->name != NULL; t++)
-		fprintf(stderr, " %s\n", t->name);
-	fprintf(stderr, "\n\nGetting Started: \nAdd the API key to ~/.dnsdb-query.conf in the below given format,\n"
-		"\nAPIKEY=\"YOURAPIKEYHERE\"");
-	fprintf(stderr, "\n\ntry   man %s   for a longer description\n",
+		fprintf(stderr, "\t%s\n", t->name);
+	fprintf(stderr, "for -V, verb must be one of:\n");
+	for (v = verbs; v->cmd_opt_val != NULL; v++)
+		fprintf(stderr, "\t%s\n", v->cmd_opt_val);
+	fprintf(stderr, "\nGetting Started: \n\tAdd your API key to ~/.dnsdb-query.conf in the below given format:\n"
+		"\tAPIKEY=\"YOURAPIKEYHERE\"");
+	fprintf(stderr, "\n\nTry   man %s   for full documentation.\n",
 		program_name);
+}
+
+static void report_version(void) {
+	fprintf(stderr, "%s version %s\n", id_swclient, id_version);
 }
 
 /* usage -- display a usage error message, brief usage help text; then exit.
@@ -745,9 +814,9 @@ my_exit(int code, ...) {
 
 	/* globals which may have been initialized, are to be free()'d. */
 	DESTROY(api_key);
-	DESTROY(dnsdb_server);
+	DESTROY(dnsdb_base_url);
 #if WANT_PDNS_CIRCL
-	DESTROY(circl_server);
+	DESTROY(circl_base_url);
 	DESTROY(circl_authinfo);
 #endif
 
@@ -769,6 +838,46 @@ static __attribute__((noreturn)) void
 my_panic(const char *s) {
 	perror(s);
 	my_exit(1, NULL);
+}
+
+/* parse a base 10 long value.	Return true if ok, else return false.
+ */
+static bool parse_long(const char *in, long *out)
+{
+	char *ep;
+	long result = strtol(in, &ep, 10);
+
+	if ((errno == ERANGE && (result == LONG_MAX || result == LONG_MIN)) ||
+	    (errno != 0 && result == 0) ||
+	    (ep == in))
+		return false;
+	*out = result;
+	return true;
+}
+
+/* validate_cmd_opts_lookup -- validate command line options for
+ * a lookup verb
+ */
+static void
+validate_cmd_opts_lookup(void)
+{
+	/* TODO too many local variables would need to be global to check more here */
+
+	if (max_count > 0)
+		usage("max_count only allowed for a summarize verb");
+}
+
+/* validate_cmd_opts_summarize -- validate command line options for
+ * a summarize verb
+ */
+static void
+validate_cmd_opts_summarize(void)
+{
+	if (pres != present_json)
+		usage("Only json output mode is supported with a summarize verb");
+	if (sorted != no_sort)
+		usage("Sorting with a summarize verb makes no sense");
+	/*TODO add more validations? */
 }
 
 /* add_sort_key -- add a key for use by POSIX sort.
@@ -794,7 +903,7 @@ add_sort_key(const char *tok) {
 	}
 	if (key == NULL)
 		return ("key must be one of first, "
-		      "last, count, name, or data");
+			"last, count, name, or data");
 	keys[nkeys++] = (struct sortkey){strdup(tok), strdup(key)};
 	return (NULL);
 }
@@ -821,6 +930,18 @@ find_system(const char *name) {
 	for (t = pdns_systems; t->name != NULL; t++)
 		if (strcasecmp(t->name, name) == 0)
 			return (t);
+	return (NULL);
+}
+
+/* find_verb -- locate a verb by option parameter
+ */
+static verb_t
+find_verb(const char *option) {
+	verb_t v;
+
+	for (v = verbs; v->cmd_opt_val != NULL; v++)
+		if (strcasecmp(option, v->cmd_opt_val) == 0)
+			return (v);
 	return (NULL);
 }
 
@@ -901,12 +1022,12 @@ read_configs(void) {
 			if (strcmp(tok1, "apikey") == 0) {
 				pp = &api_key;
 			} else if (strcmp(tok1, "server") == 0) {
-				pp = &dnsdb_server;
+				pp = &dnsdb_base_url;
 #if WANT_PDNS_CIRCL
 			} else if (strcmp(tok1, "circla") == 0) {
 				pp = &circl_authinfo;
 			} else if (strcmp(tok1, "circls") == 0) {
-				pp = &circl_server;
+				pp = &circl_base_url;
 #endif
 			} else
 				abort();
@@ -933,14 +1054,14 @@ read_environ() {
 		if (debuglev > 0)
 			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
 	}
-	val = getenv(env_dnsdb_server);
+	val = getenv(env_dnsdb_base_url);
 	if (val != NULL) {
-		if (dnsdb_server != NULL)
-			free(dnsdb_server);
-		dnsdb_server = strdup(val);
+		if (dnsdb_base_url != NULL)
+			free(dnsdb_base_url);
+		dnsdb_base_url = strdup(val);
 		if (debuglev > 0)
 			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
-				dnsdb_server);
+				dnsdb_base_url);
 	}
 	if (api_key == NULL) {
 		fprintf(stderr, "no API key given\n");
@@ -1002,7 +1123,7 @@ do_batch(FILE *f, u_long after, u_long before) {
  */
 static char *
 makepath(mode_e mode, const char *name, const char *rrtype,
-	 const char *bailiwick, const char *length)
+	 const char *bailiwick, const char *prefix_length)
 {
 	char *command;
 	int x;
@@ -1035,9 +1156,9 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			my_panic("asprintf");
 		break;
 	case ip_mode:
-		if (length != NULL)
+		if (prefix_length != NULL)
 			x = asprintf(&command, "rdata/ip/%s,%s",
-				     name, length);
+				     name, prefix_length);
 		else
 			x = asprintf(&command, "rdata/ip/%s",
 				     name);
@@ -1394,7 +1515,7 @@ writer_init(u_long after, u_long before) {
 /* print_rateval -- output formatter for rateval.
  */
 static void
-print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
+print_rateval(FILE *outstream, const char *key, const rateval_t tp) {
 	/* if unspecified, output nothing, not even the key name. */
 	if (tp->rk == rk_naught)
 		return;
@@ -1424,8 +1545,8 @@ print_rateval(FILE *outstream, const char *key, const struct rateval *tp) {
  */
 static void
 print_burstrate(FILE *outstream, const char *key,
-		const struct rateval *tp_size,
-		const struct rateval *tp_window) {
+		const rateval_t tp_size,
+		const rateval_t tp_window) {
 	/* if unspecified, output nothing, not even the key name. */
 	if (tp_size->rk == rk_naught || tp_window->rk == rk_naught)
 		return;
@@ -1457,9 +1578,9 @@ print_burstrate(FILE *outstream, const char *key,
 static void
 dnsdb_write_info(reader_t reader) {
 	if (pres == present_text) {
-		struct rate_tuple tup;
+		struct dnsdb_rate_tuple tup;
 		const char *msg;
-		msg = rate_tuple_make(&tup, reader->buf, reader->len);
+		msg = dnsdb_rate_tuple_make(&tup, reader->buf, reader->len);
 		if (msg != NULL) { /* there was an error */
 			puts(msg);
 		} else {
@@ -1469,6 +1590,7 @@ dnsdb_write_info(reader_t reader) {
 			print_rateval(stdout, "limit", &tup.limit);
 			print_rateval(stdout, "remaining", &tup.remaining);
 			print_rateval(stdout, "results_max", &tup.results_max);
+			print_rateval(stdout, "offset_max", &tup.offset_max);
 			print_burstrate(stdout, "burst rate",
 					&tup.burst_size, &tup.burst_window);
 		}
@@ -2213,12 +2335,12 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-/* parse_rateval: parse an optional key value json object.
+/* rateval_make: make an optional key value from the json object.
  *
  * note: a missing key means the corresponding key's value is a "no value".
  */
 static const char *
-parse_rateval(const json_t *obj, const char *key, struct rateval *tp) {
+rateval_make(rateval_t tp, const json_t *obj, const char *key) {
 	json_t *jvalue;
 
 	jvalue = json_object_get(obj, key);
@@ -2254,10 +2376,10 @@ parse_rateval(const json_t *obj, const char *key, struct rateval *tp) {
 	return (NULL);
 }
 
-/* rate_tuple_make -- create one rate tuple object out of a JSON object.
+/* dnsdb_rate_tuple_make -- create one rate tuple object out of a JSON object.
  */
 static const char *
-rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
+dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 	json_t *rate;
@@ -2284,31 +2406,35 @@ rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 		goto ouch;
 	}
 
-	msg = parse_rateval(rate, "reset", &tup->reset);
+	msg = rateval_make(&tup->reset, rate, "reset");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "expires", &tup->expires);
+	msg = rateval_make(&tup->expires, rate, "expires");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "limit", &tup->limit);
+	msg = rateval_make(&tup->limit, rate, "limit");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "remaining", &tup->remaining);
+	msg = rateval_make(&tup->remaining, rate, "remaining");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "results_max", &tup->results_max);
+	msg = rateval_make(&tup->results_max, rate, "results_max");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "burst_size", &tup->burst_size);
+	msg = rateval_make(&tup->offset_max, rate, "offset_max");
 	if (msg != NULL)
 		goto ouch;
 
-	msg = parse_rateval(rate, "burst_window", &tup->burst_window);
+	msg = rateval_make(&tup->burst_size, rate, "burst_size");
+	if (msg != NULL)
+		goto ouch;
+
+	msg = rateval_make(&tup->burst_window, rate, "burst_window");
 	if (msg != NULL)
 		goto ouch;
 
@@ -2317,14 +2443,15 @@ rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 
  ouch:
 	assert(msg != NULL);
-	rate_tuple_unmake(tup);
+	dnsdb_rate_tuple_unmake(tup);
 	return (msg);
 }
 
-/* rate_tuple_unmake -- deallocate heap storage associated with one rate tuple.
+/* dnsdb_rate_tuple_unmake -- deallocate heap storage associated with
+ * one rate tuple.
  */
 static void
-rate_tuple_unmake(rate_tuple_t tup) {
+dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
@@ -2575,37 +2702,58 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
  */
 static char *
 dnsdb_url(const char *path, char *sep) {
-	const char *lookup, *p, *scheme_if_needed, *aggr_if_needed;
-	char skip_if_needed[sizeof("&skip=##################")] = "";
+	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
+	char offset_if_needed[sizeof("&offset=##################")] = "";
+	char max_count_if_needed[sizeof("&max_count=##################")] = "";
 	char *ret;
 	int x;
 
 	/* if the config file didn't specify our server, do it here. */
-	if (dnsdb_server == NULL)
-		dnsdb_server = strdup(sys->server);
-	assert(dnsdb_server != NULL);
+	if (dnsdb_base_url == NULL)
+		dnsdb_base_url = strdup(sys->base_url);
+	assert(dnsdb_base_url != NULL);
 
-	/* if there's a /path after the host, don't add /lookup here. */
+	/* count the number of slashes in the url, 2 is the base line,
+	 * from "//".  3 or more means there's a /path after the host.
+	 * In that case, don't add /[verb] here, but don't allow
+	 * selecting a verb that's not lookup since the /path could
+	 * include its own verb
+	 */
 	x = 0;
-	for (p = dnsdb_server; *p != '\0'; p++)
+	for (p = dnsdb_base_url; *p != '\0'; p++)
 		x += (*p == '/');
-	lookup = (x < 3) ? "/lookup" : "";
+	if (x < 3)
+		if (chosen_verb != NULL && chosen_verb->url_fragment != NULL)
+			verb_path = chosen_verb->url_fragment;
+		else
+			verb_path = "/lookup";
+	else if (chosen_verb != &verbs[0])
+		usage("Cannot specify a verb other than 'lookup' "
+		      "if the server contains a path");
+	else
+		verb_path = "";
 
 	/* supply a scheme if the server string did not. */
 	scheme_if_needed = "";
-	if (strstr(dnsdb_server, "://") == NULL)
+	if (strstr(dnsdb_base_url, "://") == NULL)
 		scheme_if_needed = "https://";
 
 	aggr_if_needed = "";
 	if (gravel)
 		aggr_if_needed = "&aggr=f";
 
-	/* if page > 0, we already ensured the query_limit > 0,
-	 * so skip that many rows of results.
-	 */
-	if (page > 0) {
-		x = snprintf(skip_if_needed, sizeof(skip_if_needed),
-			     "&skip=%d", page * query_limit);
+	if (offset > 0) {
+		x = snprintf(offset_if_needed, sizeof(offset_if_needed),
+			     "&offset=%ld", offset);
+		if (x < 0) {
+			perror("snprintf");
+			ret = NULL;
+		}
+	}
+
+	if (max_count > 0) {
+		x = snprintf(max_count_if_needed, sizeof(max_count_if_needed),
+			     "&max_count=%ld", max_count);
 		if (x < 0) {
 			perror("snprintf");
 			ret = NULL;
@@ -2616,9 +2764,9 @@ dnsdb_url(const char *path, char *sep) {
 	 * by sending the client name and version.
 	 * and provide aggr(egate) flag if needed.
 	 */
-	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s",
-		     scheme_if_needed, dnsdb_server, lookup, path,
-		     id_swclient, id_version, aggr_if_needed, skip_if_needed);
+	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s%s",
+		     scheme_if_needed, dnsdb_base_url, verb_path, path,
+		     id_swclient, id_version, aggr_if_needed, offset_if_needed, max_count_if_needed);
 	if (x < 0) {
 		perror("asprintf");
 		ret = NULL;
@@ -2645,7 +2793,7 @@ dnsdb_request_info(void) {
 
 	/* start a status fetch. */
 	launch_one(writer, dnsdb_url("rate_limit", NULL));
-	
+
 	/* run all jobs to completion. */
 	io_engine(0);
 
@@ -2665,6 +2813,12 @@ dnsdb_auth(reader_t reader) {
 	}
 }
 
+static bool dnsdb_validate_verb(__attribute__((unused)) const char *verb_name)
+{
+	/* All verbs are valid (currently) */
+	return (true);
+}
+
 #if WANT_PDNS_CIRCL
 /* circl_url -- create a URL corresponding to a command-path string.
  *
@@ -2676,7 +2830,7 @@ dnsdb_auth(reader_t reader) {
  * CIRCL pDNS only "understands IP addresses, hostnames or domain names
  * (please note that CIDR block queries are not supported)". exit with an
  * error message if asked to do something the CIRCL server does not handle.
- * 
+ *
  * 1. RRSet query: rrset/name/NAME[/TYPE[/BAILIWICK]]
  * 2. Rdata (name) query: rdata/name/NAME[/TYPE]
  * 3. Rdata (IP address) query: rdata/ip/ADDR[/PFXLEN]
@@ -2685,24 +2839,33 @@ static char *
 circl_url(const char *path, char *sep) {
 	const char *val = NULL;
 	char *ret;
-	int x;
+	int x, pi;
+	/* NULL-terminate array of valid query paths for CIRCL */
+	const char *valid_paths[] =
+		{ "rrset/name/", "rdata/name/", "rdata/ip/", NULL };
 
-	if (circl_server == NULL)
-		circl_server = strdup(sys->server);
-	if (strncasecmp(path, "rrset/name/", 11) == 0) {
-		val = path + 11;
-	} else if (strncasecmp(path, "rdata/name/", 11) == 0) {
-		val = path + 11;
-	} else if (strncasecmp(path, "rdata/ip/", 9) == 0) {
-		val = path + 9;
-	} else
-		abort();
+	if (circl_base_url == NULL)
+		circl_base_url = strdup(sys->base_url);
+
+	for (pi = 0; valid_paths[pi] != NULL; pi++)
+		if (strncasecmp(path, valid_paths[pi], strlen(valid_paths[pi]))
+		    == 0) {
+			val = path + strlen(valid_paths[pi]);
+			break;
+		}
+	if (valid_paths[pi] == NULL) {
+		fprintf(stderr,
+			"Unsupported type of query for CIRCL pDNS: %s\n",
+			path);
+		my_exit(1, NULL);
+	}
+
 	if (strchr(val, '/') != NULL) {
-		fprintf(stderr, "qualifiers not supported by CIRCL pDNS: %s\n",
+		fprintf(stderr, "Qualifiers not supported by CIRCL pDNS: %s\n",
 			val);
 		my_exit(1, NULL);
 	}
-	x = asprintf(&ret, "%s/%s", circl_server, val);
+	x = asprintf(&ret, "%s/%s", circl_base_url, val);
 	if (x < 0)
 		my_panic("asprintf");
 
@@ -2724,4 +2887,13 @@ circl_auth(reader_t reader) {
 				 CURLAUTH_BASIC);
 	}
 }
+
+static bool circl_validate_verb(const char *verb_name)
+{
+	/* Only "lookup" is valid */
+	if (strcasecmp(verb_name, "lookup") == 0)
+		return (true);
+	return (false);
+}
+
 #endif /*WANT_PDNS_CIRCL*/
