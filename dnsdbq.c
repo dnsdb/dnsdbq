@@ -286,7 +286,7 @@ static const struct verb verbs[] = {
 
 static const char *program_name = NULL;
 static char *api_key = NULL;
-static verb_t choosen_verb = &verbs[0];
+static verb_t chosen_verb = &verbs[0];
 static char *dnsdb_base_url = NULL;
 #if WANT_PDNS_CIRCL
 static char *circl_base_url = NULL;
@@ -368,9 +368,9 @@ main(int argc, char *argv[]) {
 
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-                                if (rrtype != NULL || bailiwick != NULL)
-                                        usage("if -b or -t are specified then "
-                                              "-r cannot contain a slash");
+				if (rrtype != NULL || bailiwick != NULL)
+					usage("if -b or -t are specified then "
+					      "-r cannot contain a slash");
 
 				const char *q;
 
@@ -440,8 +440,8 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'V': {
-			choosen_verb = find_verb(optarg);
-			if (choosen_verb == NULL)
+			chosen_verb = find_verb(optarg);
+			if (chosen_verb == NULL)
 				usage("Unsupported verb for -V argument");
 			break;
 		    }
@@ -642,11 +642,11 @@ main(int argc, char *argv[]) {
 			(void) add_sort_key("data");
 	}
 
-	assert(choosen_verb != NULL);
-	if (choosen_verb->validate_cmd_opts != NULL)
-		(*choosen_verb->validate_cmd_opts)();
+	assert(chosen_verb != NULL);
+	if (chosen_verb->validate_cmd_opts != NULL)
+		(*chosen_verb->validate_cmd_opts)();
 	if (sys->validate_verb != NULL)
-		if (sys->validate_verb(choosen_verb->cmd_opt_val) == false)
+		if (sys->validate_verb(chosen_verb->cmd_opt_val) == false)
 			usage("That verb is not supported by that system");
 
 	/* get some input from somewhere, and use it to drive our output. */
@@ -733,7 +733,7 @@ help(void) {
 	verb_t v;
 
 	fprintf(stderr,
-"usage: %s [-djsShcIg] [-p dns|json|csv] [-k (first|last|count|name|data)[,...]]\n"
+"usage: %s [-djsShcIgv] [-p dns|json|csv] [-k (first|last|count|name|data)[,...]]\n"
 "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before] [-u system] [-O offset] [-V verb] [-M max_count]{\n"
 "\t\t-f |\n"
 "\t\t-J inputfile |\n"
@@ -874,7 +874,7 @@ static void
 validate_cmd_opts_summarize(void)
 {
 	if (pres != present_json)
-		usage("Only json output mode is supposed with a summarize verb");
+		usage("Only json output mode is supported with a summarize verb");
 	if (sorted != no_sort)
 		usage("Sorting with a summarize verb makes no sense");
 	/*TODO add more validations? */
@@ -2723,11 +2723,11 @@ dnsdb_url(const char *path, char *sep) {
 	for (p = dnsdb_base_url; *p != '\0'; p++)
 		x += (*p == '/');
 	if (x < 3)
-		if (choosen_verb != NULL && choosen_verb->url_fragment != NULL)
-			verb_path = choosen_verb->url_fragment;
+		if (chosen_verb != NULL && chosen_verb->url_fragment != NULL)
+			verb_path = chosen_verb->url_fragment;
 		else
 			verb_path = "/lookup";
-	else if (choosen_verb != &verbs[0])
+	else if (chosen_verb != &verbs[0])
 		usage("Cannot specify a verb other than 'lookup' "
 		      "if the server contains a path");
 	else

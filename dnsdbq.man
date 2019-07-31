@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl dfgmhjsShcI
+.Op Fl dfgmhjsShcIv
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -39,7 +39,7 @@
 .Op Fl V Ar verb
 .Op Fl J Ar input_file
 .Sh DESCRIPTION
-.Nm dnsdbqv
+.Nm dnsdbq
 constructs and issues queries to the Farsight DNSDB and displays
 responses. It is commonly used as a production command line interface
 to the DNSDB API server. Its default query type is a "lookup" query.
@@ -103,7 +103,7 @@ Queries will be read from standard input and are expected to be be in
 one of the following formats:
 .Bl -enum -offset indent
 .It
-RRSet query:
+RRset query:
 .Ic rrset/name/NAME[/RRTYPE[/BAILIWICK]]
 .It
 Rdata (name) query:
@@ -238,10 +238,10 @@ resource record types.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
 .It Fl V Ar verb
-The verb to perform, what type of query, either "lookup" or
+The verb to perform, i.e. the type of query, either "lookup" or
 "summarize".  The default is the "lookup" verb.  As an option, you can
-request a "summarize" verb.  "summarize" gives you an estimate of
-result size.  At-a glance, it provides information on when a given
+specify the "summarize" verb, which gives you an estimate of
+result size.  At-a-glance, it provides information on when a given
 domain name, IP address or other DNS asset was first-seen and
 last-seen by the global sensor network, as well as the total
 observation count.
@@ -259,7 +259,7 @@ negative unsigned integer : negative offset in seconds from now.
 YYYY-MM-DD [HH:MM:SS] : in absolute form, in UTC time, as DNSDB does its
 fencing using UTC time.
 .It
-%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offsite
+%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offset
 from UTC time, as DNSDB does its fencing using UTC time.
 .Pp
 .El
