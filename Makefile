@@ -10,6 +10,8 @@ CWARN =-W -Wall -Wextra -Wcast-qual -Wpointer-arith -Wwrite-strings \
 	-Wformat-nonliteral
 # try shipping without any warnings
 CWARN   +=-Werror
+# warning about bad indentation, only for clang 6.x+
+#CWARN   +=-Werror=misleading-indentation
 
 CGPROF =
 CDEBUG = -g
