@@ -368,9 +368,9 @@ main(int argc, char *argv[]) {
 
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-			    if (rrtype != NULL || bailiwick != NULL)
-				usage("if -b or -t are specified then -r "
-				      "cannot contain a slash");
+                                if (rrtype != NULL || bailiwick != NULL)
+                                        usage("if -b or -t are specified then "
+                                              "-r cannot contain a slash");
 
 				const char *q;
 
