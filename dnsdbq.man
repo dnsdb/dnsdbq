@@ -210,7 +210,11 @@ for comma separated value output,
 .Ic dns
 for presentation output similar to that of dig(1), or
 .Ic json
-for newline delimited json output.
+for newline delimited json output.  dns format is the default output
+format.
+.Fl p
+is ignored for the "summarize" query type, which only supports the
+json output format.
 .It Fl R Ar raw-data
 specify raw
 .Ic rdata

@@ -873,8 +873,7 @@ validate_cmd_opts_lookup(void)
 static void
 validate_cmd_opts_summarize(void)
 {
-	if (pres != present_json)
-		usage("Only json output mode is supported with a summarize verb");
+	pres = present_json;
 	if (sorted != no_sort)
 		usage("Sorting with a summarize verb makes no sense");
 	/*TODO add more validations? */
