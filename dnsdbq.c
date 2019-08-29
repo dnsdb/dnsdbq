@@ -54,19 +54,21 @@ extern char **environ;
 
 /* Types. */
 
-/* conforms to the fields in the IETF passive DNS COF draft */
+/* conforms to the fields in the IETF passive DNS COF draft
+ * except for num_results which is an addition for summarize.
+ */
 struct pdns_json {
 	json_t	*main,
 		*time_first, *time_last, *zone_first, *zone_last,
 		*bailiwick, *rrname, *rrtype, *rdata,
-		*count;
+		*count, *num_results;
 };
 
 struct pdns_tuple {
 	struct pdns_json  obj;
 	u_long		  time_first, time_last, zone_first, zone_last;
 	const char	 *bailiwick, *rrname, *rrtype, *rdata;
-	json_int_t	  count;
+	json_int_t	  count, num_results;
 };
 typedef struct pdns_tuple *pdns_tuple_t;
 typedef const struct pdns_tuple *pdns_tuple_ct;
@@ -199,6 +201,9 @@ static void present_text(pdns_tuple_ct, const char *, size_t, FILE *);
 static void present_json(pdns_tuple_ct, const char *, size_t, FILE *);
 static void present_csv(pdns_tuple_ct, const char *, size_t, FILE *);
 static void present_csv_line(pdns_tuple_ct, const char *, FILE *);
+static void present_text_summarize(pdns_tuple_ct, const char *, size_t, FILE *);
+static void present_json_summarize(pdns_tuple_ct, const char *, size_t, FILE *);
+static void present_csv_summarize(pdns_tuple_ct, const char *, size_t, FILE *);
 static const char *tuple_make(pdns_tuple_t, const char *, size_t);
 static void print_rateval(FILE *, const char *, const rateval_t);
 static void print_burstrate(FILE *, const char *, const rateval_t,
@@ -861,8 +866,9 @@ static bool parse_long(const char *in, long *out)
 static void
 validate_cmd_opts_lookup(void)
 {
-	/* TODO too many local variables would need to be global to check more here */
-
+	/* TODO too many local variables would need to be global to check
+	 * more here
+	 */
 	if (max_count > 0)
 		usage("max_count only allowed for a summarize verb");
 }
@@ -873,8 +879,14 @@ validate_cmd_opts_lookup(void)
 static void
 validate_cmd_opts_summarize(void)
 {
-	if (pres != present_json)
-		usage("Only json output mode is supported with a summarize verb");
+	/* Remap the presentation format functions for the summarize variants */
+	if (pres == present_json)
+		pres = present_json_summarize;
+	else if (pres == present_csv)
+		pres = present_csv_summarize;
+	else
+		pres = present_text_summarize; /* default to text format */
+
 	if (sorted != no_sort)
 		usage("Sorting with a summarize verb makes no sense");
 	/*TODO add more validations? */
@@ -2109,10 +2121,63 @@ present_text(pdns_tuple_ct tup,
 		putc('\n', outf);
 }
 
+/* present_text_summarize -- render summarize object in "dig" style ascii text.
+ */
+static void
+present_text_summarize(pdns_tuple_ct tup,
+	     const char *jsonbuf __attribute__ ((unused)),
+	     size_t jsonlen __attribute__ ((unused)),
+	     FILE *outf)
+{
+	const char *prefix;
+
+	/* Timestamps. */
+	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
+		fputs(";; record times: ", outf);
+		time_print(tup->time_first, outf);
+		fputs(" .. ", outf);
+		time_print(tup->time_last, outf);
+		putc('\n', outf);
+	}
+	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
+		fputs(";;   zone times: ", outf);
+		time_print(tup->zone_first, outf);
+		fputs(" .. ", outf);
+		time_print(tup->zone_last, outf);
+		putc('\n', outf);
+	}
+
+	/* Count and Num_Results. */
+	prefix = ";;";
+	if (tup->obj.count != NULL) {
+		fprintf(outf, "%s count: %lld", prefix, (long long)tup->count);
+		prefix = ";";
+	}
+	if (tup->obj.num_results != NULL) {
+		fprintf(outf, "%s num_results: %lld", prefix, (long long)tup->num_results);
+		prefix = NULL;
+	}
+
+	putc('\n', outf);
+}
+
 /* present_json -- render one DNSDB tuple as newline-separated JSON.
  */
 static void
 present_json(pdns_tuple_ct tup __attribute__ ((unused)),
+	     const char *jsonbuf,
+	     size_t jsonlen,
+	     FILE *outf)
+{
+	fwrite(jsonbuf, 1, jsonlen, outf);
+	putc('\n', outf);
+}
+
+/* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
+ * Same implementation as present_json()
+ */
+static void
+present_json_summarize(pdns_tuple_ct tup __attribute__ ((unused)),
 	     const char *jsonbuf,
 	     size_t jsonlen,
 	     FILE *outf)
@@ -2211,6 +2276,54 @@ present_csv_line(pdns_tuple_ct tup,
 	putc('\n', outf);
 }
 
+/* present_csv_summarize -- render a summarize result as comma-separated
+ * values (CSV).
+ */
+static void
+present_csv_summarize(pdns_tuple_ct tup,
+	    const char *jsonbuf __attribute__ ((unused)),
+	    size_t jsonlen __attribute__ ((unused)),
+	    FILE *outf)
+{
+	fprintf(outf,
+		"time_first,time_last,zone_first,zone_last,"
+		"count,num_results\n");
+
+	/* Timestamps. */
+	if (tup->obj.time_first != NULL) {
+		putc('"', outf);
+		time_print(tup->time_first, outf);
+		putc('"', outf);
+	}
+	putc(',', outf);
+	if (tup->obj.time_last != NULL) {
+		putc('"', outf);
+		time_print(tup->time_last, outf);
+		putc('"', outf);
+	}
+	putc(',', outf);
+	if (tup->obj.zone_first != NULL) {
+		putc('"', outf);
+		time_print(tup->zone_first, outf);
+		putc('"', outf);
+	}
+	putc(',', outf);
+	if (tup->obj.zone_last != NULL) {
+		putc('"', outf);
+		time_print(tup->zone_last, outf);
+		putc('"', outf);
+	}
+	putc(',', outf);
+
+	/* Count and num_results. */
+	if (tup->obj.count != NULL)
+		fprintf(outf, "%lld", (long long) tup->count);
+	putc(',', outf);
+	if (tup->obj.num_results != NULL)
+		fprintf(outf, "%lld", tup->num_results);
+	putc('\n', outf);
+}
+
 /* tuple_make -- create one DNSDB tuple object out of a JSON object.
  */
 static const char *
@@ -2273,7 +2386,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			json_integer_value(tup->obj.time_last);
 	}
 
-	/* Count and Bailiwick. */
+	/* Count. */
 	tup->obj.count = json_object_get(tup->obj.main, "count");
 	if (tup->obj.count != NULL) {
 		if (!json_is_integer(tup->obj.count)) {
@@ -2282,6 +2395,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		}
 		tup->count = json_integer_value(tup->obj.count);
 	}
+	/* Bailiwick. */
 	tup->obj.bailiwick = json_object_get(tup->obj.main, "bailiwick");
 	if (tup->obj.bailiwick != NULL) {
 		if (!json_is_string(tup->obj.bailiwick)) {
@@ -2289,6 +2403,15 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			goto ouch;
 		}
 		tup->bailiwick = json_string_value(tup->obj.bailiwick);
+	}
+	/* num_results -- just for a summarize. */
+	tup->obj.num_results = json_object_get(tup->obj.main, "num_results");
+	if (tup->obj.num_results != NULL) {
+		if (!json_is_integer(tup->obj.num_results)) {
+			msg = "num_results must be an integer";
+			goto ouch;
+		}
+		tup->num_results = json_integer_value(tup->obj.num_results);
 	}
 
 	/* Records. */

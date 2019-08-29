@@ -211,6 +211,7 @@ for comma separated value output,
 for presentation output similar to that of dig(1), or
 .Ic json
 for newline delimited json output.
+dns format is the default output format.
 .It Fl R Ar raw-data
 specify raw
 .Ic rdata
