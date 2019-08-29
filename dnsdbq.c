@@ -54,8 +54,9 @@ extern char **environ;
 
 /* Types. */
 
-/* conforms to the fields in the IETF passive DNS COF draft */
-/* except for num_results which is an addition for summarize */
+/* conforms to the fields in the IETF passive DNS COF draft
+ * except for num_results which is an addition for summarize.
+ */
 struct pdns_json {
 	json_t	*main,
 		*time_first, *time_last, *zone_first, *zone_last,
@@ -866,7 +867,8 @@ static void
 validate_cmd_opts_lookup(void)
 {
 	/* TODO too many local variables would need to be global to check
-	 * more here */
+	 * more here
+	 */
 	if (max_count > 0)
 		usage("max_count only allowed for a summarize verb");
 }
