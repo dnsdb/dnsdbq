@@ -259,7 +259,7 @@ static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 /* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
 static const char id_swclient[] = "dnsdbq";
-static const char id_version[] = "1.3";
+static const char id_version[] = "1.4";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
