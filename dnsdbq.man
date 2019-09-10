@@ -101,7 +101,7 @@ enable debug mode.  Repeat for more debug output.
 specify batch lookup mode allowing one or more queries to be performed.
 Queries will be read from standard input and are expected to be be in
 one of the following formats:
-.Bl -enum -offset indent
+.Bl -dash -offset indent
 .It
 RRset query:
 .Ic rrset/name/NAME[/RRTYPE[/BAILIWICK]]
@@ -133,13 +133,14 @@ emit usage and quit.
 .It Fl I
 request information from the API server concerning the API key itself, which
 may include rate limit, query quota, query allowance, or privilege levels; the
-output format and content is dependent on the server_sys argument (see -u) and
-upon the
+output format and content is dependent on the server_sys argument (see
+.Ic -u
+) and upon the
 .Fl p
 argument.
-.Fl I -p json
+.Ic -I -p json
 prints the raw info.
-.Fl I -p text
+.Ic -I -p text
 prints
 the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
@@ -204,14 +205,26 @@ to offset by #offset the results returned by the query.
 This gives you incremental results transfers.
 Cannot be negative.  The default is 0.
 .It Fl p Ar output_type
-select output type. Specify
-.Ic csv
-for comma separated value output,
-.Ic dns
-for presentation output similar to that of dig(1), or
-.Ic json
-for newline delimited json output.
-dns format is the default output format.
+select output type. Specify:
+.Bl -tag -width Ds
+.It Cm dns
+for presentation output similar to that of
+.Xr dig 1 .
+.Cm dns
+format is the default output format.
+.It Cm json
+for newline delimited JSON output.
+.It Cm csv
+for comma separated value output. This format is information losing,
+since
+it cannot express multiple resource records that are in a single RRset.
+Instead, each resource record is expressed in a separate line of output.
+.El
+.Pp
+See the
+.Ic DNSDB_TIME_FORMAT
+environment variable below for controlling how human readable
+timestamps are formatted.
 .It Fl R Ar raw-data
 specify raw
 .Ic rdata
@@ -251,7 +264,7 @@ report the version of dnsdbq and exit.
 .El
 .Sh "TIMESTAMP FORMATS"
 Timestamps may be one of following forms.
-.Bl -enum -offset indent
+.Bl -dash -offset indent
 .It
 positive unsigned integer : in Unix epoch format.
 .It
