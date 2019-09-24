@@ -1001,7 +1001,7 @@ read_configs(void) {
 		char *cmd, *tok1, *tok2, *line;
 		size_t n;
 		FILE *f;
-		int x;
+		int x, l;
 
 		x = asprintf(&cmd,
 			     ". %s;"
@@ -1024,24 +1024,27 @@ read_configs(void) {
 		DESTROY(cmd);
 		line = NULL;
 		n = 0;
+		l = 0;
 		while (getline(&line, &n, f) > 0) {
 			char **pp;
 
+			l++;
 			if (strchr(line, '\n') == NULL) {
-				fprintf(stderr, "line too long: '%s'\n", line);
+				fprintf(stderr, "line #%d: too long\n", l);
 				my_exit(1, cf, NULL);
 			}
-			if (debuglev > 0)
-				fprintf(stderr, "conf line: %s", line);
 			tok1 = strtok(line, "\040\012");
 			tok2 = strtok(NULL, "\040\012");
 			if (tok1 == NULL) {
-				fprintf(stderr, "line malformed: %s", line);
+				fprintf(stderr, "line #%d: malformed\n", l);
 				my_exit(1, cf, NULL);
 			}
 			if (tok2 == NULL)
 				continue;
 
+			if (debuglev > 0)
+				fprintf(stderr, "line #%d: sets %s\n",
+					l, tok1);
 			pp = NULL;
 			if (strcmp(tok1, "apikey") == 0) {
 				pp = &api_key;
@@ -1076,7 +1079,7 @@ read_environ() {
 			free(api_key);
 		api_key = strdup(val);
 		if (debuglev > 0)
-			fprintf(stderr, "conf env api_key = '%s'\n", api_key);
+			fprintf(stderr, "conf env api_key was set\n");
 	}
 	val = getenv(env_dnsdb_base_url);
 	if (val != NULL) {
