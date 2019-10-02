@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl dfgmhjsShcIv
+.Op Fl dfgmhjsShcIqv
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -97,6 +97,10 @@ the -c ("completeness") command line option (this is also known as "strict"
 mode).
 .It Fl d
 enable debug mode.  Repeat for more debug output.
+.It Fl v
+prints the program version.
+.It Fl q
+makes the program reticent about warnings.
 .It Fl f
 specify batch lookup mode allowing one or more queries to be performed.
 Queries will be read from standard input and are expected to be be in
