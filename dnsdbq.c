@@ -1412,8 +1412,13 @@ launch_one(writer_t writer, char *url) {
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
+#if CURL_AT_LEAST_VERSION(7,42,0)
+	/* do not allow curl to swallow /./ and /../ in our URLs */
+	curl_easy_setopt(reader->easy, CURLOPT_PATH_AS_IS, 1L);
+#endif /* CURL_AT_LEAST_VERSION */
 	if (debuglev > 2)
 		curl_easy_setopt(reader->easy, CURLOPT_VERBOSE, 1L);
+
 	/* linked-list insert. */
 	reader->next = reader->writer->readers;
 	reader->writer->readers = reader;
