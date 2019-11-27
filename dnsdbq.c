@@ -305,6 +305,7 @@ static bool merge = false;
 static bool complete = false;
 static bool info = false;
 static bool gravel = false;
+static bool quiet = false;
 static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
@@ -346,7 +347,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:M:u:p:t:b:k:J:O:R:V:djfmsShcIgv"))
+			    "A:B:r:n:i:l:L:M:u:p:t:b:k:J:O:R:V:djfmsShcIgqv"))
 	       != -1)
 	{
 		switch (ch) {
@@ -562,6 +563,9 @@ main(int argc, char *argv[]) {
 		case 'v':
 			report_version();
 			my_exit(0, NULL);
+		case 'q':
+			quiet = true;
+			break;
 		case 'h':
 			help();
 			my_exit(0, NULL);
@@ -743,7 +747,7 @@ help(void) {
 	verb_t v;
 
 	fprintf(stderr,
-		"usage: %s [-djsShcIgv] [-p dns|json|csv]\n"
+		"usage: %s [-djsShcIgqv] [-p dns|json|csv]\n"
 		"\t[-k (first|last|count|name|data)[,...]]\n"
 		"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
 		"\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
@@ -776,6 +780,8 @@ help(void) {
 		"use -j as a synonym for -p json.\n"
 		"use -M # to end a summarize op when count exceeds threshold.\n"
 		"use -O # to skip this many results in what is returned.\n"
+		"use -q for warning reticence.\n"
+		"use -v to show the program version.\n"
 		"use -s to sort in ascending order, "
 		"or -S for descending order.\n");
 	fprintf(stderr, "for -u, system must be one of:\n");
@@ -1636,6 +1642,18 @@ dnsdb_write_info(reader_t reader) {
 	}
 }
 
+static void
+warn_404(reader_t reader) {
+	char *url;
+
+	curl_easy_getinfo(reader->easy, CURLINFO_EFFECTIVE_URL, &url);
+	fprintf(stderr, "libcurl: %ld (%s)\n", reader->rcode, url);
+	if (reader->rcode == 404)
+		fprintf(stderr,
+			"please note: 404 might just mean that no records "
+			"matched the search criteria\n");
+}
+
 /* writer_func -- process a block of json text, from filesys or API socket.
  */
 static size_t
@@ -1664,23 +1682,14 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					  &reader->rcode);
 		if (reader->rcode != 200) {
 			if (!reader->once) {
-				char *url;
-
-				curl_easy_getinfo(reader->easy,
-						  CURLINFO_EFFECTIVE_URL,
-						  &url);
-				fprintf(stderr, "libcurl: %ld (%s)\n",
-					reader->rcode, url);
-				if (reader->rcode == 404)
-					fprintf(stderr,
-						"please note: 404 might "
-						"just mean that no records "
-						"matched the search "
-						"criteria\n");
-				fputs("libcurl: ", stderr);
+				if (!quiet) {
+					warn_404(reader);
+					fputs("libcurl: ", stderr);
+				}
 				reader->once = true;
 			}
-			fwrite(reader->buf, 1, reader->len, stderr);
+			if (!quiet)
+				fwrite(reader->buf, 1, reader->len, stderr);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);
