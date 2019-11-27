@@ -34,7 +34,7 @@
 .Op Fl O Ar offset
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rdata
-.Op Fl r Ar rdata
+.Op Fl r Ar rrset
 .Op Fl t Ar rrtype
 .Op Fl V Ar verb
 .Op Fl J Ar input_file
@@ -110,7 +110,7 @@ Rdata (name) query:
 .Ic rdata/name/NAME[/RRTYPE]
 .It
 Rdata (IP address) query:
-.Ic rdata/ip/ADDR[/PFXLEN]
+.Ic rdata/ip/ADDR[,PFXLEN]
 .It
 Rdata (raw) query:
 .Ic rdata/raw/HEX-PAIRS[/RRTYPE]
@@ -230,8 +230,8 @@ specify raw
 .Ic rdata
 data ("right-hand side") query.  The value is an even number of
 hexadecimal digits specifying a raw octet string.
-.It Fl r Ar rdata
-specify rrset ("left-hand side") query.
+.It Fl r Ar rrset
+specify rrset ("left-hand side") name query.
 .It Fl s
 sort output in ascending key order.
 .It Fl S
@@ -344,7 +344,7 @@ rrset/name/\*.dmoz.org
 rdata/name/\*.pbs.org
 rdata/name/\*.opb.org
 rdata/ip/198.35.26.96
-rdata/ip/23.21.237.247
+rdata/ip/23.21.237.0,24
 rdata/raw/0b763d73706631202d616c6c
 $ dnsdbq -j -f < batch.txt > batch-output.json
 $ head -1 batch-output.json | jq .
