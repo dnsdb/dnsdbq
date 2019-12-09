@@ -97,10 +97,6 @@ the -c ("completeness") command line option (this is also known as "strict"
 mode).
 .It Fl d
 enable debug mode.  Repeat for more debug output.
-.It Fl v
-prints the program version.
-.It Fl q
-makes the program reticent about warnings.
 .It Fl f
 specify batch lookup mode allowing one or more queries to be performed.
 Queries will be read from standard input and are expected to be be in
@@ -229,6 +225,8 @@ See the
 .Ic DNSDB_TIME_FORMAT
 environment variable below for controlling how human readable
 timestamps are formatted.
+.It Fl q
+makes the program reticent about warnings.
 .It Fl R Ar raw-data
 specify raw
 .Ic rdata
