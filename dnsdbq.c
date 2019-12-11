@@ -140,7 +140,8 @@ struct pdns_sys {
 };
 typedef const struct pdns_sys *pdns_sys_t;
 
-typedef enum { no_mode = 0, rdata_mode, name_mode, ip_mode, raw_mode } mode_e;
+typedef enum { no_mode = 0, rrset_mode, name_mode, ip_mode,
+	       raw_rrset_mode, raw_name_mode } mode_e;
 
 struct sortbuf { char *base; size_t size; };
 typedef struct sortbuf *sortbuf_t;
@@ -347,7 +348,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:r:n:i:l:L:M:u:p:t:b:k:J:O:R:V:djfmsShcIgqv"))
+			    "A:B:R:r:N:n:i:l:L:M:u:p:t:b:k:J:O:V:djfmsShcIgqv"))
 	       != -1)
 	{
 		switch (ch) {
@@ -365,14 +366,45 @@ main(int argc, char *argv[]) {
 				my_exit(1, NULL);
 			}
 			break;
+		case 'R': {
+			const char *p;
+
+			if (mode != no_mode)
+				usage("-r, -n, -i, -N, or -R "
+				      "can only appear once");
+			assert(name == NULL);
+			mode = raw_rrset_mode;
+
+			p = strchr(optarg, '/');
+			if (p != NULL) {
+				if (rrtype != NULL || bailiwick != NULL)
+					usage("if -b or -t are specified then "
+					      "-R cannot contain a slash");
+
+				const char *q;
+
+				q = strchr(p + 1, '/');
+				if (q != NULL) {
+					bailiwick = strdup(q + 1);
+					rrtype = strndup(p + 1,
+							 (size_t)(q - p - 1));
+				} else {
+					rrtype = strdup(p + 1);
+				}
+				name = strndup(optarg, (size_t)(p - optarg));
+			} else {
+				name = strdup(optarg);
+			}
+			break;
+		    }
 		case 'r': {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, -i, or -R "
+				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
 			assert(name == NULL);
-			mode = rdata_mode;
+			mode = rrset_mode;
 
 			p = strchr(optarg, '/');
 			if (p != NULL) {
@@ -386,7 +418,38 @@ main(int argc, char *argv[]) {
 				if (q != NULL) {
 					bailiwick = strdup(q + 1);
 					rrtype = strndup(p + 1,
-						       (size_t)(q - p - 1));
+							 (size_t)(q - p - 1));
+				} else {
+					rrtype = strdup(p + 1);
+				}
+				name = strndup(optarg, (size_t)(p - optarg));
+			} else {
+				name = strdup(optarg);
+			}
+			break;
+		    }
+		case 'N': {
+			const char *p;
+
+			if (mode != no_mode)
+				usage("-r, -n, -i, -N, or -R "
+				      "can only appear once");
+			assert(name == NULL);
+			mode = raw_name_mode;
+
+			p = strchr(optarg, '/');
+			if (p != NULL) {
+				if (rrtype != NULL || bailiwick != NULL)
+					usage("if -b or -t are specified then "
+					      "-n cannot contain a slash");
+
+				const char *q;
+
+				q = strchr(p + 1, '/');
+				if (q != NULL) {
+					bailiwick = strdup(q + 1);
+					rrtype = strndup(p + 1,
+							 (size_t)(q - p - 1));
 				} else {
 					rrtype = strdup(p + 1);
 				}
@@ -400,22 +463,28 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, -i, or -R "
+				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
 			assert(name == NULL);
 			mode = name_mode;
 
-			if (rrtype == NULL)
-				p = strchr(optarg, '/');
-			else
-				p = NULL;
-
+			p = strchr(optarg, '/');
 			if (p != NULL) {
-				if (strchr(p + 1, '/') != NULL)
-					usage("-n must be NAME[/TYPE] only");
+				if (rrtype != NULL || bailiwick != NULL)
+					usage("if -b or -t are specified then "
+					      "-n cannot contain a slash");
 
+				const char *q;
+
+				q = strchr(p + 1, '/');
+				if (q != NULL) {
+					bailiwick = strdup(q + 1);
+					rrtype = strndup(p + 1,
+							 (size_t)(q - p - 1));
+				} else {
+					rrtype = strdup(p + 1);
+				}
 				name = strndup(optarg, (size_t)(p - optarg));
-				rrtype = strdup(p + 1);
 			} else {
 				name = strdup(optarg);
 			}
@@ -425,7 +494,7 @@ main(int argc, char *argv[]) {
 			const char *p;
 
 			if (mode != no_mode)
-				usage("-r, -n, -i, or -R "
+				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
 			assert(name == NULL);
 			mode = ip_mode;
@@ -436,15 +505,6 @@ main(int argc, char *argv[]) {
 			} else {
 				name = strdup(optarg);
 			}
-			break;
-		    }
-		case 'R': {
-			if (mode != no_mode)
-				usage("-r, -n, -i, or -R "
-				      "can only appear once");
-			assert(name == NULL);
-			mode = raw_mode;
-			name = strdup(optarg);
 			break;
 		    }
 		case 'V': {
@@ -712,8 +772,10 @@ main(int argc, char *argv[]) {
 		if (bailiwick != NULL) {
 			if (mode == ip_mode)
 				usage("can't mix -b with -i");
-			if (mode == raw_mode)
+			if (mode == raw_rrset_mode)
 				usage("can't mix -b with -R");
+			if (mode == raw_name_mode)
+				usage("can't mix -b with -N");
 			if (mode == name_mode)
 				usage("can't mix -b with -n");
 		}
@@ -757,7 +819,8 @@ help(void) {
 		"\t\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
 		"\t\t\t-n NAME[/TYPE] |\n"
 		"\t\t\t-i IP[/PFXLEN] |\n"
-		"\t\t\t-R RAW-DATA[/TYPE]\n"
+		"\t\t\t-N RAW-NAME-DATA[/TYPE]\n"
+		"\t\t\t-R RAW-OWNER-DATA[/TYPE[/BAILIWICK]]\n"
 		"\t\t}\n"
 		"\t}\n",
 		program_name);
@@ -768,8 +831,10 @@ help(void) {
 		"use -d one or more times to ramp up the diagnostic output.\n"
 		"for -f, stdin must contain lines of the following forms:\n"
 		"\t  rrset/name/NAME[/TYPE[/BAILIWICK]]\n"
+		"\t  rrset/raw/HEX-PAIRS[/RRTYPE[/BAILIWICK]]\n"
 		"\t  rdata/name/NAME[/TYPE]\n"
 		"\t  rdata/ip/ADDR[/PFXLEN]\n"
+		"\t  rdata/raw/HEX-PAIRS[/RRTYPE]\n"
 		"\t  (output format will be determined by -p, "
 		"using --\\n framing.\n"
 		"use -g to get graveled results.\n"
@@ -794,7 +859,7 @@ help(void) {
 		"\nGetting Started:\n"
 		"\tAdd your API key to ~/.dnsdb-query.conf like this:\n"
 		"\t\tAPIKEY=\"YOURAPIKEYHERE\"\n");
-	fprintf(stderr, "\nTry   man %s   for full documentation.\n",
+	fprintf(stderr, "\nTry   man %s  for full documentation.\n",
 		program_name);
 }
 
@@ -1162,7 +1227,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 	int x;
 
 	switch (mode) {
-	case rdata_mode:
+	case rrset_mode:
 		if (rrtype != NULL && bailiwick != NULL)
 			x = asprintf(&command, "rrset/name/%s/%s/%s",
 				     name, rrtype, bailiwick);
@@ -1198,7 +1263,17 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 		if (x < 0)
 			my_panic("asprintf");
 		break;
-	case raw_mode:
+	case raw_rrset_mode:
+		if (rrtype != NULL)
+			x = asprintf(&command, "rrset/raw/%s/%s",
+				     name, rrtype);
+		else
+			x = asprintf(&command, "rrset/raw/%s",
+				     name);
+		if (x < 0)
+			my_panic("asprintf");
+		break;
+	case raw_name_mode:
 		if (rrtype != NULL)
 			x = asprintf(&command, "rdata/raw/%s/%s",
 				     name, rrtype);
