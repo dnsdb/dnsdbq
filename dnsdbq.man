@@ -81,12 +81,12 @@ or
 .Bl -tag -width 3n
 .It Fl A Ar timestamp
 Specify a "time_first_after" timestamp. Only results first seen by the
-Farsight sensor network on or after this date will be emitted. See below for
-timestamp formats and examples.
+Farsight sensor network on or after this date will be emitted.
+See the TIMESTAMP FORMATS section for more information about this.
 .It Fl B Ar timestamp
 Specify a "time_first_before" timestamp. Only results first seen by the
-Farsight sensor network on or before this date will be emitted. See below for
-timestamp formats and examples.
+Farsight sensor network on or before this date will be emitted.
+See the TIMESTAMP FORMATS section for more information about this.
 .It Fl b Ar bailiwick
 specify bailiwick (only valid with
 .Fl r
@@ -117,15 +117,24 @@ Rdata (raw) query:
 .Ic rdata/raw/HEX-PAIRS[/RRTYPE]
 .El
 .Pp
+In batch lookup mode, each answer will be succeeded by a -- marker, so that
+programmatic users will know when it is safe to send the next lookup, or if
+lookups are pipelined, to know when one answer has ended and another begun.
+If two
+.Fl f
+options are given, then each answer will also be preceded by a ++ marker
+giving the query string (as read from the batch input) in order to identify
+each answer when a very large batch input is given. The ++ and -- markers
+are not valid JSON, CSV, or DNS (text) format, so caution is required.
+.Pp
 This option cannot be mixed with
 .Fl n ,
 .Fl r ,
 .Fl R ,
 or
 .Fl i .
-An example of how to use
-.Fl f
-is below.
+See the EXAMPLES section for more information on how to use
+.Fl f .
 .It Fl g
 return graveled results.  Default is to return aggregated results (rocks,
 vs. gravel).  Gravel is a feature for providing Volume Across Time.
@@ -152,7 +161,8 @@ IPv4 address range, or an IPv6 network with prefix length. If a
 network lookup is being performed, the delimiter between network
 address and prefix length is a single comma (",") character rather
 than the usual slash ("/") character to avoid clashing with the HTTP
-URI path name separator.  Examples are below.
+URI path name separator.  See EXAMPLES section for more information
+about separator substitution rules.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be used
@@ -193,7 +203,9 @@ query_limit.
 used only with
 .Fl f ,
 this causes all output to be merged rather than serialized, and causes up
-to ten (10) API jobs to execute in parallel.
+to ten (10) API queries to execute in parallel. In this mode there will be no
+"--" marker after each parallel query completes, and the combined output of
+all queries is what will be subject to sorting, if any.
 .It Fl N Ar raw-name
 specify raw
 .Ic rdata

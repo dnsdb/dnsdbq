@@ -301,7 +301,7 @@ static char *circl_base_url = NULL;
 static char *circl_authinfo = NULL;
 #endif
 static pdns_sys_t sys = pdns_systems;
-static bool batch = false;
+static enum { batch_none, batch_original, batch_verbose } batching = batch_none;
 static bool merge = false;
 static bool complete = false;
 static bool info = false;
@@ -603,7 +603,18 @@ main(int argc, char *argv[]) {
 			pres = present_json;
 			break;
 		case 'f':
-			batch = true;
+			switch (batching) {
+			case batch_none:
+				batching = batch_original;
+				break;
+			case batch_original:
+				batching = batch_verbose;
+				break;
+			case batch_verbose:
+				/* FALLTHROUGH */
+			default:
+				usage("too many -f options");
+			}
 			break;
 		case 'm':
 			merge = true;
@@ -682,7 +693,8 @@ main(int argc, char *argv[]) {
 			fprintf(stderr, "query_limit = %d\n", query_limit);
 		if (output_limit != 0)
 			fprintf(stderr, "output_limit = %d\n", output_limit);
-		fprintf(stderr, "batch=%d, merge=%d\n", batch, merge);
+		fprintf(stderr, "batching=%d, merge=%d\n",
+			(int)batching, merge);
 	}
 
 	/* validate some interrelated options. */
@@ -698,8 +710,16 @@ main(int argc, char *argv[]) {
 	}
 	if (complete && !after && !before)
 		usage("-c without -A or -B makes no sense.");
-	if (merge && !batch)
-		usage("using -m without -f makes no sense.");
+	if (merge) {
+		switch (batching) {
+		case batch_none:
+			usage("using -m without -f makes no sense.");
+		case batch_original:
+			break;
+		case batch_verbose:
+			usage("using -m with more than one -f makes no sense.");
+		}
+	}
 	if (nkeys > 0 && sorted == no_sort)
 		usage("using -k without -s or -S makes no sense.");
 	if (nkeys < MAX_KEYS && sorted != no_sort) {
@@ -727,7 +747,7 @@ main(int argc, char *argv[]) {
 	if (json_fd != -1) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -J");
-		if (batch)
+		if (batching != batch_none)
 			usage("can't mix -f with -J");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -J");
@@ -735,7 +755,7 @@ main(int argc, char *argv[]) {
 			usage("can't mix -I with -J");
 		ruminate_json(json_fd, after, before);
 		close(json_fd);
-	} else if (batch) {
+	} else if (batching != batch_none) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -f");
 		if (bailiwick != NULL)
@@ -1182,17 +1202,20 @@ do_batch(FILE *f, u_long after, u_long before) {
 	while (getline(&command, &n, f) > 0) {
 		char *nl = strchr(command, '\n');
 
-		if (nl == NULL) {
-			fprintf(stderr, "batch line too long: %s\n", command);
-			continue;
-		}
-		*nl = '\0';
+		/* the last line of the file may not have a newline. */
+		if (nl != NULL)
+			*nl = '\0';
+		
 		if (debuglev > 0)
 			fprintf(stderr, "do_batch(%s)\n", command);
 
 		/* if not merging, start a writer here instead. */
-		if (!merge)
+		if (!merge) {
 			writer = writer_init(after, before);
+			/* only verbose batching shows query startups. */
+			if (batching == batch_verbose)
+				fprintf(stdout, "++ %s\n", command);
+		}
 
 		/* start one or two curl jobs based on this search. */
 		query_launcher(command, writer, after, before);
@@ -1214,6 +1237,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 	if (merge) {
 		io_engine(0);
 		writer_fini(writer);
+		writer = NULL;
 	}
 }
 
