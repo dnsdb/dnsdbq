@@ -120,13 +120,6 @@ Rdata (raw) query:
 In batch lookup mode, each answer will be succeeded by a -- marker, so that
 programmatic users will know when it is safe to send the next lookup, or if
 lookups are pipelined, to know when one answer has ended and another begun.
-If two
-.Fl f
-options are given, then each answer will also be preceded by a ++ marker
-giving the query string (as read from the batch input) in order to identify
-each answer when a very large batch input is given. The ++ and -- markers
-are not valid JSON, CSV, or DNS (text) format, so caution is required.
-.Pp
 This option cannot be mixed with
 .Fl n ,
 .Fl r ,
@@ -135,6 +128,15 @@ or
 .Fl i .
 See the EXAMPLES section for more information on how to use
 .Fl f .
+.Pp
+If two
+.Fl f
+options are given, then each answer will also be preceded by a ++ marker
+giving the query string (as read from the batch input) in order to identify
+each answer when a very large batch input is given, and the -- marker will
+include an error/noerror indicator and a short message describing the outcome.
+The ++ and -- markers are not valid JSON, CSV, or DNS (text) format, so
+caution is required.
 .It Fl g
 return graveled results.  Default is to return aggregated results (rocks,
 vs. gravel).  Gravel is a feature for providing Volume Across Time.
