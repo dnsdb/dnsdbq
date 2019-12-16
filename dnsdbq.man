@@ -187,11 +187,15 @@ server may use its default limit.
 .It Fl L Ar output_limit
 clamps the number of responses output to
 .Ic output_limit .
-The
+If unset, and if batch and merge modes have not been selected with the
+.Fl f
+and
+.Fl m
+options, then the
 .Fl L
 output limit defaults to the
 .Fl l
-limit's value.
+limit's value. Otherwise the default is no output limit.
 .It Fl M Ar max_count
 for the summarize verb, stops summarizing when the count reaches that
 max_count, which must be a positive integer.  The resulting total

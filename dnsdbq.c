@@ -311,8 +311,8 @@ static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
-static int query_limit = -1;	/* -1 means not set on command line */
-static int output_limit = 0;
+static int query_limit = -1;	/* -1 means not set on command line. */
+static int output_limit = -1;	/* -1 means not set on command line. */
 static long offset = 0;
 static long max_count = 0;
 static CURLM *multi = NULL;
@@ -658,15 +658,8 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (prefix_length != NULL)
 		escape(&prefix_length);
-	if (output_limit == 0) {
-		/* If not set, default to whatever limit has, unless limit is
-		 *  0 or -1, in which case use a really big integer.
-		 */
-		if (query_limit == 0 || query_limit == -1)
-			output_limit = INT32_MAX;
-		else
-			output_limit = query_limit;
-	}
+	if (output_limit == -1 && query_limit != -1 && !merge)
+		output_limit = query_limit;
 
 	/* optionally dump program options as interpreted. */
 	if (debuglev > 0) {
@@ -691,7 +684,7 @@ main(int argc, char *argv[]) {
 		}
 		if (query_limit != -1)
 			fprintf(stderr, "query_limit = %d\n", query_limit);
-		if (output_limit != 0)
+		if (output_limit != -1)
 			fprintf(stderr, "output_limit = %d\n", output_limit);
 		fprintf(stderr, "batching=%d, merge=%d\n",
 			(int)batching, merge);
@@ -1810,7 +1803,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 
 		if (sorted == no_sort &&
-		    output_limit != 0 &&
+		    output_limit != -1 &&
 		    reader->writer->count >= output_limit)
 		{
 			if (debuglev > 2)
@@ -2045,7 +2038,7 @@ writer_fini(writer_t writer) {
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
 			 */
-			if (output_limit != 0 && count >= output_limit)
+			if (output_limit != -1 && count >= output_limit)
 				continue;
 
 			char *nl, *linep;
