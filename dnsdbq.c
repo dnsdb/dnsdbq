@@ -1525,8 +1525,6 @@ launch_one(writer_t writer, char *url) {
 	if (res != CURLM_OK) {
 		fprintf(stderr, "curl_multi_add_handle() failed: %s\n",
 			curl_multi_strerror(res));
-		writer_fini(writer);
-		writer = NULL;
 		my_exit(1, NULL);
 	}
 }
