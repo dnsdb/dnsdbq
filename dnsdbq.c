@@ -37,6 +37,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,37 +90,40 @@ typedef struct rateval *rateval_t;
 typedef const struct rateval *rateval_ct;
 
 struct reader {
-	struct reader		*next;
-	struct writer		*writer;
-	CURL			*easy;
-	struct curl_slist	*hdrs;
-	char			*url;
-	char			*buf;
-	size_t			len;
-	long			rcode;
-	bool			once;
+	struct reader	*next;
+	struct writer	*writer;
+	CURL		*easy;
+	struct curl_slist  *hdrs;
+	char		*url;
+	char		*buf;
+	size_t		len;
+	long		rcode;
 };
 typedef struct reader *reader_t;
 
 struct writer {
-	struct writer		*next;
-	struct reader		*readers;
-	u_long			after;
-	u_long			before;
-	FILE			*sort_stdin;
-	FILE			*sort_stdout;
-	pid_t			sort_pid;
-	int			count;
+	struct writer	*next;
+	struct reader	*readers;
+	u_long		after;
+	u_long		before;
+	FILE		*sort_stdin;
+	FILE		*sort_stdout;
+	pid_t		sort_pid;
+	bool		sort_killed;
+	int		count;
+	char		*status;
+	char		*message;
+	bool		once;
 };
 typedef struct writer *writer_t;
 
 struct verb {
-	const char  *cmd_opt_val;
-	const char  *url_fragment;
+	const char	*cmd_opt_val;
+	const char	*url_fragment;
 	/* validate_cmd_opts can review the command line options and exit
 	 * if some verb-specific command line option constraint is not met.
 	 */
-	void	   (*validate_cmd_opts)(void);
+	void		(*validate_cmd_opts)(void);
 };
 typedef const struct verb *verb_t;
 
@@ -136,6 +140,7 @@ struct pdns_sys {
 	void		(*request_info)(void);
 	void		(*write_info)(reader_t);
 	void		(*auth)(reader_t);
+	const char *	(*status)(reader_t);
 	bool		(*validate_verb)(const char *verb);
 };
 typedef const struct pdns_sys *pdns_sys_t;
@@ -222,6 +227,7 @@ static void sortable_dnsname(sortbuf_t, const char *);
 static void sortable_hexify(sortbuf_t, const u_char *, size_t);
 static void validate_cmd_opts_lookup(void);
 static void validate_cmd_opts_summarize(void);
+static const char *or_else(const char *, const char *);
 
 /* DNSDB specific Forward. */
 
@@ -232,6 +238,7 @@ static char *dnsdb_url(const char *, char *);
 static void dnsdb_request_info(void);
 static void dnsdb_write_info(reader_t);
 static void dnsdb_auth(reader_t);
+static const char *dnsdb_status(reader_t);
 static bool dnsdb_validate_verb(const char*);
 
 #if WANT_PDNS_CIRCL
@@ -239,6 +246,7 @@ static bool dnsdb_validate_verb(const char*);
 
 static char *circl_url(const char *, char *);
 static void circl_auth(reader_t);
+static const char *circl_status(reader_t);
 static bool circl_validate_verb(const char*);
 #endif
 
@@ -266,13 +274,13 @@ static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
 	{ "dnsdb", "https://api.dnsdb.info",
 	  dnsdb_url, dnsdb_request_info, dnsdb_write_info,
-	  dnsdb_auth, dnsdb_validate_verb },
+	  dnsdb_auth, dnsdb_status, dnsdb_validate_verb },
 #if WANT_PDNS_CIRCL
 	{ "circl", "https://www.circl.lu/pdns/query",
 	  circl_url, NULL, NULL,
-	  circl_auth, circl_validate_verb },
+	  circl_auth, circl_status, circl_validate_verb },
 #endif
-	{ NULL, NULL, NULL, NULL, NULL, NULL, NULL }
+	{ NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 static const struct verb verbs[] = {
@@ -285,10 +293,10 @@ static const struct verb verbs[] = {
 #define	MAX_KEYS 5
 #define	MAX_JOBS 8
 
-#define CREATE(p, s) if (p != NULL) { my_panic("non-NULL ptr"); } \
-	else if ((p = malloc(s)) == NULL) { my_panic("malloc failed"); } \
-	else { memset(p, 0, s); }
-#define DESTROY(p) if (p != NULL) { free(p); p = NULL; } else {}
+#define CREATE(p, s) if ((p) != NULL) { my_panic("non-NULL ptr"); }	\
+	else if (((p) = malloc(s)) == NULL) { my_panic("malloc failed"); } \
+	else { memset((p), 0, s); }
+#define DESTROY(p) { if ((p) != NULL) { free(p); (p) = NULL; } }
 
 /* Private. */
 
@@ -301,7 +309,7 @@ static char *circl_base_url = NULL;
 static char *circl_authinfo = NULL;
 #endif
 static pdns_sys_t sys = pdns_systems;
-static bool batch = false;
+static enum { batch_none, batch_original, batch_verbose } batching = batch_none;
 static bool merge = false;
 static bool complete = false;
 static bool info = false;
@@ -311,8 +319,8 @@ static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
-static int query_limit = -1;	/* -1 means not set on command line */
-static int output_limit = 0;
+static int query_limit = -1;	/* -1 means not set on command line. */
+static int output_limit = -1;	/* -1 means not set on command line. */
 static long offset = 0;
 static long max_count = 0;
 static CURLM *multi = NULL;
@@ -603,7 +611,18 @@ main(int argc, char *argv[]) {
 			pres = present_json;
 			break;
 		case 'f':
-			batch = true;
+			switch (batching) {
+			case batch_none:
+				batching = batch_original;
+				break;
+			case batch_original:
+				batching = batch_verbose;
+				break;
+			case batch_verbose:
+				/* FALLTHROUGH */
+			default:
+				usage("too many -f options");
+			}
 			break;
 		case 'm':
 			merge = true;
@@ -647,15 +666,8 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (prefix_length != NULL)
 		escape(&prefix_length);
-	if (output_limit == 0) {
-		/* If not set, default to whatever limit has, unless limit is
-		 *  0 or -1, in which case use a really big integer.
-		 */
-		if (query_limit == 0 || query_limit == -1)
-			output_limit = INT32_MAX;
-		else
-			output_limit = query_limit;
-	}
+	if (output_limit == -1 && query_limit != -1 && !merge)
+		output_limit = query_limit;
 
 	/* optionally dump program options as interpreted. */
 	if (debuglev > 0) {
@@ -680,9 +692,10 @@ main(int argc, char *argv[]) {
 		}
 		if (query_limit != -1)
 			fprintf(stderr, "query_limit = %d\n", query_limit);
-		if (output_limit != 0)
+		if (output_limit != -1)
 			fprintf(stderr, "output_limit = %d\n", output_limit);
-		fprintf(stderr, "batch=%d, merge=%d\n", batch, merge);
+		fprintf(stderr, "batching=%d, merge=%d\n",
+			(int)batching, merge);
 	}
 
 	/* validate some interrelated options. */
@@ -698,8 +711,16 @@ main(int argc, char *argv[]) {
 	}
 	if (complete && !after && !before)
 		usage("-c without -A or -B makes no sense.");
-	if (merge && !batch)
-		usage("using -m without -f makes no sense.");
+	if (merge) {
+		switch (batching) {
+		case batch_none:
+			usage("using -m without -f makes no sense.");
+		case batch_original:
+			break;
+		case batch_verbose:
+			usage("using -m with more than one -f makes no sense.");
+		}
+	}
 	if (nkeys > 0 && sorted == no_sort)
 		usage("using -k without -s or -S makes no sense.");
 	if (nkeys < MAX_KEYS && sorted != no_sort) {
@@ -727,7 +748,7 @@ main(int argc, char *argv[]) {
 	if (json_fd != -1) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -J");
-		if (batch)
+		if (batching != batch_none)
 			usage("can't mix -f with -J");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -J");
@@ -735,7 +756,7 @@ main(int argc, char *argv[]) {
 			usage("can't mix -I with -J");
 		ruminate_json(json_fd, after, before);
 		close(json_fd);
-	} else if (batch) {
+	} else if (batching != batch_none) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -f");
 		if (bailiwick != NULL)
@@ -863,8 +884,10 @@ help(void) {
 		program_name);
 }
 
-static void report_version(void) {
-	fprintf(stderr, "%s version %s\n", id_swclient, id_version);
+static void
+report_version(void) {
+	fprintf(stderr, "%s: %s version %s\n",
+		program_name, id_swclient, id_version);
 }
 
 /* usage -- display a usage error message, brief usage help text; then exit.
@@ -879,7 +902,7 @@ usage(const char *error) {
 	my_exit(1, NULL);
 }
 
-/* my_exit -- free() the heap objects supplied as arguments, then exit.
+/* my_exit -- free all known heap objects, then exit.
  */
 static __attribute__((noreturn)) void
 my_exit(int code, ...) {
@@ -887,20 +910,20 @@ my_exit(int code, ...) {
 	void *p;
 	int n;
 
-	/* our varargs are things to be free()'d. */
+	/* our varargs are things to be freed. */
 	va_start(ap, code);
 	while (p = va_arg(ap, void *), p != NULL)
-		free(p);
+		DESTROY(p);
 	va_end(ap);
 
-	/* writers and readers which are still known, must be free()'d. */
+	/* writers and readers which are still known, must be freed. */
 	while (writers != NULL)
 		writer_fini(writers);
 
 	/* if curl is operating, it must be shut down. */
 	unmake_curl();
 
-	/* globals which may have been initialized, are to be free()'d. */
+	/* globals which may have been initialized, are to be freed. */
 	DESTROY(api_key);
 	DESTROY(dnsdb_base_url);
 #if WANT_PDNS_CIRCL
@@ -908,7 +931,7 @@ my_exit(int code, ...) {
 	DESTROY(circl_authinfo);
 #endif
 
-	/* sort key specifications and computations, are to be free()'d. */
+	/* sort key specifications and computations, are to be freed. */
 	for (n = 0; n < nkeys; n++) {
 		DESTROY(keys[n].specified);
 		DESTROY(keys[n].computed);
@@ -930,8 +953,8 @@ my_panic(const char *s) {
 
 /* parse a base 10 long value.	Return true if ok, else return false.
  */
-static bool parse_long(const char *in, long *out)
-{
+static bool
+parse_long(const char *in, long *out) {
 	char *ep;
 	long result = strtol(in, &ep, 10);
 
@@ -973,6 +996,14 @@ validate_cmd_opts_summarize(void)
 	if (sorted != no_sort)
 		usage("Sorting with a summarize verb makes no sense");
 	/*TODO add more validations? */
+}
+
+/* or_else -- return one pointer or else the other. */
+static const char *
+or_else(const char *p, const char *or_else) {
+	if (p != NULL)
+		return p;
+	return or_else;
 }
 
 /* add_sort_key -- add a key for use by POSIX sort.
@@ -1101,13 +1132,17 @@ read_configs(void) {
 
 			l++;
 			if (strchr(line, '\n') == NULL) {
-				fprintf(stderr, "line #%d: too long\n", l);
+				fprintf(stderr,
+					"%s: conf line #%d: too long\n",
+					program_name, l);
 				my_exit(1, cf, NULL);
 			}
 			tok1 = strtok(line, "\040\012");
 			tok2 = strtok(NULL, "\040\012");
 			if (tok1 == NULL) {
-				fprintf(stderr, "line #%d: malformed\n", l);
+				fprintf(stderr,
+					"%s: conf line #%d: malformed\n",
+					program_name, l);
 				my_exit(1, cf, NULL);
 			}
 			if (tok2 == NULL)
@@ -1147,7 +1182,7 @@ read_environ() {
 	val = getenv(env_api_key);
 	if (val != NULL) {
 		if (api_key != NULL)
-			free(api_key);
+			DESTROY(api_key);
 		api_key = strdup(val);
 		if (debuglev > 0)
 			fprintf(stderr, "conf env api_key was set\n");
@@ -1155,14 +1190,14 @@ read_environ() {
 	val = getenv(env_dnsdb_base_url);
 	if (val != NULL) {
 		if (dnsdb_base_url != NULL)
-			free(dnsdb_base_url);
+			DESTROY(dnsdb_base_url);
 		dnsdb_base_url = strdup(val);
 		if (debuglev > 0)
 			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
 				dnsdb_base_url);
 	}
 	if (api_key == NULL) {
-		fprintf(stderr, "no API key given\n");
+		fprintf(stderr, "%s: no API key given\n", program_name);
 		my_exit(1, NULL);
 	}
 }
@@ -1182,17 +1217,20 @@ do_batch(FILE *f, u_long after, u_long before) {
 	while (getline(&command, &n, f) > 0) {
 		char *nl = strchr(command, '\n');
 
-		if (nl == NULL) {
-			fprintf(stderr, "batch line too long: %s\n", command);
-			continue;
-		}
-		*nl = '\0';
+		/* the last line of the file may not have a newline. */
+		if (nl != NULL)
+			*nl = '\0';
+		
 		if (debuglev > 0)
 			fprintf(stderr, "do_batch(%s)\n", command);
 
 		/* if not merging, start a writer here instead. */
-		if (!merge)
+		if (!merge) {
 			writer = writer_init(after, before);
+			/* only verbose batching shows query startups. */
+			if (batching == batch_verbose)
+				fprintf(stdout, "++ %s\n", command);
+		}
 
 		/* start one or two curl jobs based on this search. */
 		query_launcher(command, writer, after, before);
@@ -1202,10 +1240,23 @@ do_batch(FILE *f, u_long after, u_long before) {
 			io_engine(MAX_JOBS);
 		} else {
 			io_engine(0);
+			switch (batching) {
+			case batch_none:
+				break;
+			case batch_original:
+				fprintf(stdout, "--\n");
+				break;
+			case batch_verbose:
+				fprintf(stdout, "-- %s (%s)\n",
+					or_else(writer->status, "NOERROR"),
+					or_else(writer->message, "no error"));
+				break;
+			default:
+				abort();
+			}
+			fflush(stdout);
 			writer_fini(writer);
 			writer = NULL;
-			fprintf(stdout, "--\n");
-			fflush(stdout);
 		}
 	}
 	DESTROY(command);
@@ -1214,6 +1265,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 	if (merge) {
 		io_engine(0);
 		writer_fini(writer);
+		writer = NULL;
 	}
 }
 
@@ -1407,7 +1459,7 @@ launch(const char *command, writer_t writer,
 			perror("asprintf");
 			my_exit(1, url, NULL);
 		}
-		free(url);
+		DESTROY(url);
 		url = tmp;
 		tmp = NULL;
 		sep = '&';
@@ -1419,7 +1471,7 @@ launch(const char *command, writer_t writer,
 			perror("asprintf");
 			my_exit(1, url, NULL);
 		}
-		free(url);
+		DESTROY(url);
 		url = tmp;
 		tmp = NULL;
 		sep = '&';
@@ -1431,7 +1483,7 @@ launch(const char *command, writer_t writer,
 			perror("asprintf");
 			my_exit(1, url, NULL);
 		}
-		free(url);
+		DESTROY(url);
 		url = tmp;
 		tmp = NULL;
 		sep = '&';
@@ -1443,7 +1495,7 @@ launch(const char *command, writer_t writer,
 			perror("asprintf");
 			my_exit(1, url, NULL);
 		}
-		free(url);
+		DESTROY(url);
 		url = tmp;
 		tmp = NULL;
 		sep = '&';
@@ -1455,7 +1507,7 @@ launch(const char *command, writer_t writer,
 			perror("asprintf");
 			my_exit(1, url, NULL);
 		}
-		free(url);
+		DESTROY(url);
 		url = tmp;
 		tmp = NULL;
 		sep = '&';
@@ -1508,8 +1560,6 @@ launch_one(writer_t writer, char *url) {
 	if (res != CURLM_OK) {
 		fprintf(stderr, "curl_multi_add_handle() failed: %s\n",
 			curl_multi_strerror(res));
-		writer_fini(writer);
-		writer = NULL;
 		my_exit(1, NULL);
 	}
 }
@@ -1528,7 +1578,7 @@ rendezvous(reader_t reader) {
 		reader->hdrs = NULL;
 	}
 	DESTROY(reader->url);
-	free(reader);
+	DESTROY(reader);
 }
 
 /* ruminate_json -- process a json file from the filesys rather than the API.
@@ -1717,16 +1767,14 @@ dnsdb_write_info(reader_t reader) {
 	}
 }
 
+/* writer_status -- install a status code and description in a writer.
+ */
 static void
-warn_404(reader_t reader) {
-	char *url;
-
-	curl_easy_getinfo(reader->easy, CURLINFO_EFFECTIVE_URL, &url);
-	fprintf(stderr, "libcurl: %ld (%s)\n", reader->rcode, url);
-	if (reader->rcode == 404)
-		fprintf(stderr,
-			"please note: 404 might just mean that no records "
-			"matched the search criteria\n");
+writer_status(writer_t writer, const char *status, const char *message) {
+	assert((writer->status == NULL) == (writer->message == NULL));
+	assert(writer->status == NULL);
+	writer->status = strdup(status);
+	writer->message = strdup(message);
 }
 
 /* writer_func -- process a block of json text, from filesys or API socket.
@@ -1756,15 +1804,32 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					  CURLINFO_RESPONSE_CODE,
 					  &reader->rcode);
 		if (reader->rcode != 200) {
-			if (!reader->once) {
+			char *message = strndup(reader->buf, reader->len);
+			char *newline = strchr(message, '\n');
+			if (newline != NULL)
+				*newline = '\0';
+
+			if (!reader->writer->once) {
+				writer_status(reader->writer,
+					      sys->status(reader),
+					      message);
 				if (!quiet) {
-					warn_404(reader);
-					fputs("libcurl: ", stderr);
+					char *url;
+					
+					curl_easy_getinfo(reader->easy,
+							 CURLINFO_EFFECTIVE_URL,
+							  &url);
+					fprintf(stderr,
+						"%s: libcurl: %ld (%s)\n",
+						program_name, reader->rcode,
+						url);
 				}
-				reader->once = true;
+				reader->writer->once = true;
 			}
 			if (!quiet)
-				fwrite(reader->buf, 1, reader->len, stderr);
+				fprintf(stderr, "%s: libcurl: [%s]\n",
+					program_name, message);
+			DESTROY(message);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);
@@ -1786,7 +1851,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 
 		if (sorted == no_sort &&
-		    output_limit != 0 &&
+		    output_limit != -1 &&
 		    reader->writer->count >= output_limit)
 		{
 			if (debuglev > 2)
@@ -1933,16 +1998,16 @@ input_blob(const char *buf, size_t len,
 			(unsigned long)first,
 			(unsigned long)last,
 			(unsigned long)tup.count,
-			(dyn_rrname != NULL) ? dyn_rrname : "n/a",
-			(dyn_rdata != NULL) ? dyn_rdata : "n/a",
+			or_else(dyn_rrname, "n/a"),
+			or_else(dyn_rdata, "n/a"),
 			(int)len, (int)len, buf);
 		if (debuglev > 1) {
 			fprintf(stderr, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
 				(unsigned long)first,
 				(unsigned long)last,
 				(unsigned long)tup.count,
-				(dyn_rrname != NULL) ? dyn_rrname : "n/a",
-				(dyn_rdata != NULL) ? dyn_rdata : "n/a",
+				or_else(dyn_rrname, "n/a"),
+				or_else(dyn_rdata, "n/a"),
 				(int)len, (int)len, buf);
 		}
 		DESTROY(dyn_rrname);
@@ -2021,8 +2086,13 @@ writer_fini(writer_t writer) {
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
 			 */
-			if (output_limit != 0 && count >= output_limit)
+			if (output_limit != -1 && count >= output_limit) {
+				if (!writer->sort_killed) {
+					kill(writer->sort_pid, SIGTERM);
+					writer->sort_killed = true;
+				}
 				continue;
+			}
 
 			char *nl, *linep;
 			const char *msg;
@@ -2095,12 +2165,20 @@ writer_fini(writer_t writer) {
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
-			if (status != 0)
+			if (!writer->sort_killed && status != 0)
 				fprintf(stderr, "sort exit status is %u\n",
 					status);
 		}
 	}
-	free(writer);
+
+	/* drop message and status strings if present. */
+	assert((writer->status != NULL) == (writer->status != NULL));
+	if (writer->status != NULL)
+		DESTROY(writer->status);
+	if (writer->message != NULL)
+		DESTROY(writer->message);
+
+	DESTROY(writer);
 }
 
 /* io_engine -- let libcurl run until there are few enough outstanding jobs.
@@ -2758,7 +2836,7 @@ escape(char **src) {
 		fprintf(stderr, "curl_escape(%s) failed\n", *src);
 		my_exit(1, NULL);
 	}
-	free(*src);
+	DESTROY(*src);
 	*src = strdup(escaped);
 	curl_free(escaped);
 	escaped = NULL;
@@ -3037,8 +3115,16 @@ dnsdb_auth(reader_t reader) {
 	}
 }
 
-static bool dnsdb_validate_verb(__attribute__((unused)) const char *verb_name)
-{
+static const char *
+dnsdb_status(reader_t reader) {
+	/* early (current) versions of DNSDB returns 404 for "no rrs found". */
+	if (reader->rcode == 404)
+		return "NOERROR";
+	return "ERROR";
+}
+
+static bool
+dnsdb_validate_verb(__attribute__((unused)) const char *verb_name) {
 	/* All verbs are valid (currently) */
 	return (true);
 }
@@ -3112,8 +3198,13 @@ circl_auth(reader_t reader) {
 	}
 }
 
-static bool circl_validate_verb(const char *verb_name)
-{
+static const char *
+circl_status(reader_t reader __attribute__((unused))) {
+	return "ERROR";
+}
+
+static bool
+circl_validate_verb(const char *verb_name) {
 	/* Only "lookup" is valid */
 	if (strcasecmp(verb_name, "lookup") == 0)
 		return (true);
