@@ -943,8 +943,8 @@ my_panic(const char *s) {
 
 /* parse a base 10 long value.	Return true if ok, else return false.
  */
-static bool parse_long(const char *in, long *out)
-{
+static bool
+parse_long(const char *in, long *out) {
 	char *ep;
 	long result = strtol(in, &ep, 10);
 
