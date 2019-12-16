@@ -109,6 +109,7 @@ struct writer {
 	FILE		*sort_stdin;
 	FILE		*sort_stdout;
 	pid_t		sort_pid;
+	bool		sort_killed;
 	int		count;
 };
 typedef struct writer *writer_t;
@@ -2036,8 +2037,13 @@ writer_fini(writer_t writer) {
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
 			 */
-			if (output_limit != -1 && count >= output_limit)
+			if (output_limit != -1 && count >= output_limit) {
+				if (!writer->sort_killed) {
+					kill(writer->sort_pid, SIGTERM);
+					writer->sort_killed = true;
+				}
 				continue;
+			}
 
 			char *nl, *linep;
 			const char *msg;
@@ -2110,7 +2116,7 @@ writer_fini(writer_t writer) {
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
-			if (status != 0)
+			if (!writer->sort_killed && status != 0)
 				fprintf(stderr, "sort exit status is %u\n",
 					status);
 		}
