@@ -37,6 +37,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -97,7 +98,6 @@ struct reader {
 	char		*buf;
 	size_t		len;
 	long		rcode;
-	bool		once;
 };
 typedef struct reader *reader_t;
 
@@ -113,6 +113,7 @@ struct writer {
 	int		count;
 	char		*status;
 	char		*message;
+	bool		once;
 };
 typedef struct writer *writer_t;
 
@@ -1808,7 +1809,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			if (newline != NULL)
 				*newline = '\0';
 
-			if (!reader->once) {
+			if (!reader->writer->once) {
 				writer_status(reader->writer,
 					      sys->status(reader),
 					      message);
@@ -1823,7 +1824,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 						program_name, reader->rcode,
 						url);
 				}
-				reader->once = true;
+				reader->writer->once = true;
 			}
 			if (!quiet)
 				fprintf(stderr, "%s: libcurl: [%s]\n",
