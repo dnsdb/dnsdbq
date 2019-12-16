@@ -89,37 +89,37 @@ typedef struct rateval *rateval_t;
 typedef const struct rateval *rateval_ct;
 
 struct reader {
-	struct reader		*next;
-	struct writer		*writer;
-	CURL			*easy;
-	struct curl_slist	*hdrs;
-	char			*url;
-	char			*buf;
-	size_t			len;
-	long			rcode;
-	bool			once;
+	struct reader	*next;
+	struct writer	*writer;
+	CURL		*easy;
+	struct curl_slist  *hdrs;
+	char		*url;
+	char		*buf;
+	size_t		len;
+	long		rcode;
+	bool		once;
 };
 typedef struct reader *reader_t;
 
 struct writer {
-	struct writer		*next;
-	struct reader		*readers;
-	u_long			after;
-	u_long			before;
-	FILE			*sort_stdin;
-	FILE			*sort_stdout;
-	pid_t			sort_pid;
-	int			count;
+	struct writer	*next;
+	struct reader	*readers;
+	u_long		after;
+	u_long		before;
+	FILE		*sort_stdin;
+	FILE		*sort_stdout;
+	pid_t		sort_pid;
+	int		count;
 };
 typedef struct writer *writer_t;
 
 struct verb {
-	const char  *cmd_opt_val;
-	const char  *url_fragment;
+	const char	*cmd_opt_val;
+	const char	*url_fragment;
 	/* validate_cmd_opts can review the command line options and exit
 	 * if some verb-specific command line option constraint is not met.
 	 */
-	void	   (*validate_cmd_opts)(void);
+	void		(*validate_cmd_opts)(void);
 };
 typedef const struct verb *verb_t;
 
