@@ -361,14 +361,14 @@ main(int argc, char *argv[]) {
 	{
 		switch (ch) {
 		case 'A':
-			if (!time_get(optarg, &after)) {
+			if (!time_get(optarg, &after) || after == 0UL) {
 				fprintf(stderr, "bad -A timestamp: '%s'\n",
 					optarg);
 				my_exit(1, NULL);
 			}
 			break;
 		case 'B':
-			if (!time_get(optarg, &before)) {
+			if (!time_get(optarg, &before) || before == 0UL) {
 				fprintf(stderr, "bad -B timestamp: '%s'\n",
 					optarg);
 				my_exit(1, NULL);
