@@ -319,8 +319,8 @@ static int debuglev = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
-static int query_limit = -1;	/* -1 means not set on command line. */
-static int output_limit = -1;	/* -1 means not set on command line. */
+static long query_limit = -1;	/* -1 means not set on command line. */
+static long output_limit = -1;	/* -1 means not set on command line. */
 static long offset = 0;
 static long max_count = 0;
 static CURLM *multi = NULL;
@@ -522,13 +522,13 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'l':
-			query_limit = atoi(optarg);
-			if (query_limit < 0)
+			if (!parse_long(optarg, &query_limit) ||
+			    (query_limit < 0))
 				usage("-l must be zero or positive");
 			break;
 		case 'L':
-			output_limit = atoi(optarg);
-			if (output_limit <= 0)
+			if (!parse_long(optarg, &output_limit) ||
+			    (output_limit <= 0))
 				usage("-L must be positive");
 			break;
 		case 'M':
@@ -691,9 +691,9 @@ main(int argc, char *argv[]) {
 			putc('\n', stderr);
 		}
 		if (query_limit != -1)
-			fprintf(stderr, "query_limit = %d\n", query_limit);
+			fprintf(stderr, "query_limit = %ld\n", query_limit);
 		if (output_limit != -1)
-			fprintf(stderr, "output_limit = %d\n", output_limit);
+			fprintf(stderr, "output_limit = %ld\n", output_limit);
 		fprintf(stderr, "batching=%d, merge=%d\n",
 			(int)batching, merge);
 	}
@@ -1454,7 +1454,7 @@ launch(const char *command, writer_t writer,
 		my_exit(1, NULL);
 
 	if (query_limit != -1) {
-		x = asprintf(&tmp, "%s%c" "limit=%d", url, sep, query_limit);
+		x = asprintf(&tmp, "%s%c" "limit=%ld", url, sep, query_limit);
 		if (x < 0) {
 			perror("asprintf");
 			my_exit(1, url, NULL);
@@ -1856,7 +1856,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		{
 			if (debuglev > 2)
 				fprintf(stderr,
-					"hit output limit %d\n", output_limit);
+					"hit output limit %ld\n", output_limit);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);
@@ -2160,7 +2160,7 @@ writer_fini(writer_t writer) {
 		fclose(writer->sort_stdout);
 		if (debuglev > 0)
 			fprintf(stderr,
-				"closed sort_stdout, read %d objs (lim %d)\n",
+				"closed sort_stdout, read %d objs (lim %ld)\n",
 				count, query_limit);
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
