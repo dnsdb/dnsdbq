@@ -233,11 +233,10 @@ Cannot be negative.  The default is 0.
 .It Fl p Ar output_type
 select output type. Specify:
 .Bl -tag -width Ds
-.It Cm dns
-for presentation output similar to that of
-.Xr dig 1 .
+.It Cm text
+for presentation output meant to be human-readable. This is the default.
 .Cm dns
-format is the default output format.
+is a synonym, for compatibility with older programmatic callers.
 .It Cm json
 for newline delimited JSON output.
 .It Cm csv
