@@ -80,12 +80,14 @@ or
 .Sh OPTIONS
 .Bl -tag -width 3n
 .It Fl A Ar timestamp
-Specify a "time_first_after" timestamp. Only results first seen by the
-Farsight sensor network on or after this date will be emitted.
+Specify a backward time fence. Only results seen by the passive DNS
+on or after this date will be selected. See also
+.Fl c .
 See the TIMESTAMP FORMATS section for more information about this.
 .It Fl B Ar timestamp
-Specify a "time_first_before" timestamp. Only results first seen by the
-Farsight sensor network on or before this date will be emitted.
+Specify a forward time fence. Only results seen by the passive DNS
+sensor network on or before this date will be selected. See also
+.Fl c .
 See the TIMESTAMP FORMATS section for more information about this.
 .It Fl b Ar bailiwick
 specify bailiwick (only valid with
