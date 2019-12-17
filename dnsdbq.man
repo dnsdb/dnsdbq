@@ -229,7 +229,7 @@ are somewhat more expensive than right-hand wildcard queries.
 .It Fl O Ar offset
 to offset by #offset the results returned by the query.  
 This gives you incremental results transfers.
-Cannot be negative.  The default is 0.
+Cannot be negative. The default is 0.
 .It Fl p Ar output_type
 select output type. Specify:
 .Bl -tag -width Ds
