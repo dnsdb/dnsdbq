@@ -268,7 +268,7 @@ static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 /* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
 static const char id_swclient[] = "dnsdbq";
-static const char id_version[] = "1.4";
+static const char id_version[] = "1.5";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the default. */
@@ -2172,7 +2172,7 @@ writer_fini(writer_t writer) {
 	}
 
 	/* drop message and status strings if present. */
-	assert((writer->status != NULL) == (writer->status != NULL));
+	assert((writer->status != NULL) == (writer->message != NULL));
 	if (writer->status != NULL)
 		DESTROY(writer->status);
 	if (writer->message != NULL)
