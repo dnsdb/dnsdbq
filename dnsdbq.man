@@ -271,9 +271,17 @@ hexadecimal digits specifying a raw octet string.
 .It Fl r Ar rrset
 specify rrset ("left-hand side") name query.
 .It Fl s
-sort output in ascending key order.
+sort output in ascending key order. Limits (if any) specified by
+.Fl l
+and
+.Fl L
+will be applied before and after sorting, respectively.
 .It Fl S
-sort output in descending key order.
+sort output in descending key order. Limits (if any) specified by
+.Fl l
+and
+.Fl L
+will be applied before and after sorting, respectively.
 .It Fl t Ar rrtype
 specify the resource record type desired.  Default is ANY.
 If present, this option should precede any
