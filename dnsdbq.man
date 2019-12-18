@@ -180,11 +180,12 @@ URI path name separator.  See EXAMPLES section for more information
 about separator substitution rules.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
-preference to -f (batch mode) or -r, -n, or -i (query mode). This can be used
+preference to -f (batch mode) or query mode. This can be used
 to reprocess the output from a prior invocation which used
 .Fl j
-(-p json).  If
-input_file is "-" then standard input (stdin) will be read.
+(-p json). Sorting, limits, and time fences will work. Specification of a
+domain name, RRtype, Rdata, or offset is not supported at this time.
+If input_file is "-" then standard input (stdin) will be read.
 .It Fl j
 specify newline delimited json output mode.
 .It Fl k Ar sort_keys

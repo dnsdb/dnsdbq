@@ -758,6 +758,18 @@ main(int argc, char *argv[]) {
 			usage("can't mix -b with -J");
 		if (info)
 			usage("can't mix -I with -J");
+		if (rrtype != NULL)
+			usage("can't mix -t with -J");
+		if (chosen_verb != &verbs[DEFAULT_VERB])
+			usage("can't mix -V with -J");
+		if (sys != &pdns_systems[DEFAULT_SYS])
+			usage("can't mix -u with -J");
+		if (max_count > 0)
+			usage("can't mix -M with -J");
+		if (gravel)
+			usage("can't mix -g with -J");
+		if (offset != 0)
+			usage("can't mix -O with -J");
 		ruminate_json(json_fd, after, before);
 		close(json_fd);
 	} else if (batching != batch_none) {
@@ -974,8 +986,7 @@ parse_long(const char *in, long *out) {
  * a lookup verb
  */
 static void
-validate_cmd_opts_lookup(void)
-{
+validate_cmd_opts_lookup(void) {
 	/* TODO too many local variables would need to be global to check
 	 * more here
 	 */
@@ -987,8 +998,7 @@ validate_cmd_opts_lookup(void)
  * a summarize verb
  */
 static void
-validate_cmd_opts_summarize(void)
-{
+validate_cmd_opts_summarize(void) {
 	/* Remap the presentation format functions for the summarize variants */
 	if (pres == present_json)
 		pres = present_json_summarize;
@@ -3032,7 +3042,7 @@ dnsdb_url(const char *path, char *sep) {
 	for (p = dnsdb_base_url; *p != '\0'; p++)
 		x += (*p == '/');
 	if (x < 3)
-		if (chosen_verb != NULL && chosen_verb->url_fragment != NULL)
+		if (chosen_verb->url_fragment != NULL)
 			verb_path = chosen_verb->url_fragment;
 		else
 			verb_path = "/lookup";
