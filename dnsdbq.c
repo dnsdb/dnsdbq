@@ -1749,7 +1749,7 @@ dnsdb_write_info(reader_t reader) {
 		if (msg != NULL) { /* there was an error */
 			puts(msg);
 		} else {
-			fprintf(stdout, "quota:\n");
+			fprintf(stdout, "rate:\n");
 			print_rateval("reset", &tup.reset, stdout);
 			print_rateval("expires", &tup.expires, stdout);
 			print_rateval("limit", &tup.limit, stdout);
