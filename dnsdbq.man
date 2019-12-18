@@ -81,12 +81,12 @@ or
 .Bl -tag -width 3n
 .It Fl A Ar timestamp
 Specify a backward time fence. Only results seen by the passive DNS
-on or after this date will be selected. See also
+on or after this time will be selected. See also
 .Fl c .
 See the TIMESTAMP FORMATS section for more information about this.
 .It Fl B Ar timestamp
 Specify a forward time fence. Only results seen by the passive DNS
-sensor network on or before this date will be selected. See also
+sensor network on or before this time will be selected. See also
 .Fl c .
 See the TIMESTAMP FORMATS section for more information about this.
 .It Fl b Ar bailiwick
