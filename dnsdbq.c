@@ -449,7 +449,7 @@ main(int argc, char *argv[]) {
 			if (p != NULL) {
 				if (rrtype != NULL || bailiwick != NULL)
 					usage("if -b or -t are specified then "
-					      "-n cannot contain a slash");
+					      "-N cannot contain a slash");
 
 				const char *q;
 
@@ -563,7 +563,7 @@ main(int argc, char *argv[]) {
 			if (mode != no_mode && mode != ip_mode)
 				fprintf(stderr,
 					"Warning: -t option should be before "
-					"the -R, -r, or -n options\n");
+					"the -R, -r, -N, or -n options\n");
 			rrtype = strdup(optarg);
 			break;
 		case 'b':
