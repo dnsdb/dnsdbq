@@ -34,9 +34,9 @@
 .Op Fl M Ar max_count
 .Op Fl O Ar offset
 .Op Fl p Ar output_type
+.Op Fl t Ar rrtype
 .Op Fl R Ar raw_rrset
 .Op Fl r Ar rrset
-.Op Fl t Ar rrtype
 .Op Fl V Ar verb
 .Op Fl J Ar input_file
 .Sh DESCRIPTION
@@ -269,6 +269,7 @@ specify the resource record type desired.  If present, this option
 should be before any
 .Fl R ,
 .Fl r ,
+.Fl N ,
 or
 .Fl n
 options.  This option is not allowed if the
