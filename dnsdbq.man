@@ -117,8 +117,11 @@ Queries will be read from standard input and are expected to be be in
 one of the following formats:
 .Bl -dash -offset indent
 .It
-RRset query:
+RRset (raw) query:
 .Ic rrset/name/NAME[/RRTYPE[/BAILIWICK]]
+.It
+RRset (raw) query:
+.Ic rrset/raw/HEX[/RRTYPE[/BAILIWICK]]
 .It
 Rdata (name) query:
 .Ic rdata/name/NAME[/RRTYPE]
@@ -127,8 +130,14 @@ Rdata (IP address) query:
 .Ic rdata/ip/ADDR[,PFXLEN]
 .It
 Rdata (raw) query:
-.Ic rdata/raw/HEX-PAIRS[/RRTYPE]
+.Ic rdata/raw/HEX[/RRTYPE]
 .El
+.Pp
+For raw queries, the HEX value is an even number of hexadecimal digits
+specifying a raw octet string.  The "raw" wire-format encodings are
+standardized. The embedding of these in dnstable is documented in the
+.Xr dnstable-encoding 5
+manual page.
 .Pp
 In batch lookup mode, each answer will be succeeded by a -- marker, so that
 programmatic users will know when it is safe to send the next lookup, or if
@@ -226,13 +235,10 @@ this causes all output to be merged rather than serialized, and causes up
 to ten (10) API queries to execute in parallel. In this mode there will be no
 "--" marker after each parallel query completes, and the combined output of
 all queries is what will be subject to sorting, if any.
-.It Fl N Ar raw-name
+.It Fl N Ar HEX
 specify raw
 .Ic rdata
-data ("right-hand side") query.  The value is an even number of
-hexadecimal digits specifying a raw octet string.  The "raw" wire-format encodings are standardized. The embedding of these in dnstable is documented in the
-.Xr dnstable-encoding 5
-manual page.
+data ("right-hand side") query. HEX is as described above.
 .It Fl n Ar name
 specify
 .Ic rdata
@@ -266,11 +272,10 @@ environment variable below for controlling how human readable
 timestamps are formatted.
 .It Fl q
 makes the program reticent about warnings.
-.It Fl R Ar raw-rrset
+.It Fl R Ar HEX
 specify raw
 .Ic rrset
-owner data ("left-hand side") query.  The value is an even number of
-hexadecimal digits specifying a raw octet string.
+owner data ("left-hand side") query. HEX is as described above.
 .It Fl r Ar rrset
 specify rrset ("left-hand side") name query.
 .It Fl s
