@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl dfgmhjsShcI
+.Op Fl dfgmhjsShcIqv
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -28,19 +28,23 @@
 .Op Fl l Ar query_limit
 .Op Fl L Ar output_limit
 .Op Fl u Ar server_sys
+.Op Fl N Ar raw_name
 .Op Fl n Ar name
 .Op Fl k Ar sort_keys
-.Op Fl P Ar page
+.Op Fl M Ar max_count
+.Op Fl O Ar offset
 .Op Fl p Ar output_type
-.Op Fl R Ar raw_rdata
-.Op Fl r Ar rdata
 .Op Fl t Ar rrtype
+.Op Fl R Ar raw_rrset
+.Op Fl r Ar rrset
+.Op Fl V Ar verb
 .Op Fl J Ar input_file
 .Sh DESCRIPTION
 .Nm dnsdbq
-constructs and issues queries to the Farsight DNSDB and displays responses. It
-is commonly used as a production command line interface to the DNSDB API
-server.
+constructs and issues queries to the Farsight DNSDB and displays
+responses. It is commonly used as a production command line interface
+to the DNSDB API server. Its default query type is a "lookup" query.
+As an option, it can issue a "summarize" query type.
 .Pp
 DNSDB is a database that stores and indexes both the passive DNS data
 available via Farsight Security's Security Information Exchange as well as the
@@ -76,91 +80,119 @@ or
 .Sh OPTIONS
 .Bl -tag -width 3n
 .It Fl A Ar timestamp
-Specify a "time_first_after" timestamp. Only results first seen by the
-Farsight sensor network on or after this date will be emitted. See below for
-timestamp formats and examples.
+Specify a backward time fence. Only results seen by the passive DNS
+on or after this time will be selected. See also
+.Fl c .
+See the TIMESTAMP FORMATS section for more information about this.
 .It Fl B Ar timestamp
-Specify a "time_first_before" timestamp. Only results first seen by the
-Farsight sensor network on or before this date will be emitted. See below for
-timestamp formats and examples.
+Specify a forward time fence. Only results seen by the passive DNS
+sensor network on or before this time will be selected. See also
+.Fl c .
+See the TIMESTAMP FORMATS section for more information about this.
 .It Fl b Ar bailiwick
 specify bailiwick (only valid with
 .Fl r
-queries).  If bailiwick is specified, but rrtype is not specified, then a default rrtype of ANY will be used.
+queries).
 .It Fl c
-by default, -A and -B (separately or together) will select partial overlaps of
-database tuples and time search criteria. To match only complete overlaps, add
-the -c ("completeness") command line option (this is also known as "strict"
-mode).
+by default,
+.Fl A
+and
+.Fl B
+(separately or together) will select partial overlaps of database tuples and
+time search criteria. To match only complete overlaps, add the -c
+("completeness") command line option (this is also known as "strict"
+mode). Note that without
+.Fl c ,
+the use of
+.Fl A
+and
+.Fl B
+together will cause this program to make two upstream queries, and then merge
+and deduplicate the two results.
 .It Fl d
 enable debug mode.  Repeat for more debug output.
 .It Fl f
 specify batch lookup mode allowing one or more queries to be performed.
 Queries will be read from standard input and are expected to be be in
 one of the following formats:
-.Bl -enum -offset indent
+.Bl -dash -offset indent
 .It
-RRSet query:
+RRset query:
 .Ic rrset/name/NAME[/RRTYPE[/BAILIWICK]]
 .It
 Rdata (name) query:
 .Ic rdata/name/NAME[/RRTYPE]
 .It
 Rdata (IP address) query:
-.Ic rdata/ip/ADDR[/PFXLEN]
+.Ic rdata/ip/ADDR[,PFXLEN]
 .It
 Rdata (raw) query:
 .Ic rdata/raw/HEX-PAIRS[/RRTYPE]
 .El
 .Pp
+In batch lookup mode, each answer will be succeeded by a -- marker, so that
+programmatic users will know when it is safe to send the next lookup, or if
+lookups are pipelined, to know when one answer has ended and another begun.
 This option cannot be mixed with
 .Fl n ,
 .Fl r ,
 .Fl R ,
 or
 .Fl i .
-An example of how to use
+See the EXAMPLES section for more information on how to use
+.Fl f .
+.Pp
+If two
 .Fl f
-is below.
+options are given, then each answer will also be preceded by a ++ marker
+giving the query string (as read from the batch input) in order to identify
+each answer when a very large batch input is given, and the -- marker will
+include an error/noerror indicator and a short message describing the outcome.
+The ++ and -- markers are not valid JSON, CSV, or DNS (text) format, so
+caution is required.
 .It Fl g
-return graveled results.  Default is to return aggregated results (rocks, vs. gravel).
+return graveled results.  Default is to return aggregated results (rocks,
+vs. gravel).  Gravel is a feature for providing Volume Across Time.
 .It Fl h
 emit usage and quit.
 .It Fl I
 request information from the API server concerning the API key itself, which
 may include rate limit, query quota, query allowance, or privilege levels; the
-output format and content is dependent on the server_sys argument (see -u) and
-upon the
+output format and content is dependent on the server_sys argument (see
+.Ic -u
+) and upon the
 .Fl p
 argument.
-.Fl I -p json
+.Ic -I -p json
 prints the raw info.
-.Fl I -p text
+.Ic -I -p text
 prints
 the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
 .It Fl i Ar ip
-specify rdata ip ("right-hand side") query.
-The value is one of an IPv4 address, an IPv6 address, an IPv4 network with prefix length, an IPv4 address range,
-or an IPv6 network with prefix length. If a network lookup is being performed,
-the delimiter between network address and prefix length is a single comma (",")
-character rather than the usual slash ("/") character to avoid clashing with
-the HTTP URI path name separator.  Examples are below.
+specify rdata ip ("right-hand side") query.  The value is one of an
+IPv4 address, an IPv6 address, an IPv4 network with prefix length, an
+IPv4 address range, or an IPv6 network with prefix length. If a
+network lookup is being performed, the delimiter between network
+address and prefix length is a single comma (",") character rather
+than the usual slash ("/") character to avoid clashing with the HTTP
+URI path name separator.  See EXAMPLES section for more information
+about separator substitution rules.
 .It Fl J Ar input_file
 opens input_file and reads newline-separated JSON objects therefrom, in
 preference to -f (batch mode) or -r, -n, or -i (query mode). This can be used
 to reprocess the output from a prior invocation which used
 .Fl j
 (-p json).  If
-inut_file is "-" then standard input (stdin) willl be read.
+input_file is "-" then standard input (stdin) will be read.
 .It Fl j
 specify newline delimited json output mode.
 .It Fl k Ar sort_keys
 when sorting with -s or -S, selects one or more comma separated sort keys,
 among "first", "last", "count", "name", and/or "data".
-If sorting was specified, but this -k option is not specified, then will default
-to sorting by first, last, count.
-Each sort key may only be specified once.
+The default order is be "first,last,count" (if sorting is requested.)
+Names are sorted right to left (by TLD then 2LD etc). Data is sorted either
+by name if present, or else by numeric value (e.g., for A and AAAA RRsets.)
 .It Fl l Ar query_limit
 query for that limit's number of responses. If specified as 0 then the DNSDB
 API server will return the maximum limit of results allowed.  If
@@ -170,16 +202,36 @@ server may use its default limit.
 .It Fl L Ar output_limit
 clamps the number of responses output to
 .Ic output_limit .
-The
+If unset, and if batch and merge modes have not been selected with the
+.Fl f
+and
+.Fl m
+options, then the
 .Fl L
 output limit defaults to the
 .Fl l
-limit's value.
+limit's value. Otherwise the default is no output limit.
+.It Fl M Ar max_count
+for the summarize verb, stops summarizing when the count reaches that
+max_count, which must be a positive integer.  The resulting total
+count may exceed max_count as it will include the entire count from
+the last rrset examined.  The default is to not constrain the maximum
+count.  The number of rrsets summarized is also limited by the
+query_limit.
 .It Fl m
 used only with
 .Fl f ,
 this causes all output to be merged rather than serialized, and causes up
-to ten (10) API jobs to execute in parallel.
+to ten (10) API queries to execute in parallel. In this mode there will be no
+"--" marker after each parallel query completes, and the combined output of
+all queries is what will be subject to sorting, if any.
+.It Fl N Ar raw-name
+specify raw
+.Ic rdata
+data ("right-hand side") query.  The value is an even number of
+hexadecimal digits specifying a raw octet string.  The "raw" wire-format encodings are standardized. The embedding of these in dnstable is documented in the
+.Xr dnstable-encoding 5
+manual page.
 .It Fl n Ar name
 specify
 .Ic rdata
@@ -187,44 +239,81 @@ name ("right-hand side") query.  The value is a DNS domain name in
 presentation format, or a left-hand (".example.com") or right-hand
 ("www.example.") wildcard domain name. Note that left-hand wildcard queries
 are somewhat more expensive than right-hand wildcard queries.
-.It Fl P Ar page_number
-query for the specified page of results, where a page is a
-.Fl l
-limit's worth of results.  If
-.Fl P
-is specified then
-.Fl l
-must also be specified, with a non-zero limit.
+.It Fl O Ar offset
+to offset by #offset the results returned by the query.  
+This gives you incremental results transfers.
+Cannot be negative. The default is 0.
 .It Fl p Ar output_type
-select output type. Specify
-.Ic csv
-for comma separated value output,
-.Ic dns
-for presentation output similar to that of dig(1), or
-.Ic json
-for newline delimited json output.
-.It Fl R Ar raw-data
+select output type. Specify:
+.Bl -tag -width Ds
+.It Cm text
+for presentation output meant to be human-readable. This is the default.
+.Cm dns
+is a synonym, for compatibility with older programmatic callers.
+.It Cm json
+for newline delimited JSON output.
+.It Cm csv
+for comma separated value output. This format is information losing,
+since
+it cannot express multiple resource records that are in a single RRset.
+Instead, each resource record is expressed in a separate line of output.
+.El
+.Pp
+See the
+.Ic DNSDB_TIME_FORMAT
+environment variable below for controlling how human readable
+timestamps are formatted.
+.It Fl q
+makes the program reticent about warnings.
+.It Fl R Ar raw-rrset
 specify raw
-.Ic rdata
-data ("right-hand side") query.  The value is an even number of
+.Ic rrset
+owner data ("left-hand side") query.  The value is an even number of
 hexadecimal digits specifying a raw octet string.
-.It Fl r Ar rdata
-specify rrset ("left-hand side") query.
+.It Fl r Ar rrset
+specify rrset ("left-hand side") name query.
 .It Fl s
-sort output in ascending key order.
+sort output in ascending key order. Limits (if any) specified by
+.Fl l
+and
+.Fl L
+will be applied before and after sorting, respectively.
 .It Fl S
-sort output in descending key order.
+sort output in descending key order. Limits (if any) specified by
+.Fl l
+and
+.Fl L
+will be applied before and after sorting, respectively.
 .It Fl t Ar rrtype
-specify the resource record type desired.  Valid values include those
-defined in DNS RFCs, including ANY.  A special-case supported in DNSDB
-is ANY-DNSSEC, which matches on DS, RRSIG, NSEC, DNSKEY, NSEC3,
-NSEC3PARAM, and DLV resource record types.
+specify the resource record type desired.  Default is ANY.
+If present, this option should precede any
+.Fl R ,
+.Fl r ,
+.Fl N ,
+or
+.Fl n
+options.  This option is not allowed if the
+.Fl i
+option is present.  Valid values include those defined in DNS RFCs,
+including ANY.  A special-case supported in DNSDB is ANY-DNSSEC, which
+matches on DS, RRSIG, NSEC, DNSKEY, NSEC3, NSEC3PARAM, and DLV
+resource record types.
 .It Fl u Ar server_sys
 specifies the syntax of the RESTful URL, default is "dnsdb".
+.It Fl V Ar verb
+The verb to perform, i.e. the type of query, either "lookup" or
+"summarize".  The default is the "lookup" verb.  As an option, you can
+specify the "summarize" verb, which gives you an estimate of
+result size.  At-a-glance, it provides information on when a given
+domain name, IP address or other DNS asset was first-seen and
+last-seen by the global sensor network, as well as the total
+observation count.
+.It Fl v
+report the version of dnsdbq and exit.
 .El
 .Sh "TIMESTAMP FORMATS"
 Timestamps may be one of following forms.
-.Bl -enum -offset indent
+.Bl -dash -offset indent
 .It
 positive unsigned integer : in Unix epoch format.
 .It
@@ -233,10 +322,13 @@ negative unsigned integer : negative offset in seconds from now.
 YYYY-MM-DD [HH:MM:SS] : in absolute form, in UTC time, as DNSDB does its
 fencing using UTC time.
 .It
-%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offsite
+%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offset
 from UTC time, as DNSDB does its fencing using UTC time.
 .Pp
 .El
+When using batch mode with the second or forth cases, using relative
+times to now, the value for "now" is set when dnsdbq starts.
+.Pp
 A few examples of how to use timefencing options.
 .Bd -literal -offset 4n
 # only responses after Aug 22, 2015 (midnight)
@@ -250,6 +342,9 @@ $ dnsdbq ... -A "2015-08-22 14:36:10"
 # only responses from the last 60 minutes
 $ dnsdbq ... -A "-3600"
 # only responses after "just now"
+$ dnsdbq -f ... -A "-3600"
+# batch mode with only responses after "just now", even if feeding inputs
+to dnsdbq in batch mode takes hours.
 $ date +%s
 1485284066
 $ dnsdbq ... -A 1485284066
@@ -295,10 +390,11 @@ queries. Output is again serialized as JSON and redirected to a file.
 $ cat batch.txt
 rrset/name/\*.wikipedia.org
 rrset/name/\*.dmoz.org
+rrset/raw/0366736902696f00/A
 rdata/name/\*.pbs.org
 rdata/name/\*.opb.org
 rdata/ip/198.35.26.96
-rdata/ip/23.21.237.247
+rdata/ip/23.21.237.0,24
 rdata/raw/0b763d73706631202d616c6c
 $ dnsdbq -j -f < batch.txt > batch-output.json
 $ head -1 batch-output.json | jq .
@@ -315,11 +411,6 @@ $ head -1 batch-output.json | jq .
     "ns2.wikimedia.org."
   ]
 }
-.Ed
-.Pp
-Query for the second page of results where each page is 1000 rows
-.Bd -literal -offset 4n
-$ dnsdbq -P 2 -l 1000 -r ...
 .Ed
 .Sh FILES
 .Ic ~/.isc-dnsdb-query.conf ,
@@ -359,4 +450,5 @@ error such as specifying the wrong server hostname.
 .Sh "SEE ALSO"
 .Xr dig 1 ,
 .Xr jq 1 ,
-.Xr libcurl 3
+.Xr libcurl 3 ,
+.Xr dnstable-encoding 5
