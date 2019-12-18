@@ -90,7 +90,7 @@ See the TIMESTAMP FORMATS section for more information about this.
 .It Fl b Ar bailiwick
 specify bailiwick (only valid with
 .Fl r
-queries).  If bailiwick is specified, but rrtype is not specified, then a default rrtype of ANY will be used.
+queries).
 .It Fl c
 by default, -A and -B (separately or together) will select partial overlaps of
 database tuples and time search criteria. To match only complete overlaps, add
@@ -264,8 +264,8 @@ sort output in ascending key order.
 .It Fl S
 sort output in descending key order.
 .It Fl t Ar rrtype
-specify the resource record type desired.  If present, this option
-should be before any
+specify the resource record type desired.  Default is ANY.
+If present, this option should precede any
 .Fl R ,
 .Fl r ,
 .Fl N ,
