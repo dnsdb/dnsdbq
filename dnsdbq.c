@@ -141,7 +141,7 @@ struct pdns_sys {
 	void		(*write_info)(reader_t);
 	void		(*auth)(reader_t);
 	const char *	(*status)(reader_t);
-	bool		(*validate_verb)(const char *verb);
+	const char *	(*validate_verb)(const char *);
 };
 typedef const struct pdns_sys *pdns_sys_t;
 
@@ -239,7 +239,7 @@ static void dnsdb_request_info(void);
 static void dnsdb_write_info(reader_t);
 static void dnsdb_auth(reader_t);
 static const char *dnsdb_status(reader_t);
-static bool dnsdb_validate_verb(const char*);
+static const char *dnsdb_validate_verb(const char *);
 
 #if WANT_PDNS_CIRCL
 /* CIRCL specific Forward. */
@@ -247,7 +247,7 @@ static bool dnsdb_validate_verb(const char*);
 static char *circl_url(const char *, char *);
 static void circl_auth(reader_t);
 static const char *circl_status(reader_t);
-static bool circl_validate_verb(const char*);
+static const char *circl_validate_verb(const char *);
 #endif
 
 /* Constants. */
@@ -271,7 +271,7 @@ static const char id_swclient[] = "dnsdbq";
 static const char id_version[] = "1.5";
 
 static const struct pdns_sys pdns_systems[] = {
-	/* note: element [0] of this array is the default. */
+	/* note: element [0] of this array is the DEFAULT_SYS. */
 	{ "dnsdb", "https://api.dnsdb.info",
 	  dnsdb_url, dnsdb_request_info, dnsdb_write_info,
 	  dnsdb_auth, dnsdb_status, dnsdb_validate_verb },
@@ -284,12 +284,14 @@ static const struct pdns_sys pdns_systems[] = {
 };
 
 static const struct verb verbs[] = {
-	/* note: element [0] of this array is the default. */
+	/* note: element [0] of this array is the DEFAULT_VERB. */
 	{ "lookup", "/lookup", validate_cmd_opts_lookup },
 	{ "summarize", "/summarize", validate_cmd_opts_summarize },
 	{ NULL, NULL, NULL }
 };
 
+#define DEFAULT_SYS 0
+#define DEFAULT_VERB 0
 #define	MAX_KEYS 5
 #define	MAX_JOBS 8
 
@@ -302,13 +304,13 @@ static const struct verb verbs[] = {
 
 static const char *program_name = NULL;
 static char *api_key = NULL;
-static verb_t chosen_verb = &verbs[0];
+static verb_t chosen_verb = &verbs[DEFAULT_VERB];
 static char *dnsdb_base_url = NULL;
 #if WANT_PDNS_CIRCL
 static char *circl_base_url = NULL;
 static char *circl_authinfo = NULL;
 #endif
-static pdns_sys_t sys = pdns_systems;
+static pdns_sys_t sys = &pdns_systems[DEFAULT_SYS];
 static enum { batch_none, batch_original, batch_verbose } batching = batch_none;
 static bool merge = false;
 static bool complete = false;
@@ -740,9 +742,11 @@ main(int argc, char *argv[]) {
 	assert(chosen_verb != NULL);
 	if (chosen_verb->validate_cmd_opts != NULL)
 		(*chosen_verb->validate_cmd_opts)();
-	if (sys->validate_verb != NULL)
-		if (sys->validate_verb(chosen_verb->cmd_opt_val) == false)
-			usage("That verb is not supported by that system");
+	if (sys->validate_verb != NULL) {
+		const char *msg = sys->validate_verb(chosen_verb->cmd_opt_val);
+		if (msg != NULL)
+			usage(msg);
+	}
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -3032,7 +3036,7 @@ dnsdb_url(const char *path, char *sep) {
 			verb_path = chosen_verb->url_fragment;
 		else
 			verb_path = "/lookup";
-	else if (chosen_verb != &verbs[0])
+	else if (chosen_verb != &verbs[DEFAULT_VERB])
 		usage("Cannot specify a verb other than 'lookup' "
 		      "if the server contains a path");
 	else
@@ -3123,10 +3127,12 @@ dnsdb_status(reader_t reader) {
 	return "ERROR";
 }
 
-static bool
-dnsdb_validate_verb(__attribute__((unused)) const char *verb_name) {
-	/* All verbs are valid (currently) */
-	return (true);
+static const char *
+dnsdb_validate_verb(const char *verb_name) {
+	/* -O (offset) cannot be used except for verb "lookup". */
+	if (strcasecmp(verb_name, "lookup") != 0 && offset != 0)
+		return "only 'lookup' understands offsets";
+	return (NULL);
 }
 
 #if WANT_PDNS_CIRCL
@@ -3203,12 +3209,12 @@ circl_status(reader_t reader __attribute__((unused))) {
 	return "ERROR";
 }
 
-static bool
+static const char *
 circl_validate_verb(const char *verb_name) {
 	/* Only "lookup" is valid */
 	if (strcasecmp(verb_name, "lookup") == 0)
-		return (true);
-	return (false);
+		return ("the CIRCL system only understands 'lookup'");
+	return (NULL);
 }
 
 #endif /*WANT_PDNS_CIRCL*/
