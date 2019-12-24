@@ -902,8 +902,8 @@ help(void) {
 
 static void
 report_version(void) {
-	fprintf(stderr, "%s: %s version %s\n",
-		program_name, id_swclient, id_version);
+	fprintf(stderr, "%s: version %s\n",
+		program_name, id_version);
 }
 
 /* usage -- display a usage error message, brief usage help text; then exit.
