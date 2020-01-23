@@ -139,7 +139,7 @@ standardized. The embedding of these in dnstable is documented in the
 .Xr dnstable-encoding 5
 manual page.
 .Pp
-In batch lookup mode, each answer will be succeeded by a -- marker, so that
+In batch lookup mode, each answer will be followed by a -- marker, so that
 programmatic users will know when it is safe to send the next lookup, or if
 lookups are pipelined, to know when one answer has ended and another begun.
 This option cannot be mixed with
