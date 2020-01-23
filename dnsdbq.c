@@ -148,6 +148,18 @@ typedef const struct pdns_sys *pdns_sys_t;
 typedef enum { no_mode = 0, rrset_mode, name_mode, ip_mode,
 	       raw_rrset_mode, raw_name_mode } mode_e;
 
+struct query {
+	mode_e	mode;
+	char	*thing;
+	char	*rrtype;
+	char	*bailiwick;
+	char	*pfxlen;
+	u_long	after;
+	u_long	before;
+};
+typedef struct query *query_t;
+typedef const struct query *query_ct;
+
 struct sortbuf { char *base; size_t size; };
 typedef struct sortbuf *sortbuf_t;
 
@@ -189,17 +201,19 @@ static verb_t find_verb(const char *);
 static void read_configs(void);
 static void read_environ(void);
 static void do_batch(FILE *, u_long, u_long);
+static const char *batch_parse(char *, query_t);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
 static void make_curl(void);
 static void unmake_curl(void);
-static void pdns_query(const char *, u_long, u_long);
-static void query_launcher(const char *, writer_t, u_long, u_long);
+static void pdns_query(query_ct);
+static void query_launcher(query_ct, writer_t);
 static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
 static void launch_one(writer_t, char *);
 static void rendezvous(reader_t);
 static void ruminate_json(int, u_long, u_long);
 static writer_t writer_init(u_long, u_long);
+static void writer_status(writer_t, const char *, const char *);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static int input_blob(const char *, size_t, u_long, u_long, FILE *);
 static void writer_fini(writer_t);
@@ -340,8 +354,7 @@ static size_t ideal_buffer;
 int
 main(int argc, char *argv[]) {
 	mode_e mode = no_mode;
-	char *name = NULL, *rrtype = NULL, *bailiwick = NULL,
-		*prefix_length = NULL;
+	char *thing = NULL, *rrtype = NULL, *bailiwick = NULL, *pfxlen = NULL;
 	u_long after = 0;
 	u_long before = 0;
 	int json_fd = -1;
@@ -350,11 +363,10 @@ main(int argc, char *argv[]) {
 	/* global dynamic initialization. */
 	ideal_buffer = 4 * (size_t) sysconf(_SC_PAGESIZE);
 	gettimeofday(&now, NULL);
-	program_name = strrchr(argv[0], '/');
-	if (program_name != NULL)
-		program_name++;
-	else
+	if ((program_name = strrchr(argv[0], '/')) == NULL)
 		program_name = argv[0];
+	else
+		program_name++;
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
@@ -382,7 +394,7 @@ main(int argc, char *argv[]) {
 			if (mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(name == NULL);
+			assert(thing == NULL);
 			mode = raw_rrset_mode;
 
 			p = strchr(optarg, '/');
@@ -401,9 +413,9 @@ main(int argc, char *argv[]) {
 				} else {
 					rrtype = strdup(p + 1);
 				}
-				name = strndup(optarg, (size_t)(p - optarg));
+				thing = strndup(optarg, (size_t)(p - optarg));
 			} else {
-				name = strdup(optarg);
+				thing = strdup(optarg);
 			}
 			break;
 		    }
@@ -413,7 +425,7 @@ main(int argc, char *argv[]) {
 			if (mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(name == NULL);
+			assert(thing == NULL);
 			mode = rrset_mode;
 
 			p = strchr(optarg, '/');
@@ -432,9 +444,9 @@ main(int argc, char *argv[]) {
 				} else {
 					rrtype = strdup(p + 1);
 				}
-				name = strndup(optarg, (size_t)(p - optarg));
+				thing = strndup(optarg, (size_t)(p - optarg));
 			} else {
-				name = strdup(optarg);
+				thing = strdup(optarg);
 			}
 			break;
 		    }
@@ -444,7 +456,7 @@ main(int argc, char *argv[]) {
 			if (mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(name == NULL);
+			assert(thing == NULL);
 			mode = raw_name_mode;
 
 			p = strchr(optarg, '/');
@@ -463,9 +475,9 @@ main(int argc, char *argv[]) {
 				} else {
 					rrtype = strdup(p + 1);
 				}
-				name = strndup(optarg, (size_t)(p - optarg));
+				thing = strndup(optarg, (size_t)(p - optarg));
 			} else {
-				name = strdup(optarg);
+				thing = strdup(optarg);
 			}
 			break;
 		    }
@@ -475,7 +487,7 @@ main(int argc, char *argv[]) {
 			if (mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(name == NULL);
+			assert(thing == NULL);
 			mode = name_mode;
 
 			p = strchr(optarg, '/');
@@ -494,9 +506,9 @@ main(int argc, char *argv[]) {
 				} else {
 					rrtype = strdup(p + 1);
 				}
-				name = strndup(optarg, (size_t)(p - optarg));
+				thing = strndup(optarg, (size_t)(p - optarg));
 			} else {
-				name = strdup(optarg);
+				thing = strdup(optarg);
 			}
 			break;
 		    }
@@ -506,14 +518,14 @@ main(int argc, char *argv[]) {
 			if (mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(name == NULL);
+			assert(thing == NULL);
 			mode = ip_mode;
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-				name = strndup(optarg, (size_t)(p - optarg));
-				prefix_length = strdup(p + 1);
+				thing = strndup(optarg, (size_t)(p - optarg));
+				pfxlen = strdup(p + 1);
 			} else {
-				name = strdup(optarg);
+				thing = strdup(optarg);
 			}
 			break;
 		    }
@@ -660,28 +672,27 @@ main(int argc, char *argv[]) {
 	argv = NULL;
 
 	/* recondition various options for HTML use. */
-	if (name != NULL)
-		escape(&name);
+	if (thing != NULL)
+		escape(&thing);
 	if (rrtype != NULL)
 		escape(&rrtype);
 	if (bailiwick != NULL)
 		escape(&bailiwick);
-	if (prefix_length != NULL)
-		escape(&prefix_length);
+	if (pfxlen != NULL)
+		escape(&pfxlen);
 	if (output_limit == -1 && query_limit != -1 && !merge)
 		output_limit = query_limit;
 
 	/* optionally dump program options as interpreted. */
 	if (debuglev > 0) {
-		if (name != NULL)
-			fprintf(stderr, "name = '%s'\n", name);
+		if (thing != NULL)
+			fprintf(stderr, "thing = '%s'\n", thing);
 		if (rrtype != NULL)
 			fprintf(stderr, "type = '%s'\n", rrtype);
 		if (bailiwick != NULL)
 			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
-		if (prefix_length != NULL)
-			fprintf(stderr, "prefix_length = '%s'\n",
-				prefix_length);
+		if (pfxlen != NULL)
+			fprintf(stderr, "pfxlen = '%s'\n", pfxlen);
 		if (after != 0) {
 			fprintf(stderr, "after = %ld : ", (long)after);
 			time_print(after, stderr);
@@ -801,7 +812,7 @@ main(int argc, char *argv[]) {
 		sys->request_info();
 		unmake_curl();
 	} else {
-		char *command;
+		struct query q;
 
 		if (mode == no_mode)
 			usage("must specify -r, -n, -i, or -R"
@@ -819,20 +830,26 @@ main(int argc, char *argv[]) {
 		if (mode == ip_mode && rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		command = makepath(mode, name, rrtype, bailiwick,
-				   prefix_length);
+		q = (struct query) {
+			.mode = mode,
+			.thing = thing,
+			.rrtype = rrtype,
+			.bailiwick = bailiwick,
+			.pfxlen = pfxlen,
+			.after = after,
+			.before = before
+		};
 		server_setup();
 		make_curl();
-		pdns_query(command, after, before);
-		DESTROY(command);
+		pdns_query((query_ct)&q);
 		unmake_curl();
 	}
 
 	/* clean up and go. */
-	DESTROY(name);
+	DESTROY(thing);
 	DESTROY(rrtype);
 	DESTROY(bailiwick);
-	DESTROY(prefix_length);
+	DESTROY(pfxlen);
 	my_exit(exit_code, NULL);
 }
 
@@ -870,7 +887,7 @@ help(void) {
 		"\t  rrset/name/NAME[/TYPE[/BAILIWICK]]\n"
 		"\t  rrset/raw/HEX-PAIRS[/RRTYPE[/BAILIWICK]]\n"
 		"\t  rdata/name/NAME[/TYPE]\n"
-		"\t  rdata/ip/ADDR[/PFXLEN]\n"
+		"\t  rdata/ip/ADDR[,PFXLEN]\n"
 		"\t  rdata/raw/HEX-PAIRS[/RRTYPE]\n"
 		"\t  (output format will be determined by -p, "
 		"using --\\n framing.\n"
@@ -1217,6 +1234,8 @@ read_environ() {
 }
 
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
+ *
+ * the 'after' and 'before' arguments are from -A and -B and are defaults.
  */
 static void
 do_batch(FILE *f, u_long after, u_long before) {
@@ -1229,9 +1248,12 @@ do_batch(FILE *f, u_long after, u_long before) {
 		writer = writer_init(after, before);
 
 	while (getline(&command, &n, f) > 0) {
-		char *nl = strchr(command, '\n');
+		const char *msg;
+		struct query q;
+		char *nl;
 
 		/* the last line of the file may not have a newline. */
+		nl = strchr(command, '\n');
 		if (nl != NULL)
 			*nl = '\0';
 		
@@ -1246,14 +1268,35 @@ do_batch(FILE *f, u_long after, u_long before) {
 				fprintf(stdout, "++ %s\n", command);
 		}
 
-		/* start one or two curl jobs based on this search. */
-		query_launcher(command, writer, after, before);
-
-		/* if merging, drain some jobs; else, drain all jobs. */
-		if (merge) {
-			io_engine(MAX_JOBS);
+		/* crack the batch line if possible. */
+		msg = batch_parse(command, &q);
+		if (msg != NULL) {
+			writer_status(writer, "PARSE", msg);
 		} else {
-			io_engine(0);
+			/* manage batch-level defaults as -A and -B. */
+			if (q.after == 0)
+				q.after = after;
+			if (q.before == 0)
+				q.before = before;
+
+			/* start one or two curl jobs based on this search. */
+			query_launcher((query_ct)&q, writer);
+
+			/* if merging, drain some jobs; else, drain all jobs. */
+			if (merge) {
+				io_engine(MAX_JOBS);
+			} else {
+				io_engine(0);
+			}
+		}
+		if (writer->status != NULL && batching != batch_verbose) {
+			assert(writer->message != NULL);
+			fprintf(stderr, "batch line status: %s (%s)\n",
+				writer->status, writer->message);
+		}
+
+		/* think about showing the end-of-object separator. */
+		if (!merge) {
 			switch (batching) {
 			case batch_none:
 				break;
@@ -1283,11 +1326,85 @@ do_batch(FILE *f, u_long after, u_long before) {
 	}
 }
 
+/* batch_parse -- turn one line from a -f batch into a (struct query).
+ */
+static const char *
+batch_parse(char *line, query_t qp) {
+	struct query q = (struct query) { };
+	char *t;
+	
+	if ((t = strtok(line, "/")) == NULL)
+		return "too few terms";
+	if (strcmp(t, "rrset") == 0) {
+		if ((t = strtok(NULL, "/")) == NULL)
+			return "missing term after 'rrset/'";
+		if (strcmp(t, "name") == 0) {
+			q.mode = rrset_mode;
+			if ((t = strtok(NULL, "/")) == NULL)
+				return "missing term after 'rrset/name/'";
+			q.thing = t;
+			if ((t = strtok(NULL, "/")) != NULL) {
+				q.rrtype = t;
+				if ((t = strtok(NULL, "/")) != NULL) {
+					q.bailiwick = t;
+				}
+			}
+		} else if (strcmp(t, "raw") == 0) {
+			q.mode = raw_rrset_mode;
+			if ((t = strtok(NULL, "/")) == NULL)
+				return "missing term after 'rrset/raw/'";
+			q.thing = t;
+			if ((t = strtok(NULL, "/")) != NULL) {
+				q.rrtype = t;
+				if ((t = strtok(NULL, "/")) != NULL) {
+					q.bailiwick = t;
+				}
+			}
+		} else {
+			return "unrecognized term after 'rrset/'";
+		}
+	} else if (strcmp(t, "rdata") == 0) {
+		if ((t = strtok(NULL, "/")) == NULL)
+			return "missing term after 'rdata/'";
+		if (strcmp(t, "name") == 0) {
+			q.mode = name_mode;
+			if ((t = strtok(NULL, "/")) == NULL)
+				return "missing term after 'rdata/name/'";
+			q.thing = t;
+			if ((t = strtok(NULL, "/")) != NULL) {
+				q.rrtype = t;
+			}
+		} else if (strcmp(t, "raw") == 0) {
+			q.mode = raw_name_mode;
+			if ((t = strtok(NULL, "/")) == NULL)
+				return "missing term after 'rdata/raw/'";
+			q.thing = t;
+			if ((t = strtok(NULL, "/")) != NULL) {
+				q.rrtype = t;
+			}
+		} else if (strcmp(t, "ip") == 0) {
+			q.mode = ip_mode;
+			if ((t = strtok(NULL, "/")) == NULL)
+				return "missing term after 'rdata/ip/'";
+			q.thing = t;
+		} else {
+			return "unrecognized term after 'rdata/'";
+		}
+	} else {
+		return "unrecognized initial term";
+	}
+	t = strtok(NULL, "/");
+	if (t != NULL)
+		return "extra garbage";
+	*qp = q;
+	return NULL;
+}
+
 /* makepath -- make a RESTful URI that describes these search parameters.
  */
 static char *
 makepath(mode_e mode, const char *name, const char *rrtype,
-	 const char *bailiwick, const char *prefix_length)
+	 const char *bailiwick, const char *pfxlen)
 {
 	char *command;
 	int x;
@@ -1320,9 +1437,9 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			my_panic("asprintf");
 		break;
 	case ip_mode:
-		if (prefix_length != NULL)
+		if (pfxlen != NULL)
 			x = asprintf(&command, "rdata/ip/%s,%s",
-				     name, prefix_length);
+				     name, pfxlen);
 		else
 			x = asprintf(&command, "rdata/ip/%s",
 				     name);
@@ -1385,19 +1502,18 @@ unmake_curl(void) {
 }
 
 /* pdns_query -- launch one or more libcurl jobs to fulfill this DNSDB query.
+ *
+ * this is the non-batch path where only one query is made before exit.
  */
 static void
-pdns_query(const char *command, u_long after, u_long before) {
+pdns_query(query_ct q) {
 	writer_t writer;
 
-	if (debuglev > 0)
-		fprintf(stderr, "pdns_query(%s)\n", command);
-
 	/* start a writer, which might be format functions, or POSIX sort. */
-	writer = writer_init(after, before);
+	writer = writer_init(q->after, q->before);
 
-	/* start a small finite number of readers on that writer. */
-	query_launcher(command, writer, after, before);
+	/* start a small and finite number of readers on that writer. */
+	query_launcher(q, writer);
 	
 	/* run all jobs to completion. */
 	io_engine(0);
@@ -1409,48 +1525,52 @@ pdns_query(const char *command, u_long after, u_long before) {
 /* query_launcher -- fork off some curl jobs via launch() for this query.
  */
 static void
-query_launcher(const char *command, writer_t writer,
-	       u_long after, u_long before)
-{
+query_launcher(query_ct qp, writer_t writer) {
+	char *command;
+	
+	command = makepath(qp->mode, qp->thing, qp->rrtype,
+			   qp->bailiwick, qp->pfxlen);
+
 	/* figure out from time fencing which job(s) we'll be starting.
 	 *
 	 * the 4-tuple is: first_after, first_before, last_after, last_before
 	 */
-	if (after != 0 && before != 0) {
+	if (qp->after != 0 && qp->before != 0) {
 		if (complete) {
 			/* each db tuple must be enveloped by time fence. */
-			launch(command, writer, after, 0, 0, before);
+			launch(command, writer, qp->after, 0, 0, qp->before);
 		} else {
 			/* we need tuples that end after fence start... */
-			launch(command, writer, 0, 0, after, 0);
+			launch(command, writer, 0, 0, qp->after, 0);
 			/* ...and that begin before the time fence end. */
-			launch(command, writer, 0, before, 0, 0);
+			launch(command, writer, 0, qp->before, 0, 0);
 			/* and we will filter in reader_func() to
 			 * select only those tuples which either:
 			 * ...(start within), or (end within), or
 			 * ...(start before and end after).
 			 */
 		}
-	} else if (after != 0) {
+	} else if (qp->after != 0) {
 		if (complete) {
 			/* each db tuple must begin after the fence-start. */
-			launch(command, writer, after, 0, 0, 0);
+			launch(command, writer, qp->after, 0, 0, 0);
 		} else {
 			/* each db tuple must end after the fence-start. */
-			launch(command, writer, 0, 0, after, 0);
+			launch(command, writer, 0, 0, qp->after, 0);
 		}
-	} else if (before != 0) {
+	} else if (qp->before != 0) {
 		if (complete) {
 			/* each db tuple must end before the fence-end. */
-			launch(command, writer, 0, 0, 0, before);
+			launch(command, writer, 0, 0, 0, qp->before);
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			launch(command, writer, 0, before, 0, 0);
+			launch(command, writer, 0, qp->before, 0, 0);
 		}
 	} else {
 		/* no time fencing. */
 		launch(command, writer, 0, 0, 0, 0);
 	}
+	DESTROY(command);
 }
 
 /* launch -- actually launch a query job, given a command and time fences.
@@ -3034,23 +3154,21 @@ dnsdb_url(const char *path, char *sep) {
 
 	/* count the number of slashes in the url, 2 is the base line,
 	 * from "//".  3 or more means there's a /path after the host.
-	 * In that case, don't add /[verb] here, but don't allow
-	 * selecting a verb that's not lookup since the /path could
-	 * include its own verb
+	 * In that case, don't add /[verb] here, and also don't allow
+	 * selecting a verb that's not "lookup" since the /path could
+	 * include its own verb. (this is from an old python-era rule.)
 	 */
 	x = 0;
 	for (p = dnsdb_base_url; *p != '\0'; p++)
 		x += (*p == '/');
-	if (x < 3)
-		if (chosen_verb->url_fragment != NULL)
-			verb_path = chosen_verb->url_fragment;
-		else
-			verb_path = "/lookup";
-	else if (chosen_verb != &verbs[DEFAULT_VERB])
+	if (x >= 3 && chosen_verb != &verbs[DEFAULT_VERB])
 		usage("Cannot specify a verb other than 'lookup' "
-		      "if the server contains a path");
+		      "if the server URL contains a path");
+	verb_path = "";
+	if (chosen_verb->url_fragment != NULL)
+		verb_path = chosen_verb->url_fragment;
 	else
-		verb_path = "";
+		verb_path = "/lookup";
 
 	/* supply a scheme if the server string did not. */
 	scheme_if_needed = "";
