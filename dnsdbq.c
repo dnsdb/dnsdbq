@@ -38,6 +38,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,9 +191,10 @@ typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
 static void help(void);
 static bool parse_long(const char *, long *);
 static void report_version(void);
-static __attribute__((noreturn)) void usage(const char *);
+static void debug(bool, const char *, ...);
+static __attribute__((noreturn)) void usage(const char *, ...);
 static __attribute__((noreturn)) void my_exit(int, ...);
-static __attribute__((noreturn)) void my_panic(const char *);
+static __attribute__((noreturn)) void my_panic(bool, const char *);
 static void server_setup(void);
 static const char *add_sort_key(const char *);
 static sortkey_ct find_sort_key(const char *);
@@ -231,7 +233,7 @@ static void print_burstrate(const char *, rateval_ct, rateval_ct, FILE *);
 static const char *rateval_make(rateval_t, const json_t *, const char *);
 static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
-static void time_print(u_long x, FILE *);
+static const char * time_str(u_long, bool);
 static int time_get(const char *src, u_long *dst);
 static void escape(char **);
 static char *sortable_rrname(pdns_tuple_ct);
@@ -309,10 +311,11 @@ static const struct verb verbs[] = {
 #define	MAX_KEYS 5
 #define	MAX_JOBS 8
 
-#define CREATE(p, s) if ((p) != NULL) { my_panic("non-NULL ptr"); }	\
-	else if (((p) = malloc(s)) == NULL) { my_panic("malloc failed"); } \
+#define CREATE(p, s) if ((p) != NULL) { my_panic(false, "non-NULL ptr"); } \
+	else if (((p) = malloc(s)) == NULL) { my_panic(true, "malloc"); } \
 	else { memset((p), 0, s); }
 #define DESTROY(p) { if ((p) != NULL) { free(p); (p) = NULL; } }
+#define DEBUG(ge, va) { if (debug_level >= (ge)) debug va; }
 
 /* Private. */
 
@@ -331,7 +334,7 @@ static bool complete = false;
 static bool info = false;
 static bool gravel = false;
 static bool quiet = false;
-static int debuglev = 0;
+static int debug_level = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
@@ -348,6 +351,7 @@ static bool sort_bydata = false;
 static writer_t writers = NULL;
 static int exit_code = 0; /* hopeful */
 static size_t ideal_buffer;
+static bool iso = false;
 
 /* Public. */
 
@@ -358,6 +362,7 @@ main(int argc, char *argv[]) {
 	u_long after = 0;
 	u_long before = 0;
 	int json_fd = -1;
+	char *value;
 	int ch;
 
 	/* global dynamic initialization. */
@@ -367,6 +372,9 @@ main(int argc, char *argv[]) {
 		program_name = argv[0];
 	else
 		program_name++;
+	value = getenv(env_time_fmt);
+	if (value != NULL && strcasecmp(value, "iso") == 0)
+		iso = true;
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
@@ -375,18 +383,12 @@ main(int argc, char *argv[]) {
 	{
 		switch (ch) {
 		case 'A':
-			if (!time_get(optarg, &after) || after == 0UL) {
-				fprintf(stderr, "bad -A timestamp: '%s'\n",
-					optarg);
-				my_exit(1, NULL);
-			}
+			if (!time_get(optarg, &after) || after == 0UL)
+				usage("bad -A timestamp: '%s'\n", optarg);
 			break;
 		case 'B':
-			if (!time_get(optarg, &before) || before == 0UL) {
-				fprintf(stderr, "bad -B timestamp: '%s'\n",
-					optarg);
-				my_exit(1, NULL);
-			}
+			if (!time_get(optarg, &before) || before == 0UL)
+				usage("bad -B timestamp: '%s'\n", optarg);
 			break;
 		case 'R': {
 			const char *p;
@@ -576,8 +578,9 @@ main(int argc, char *argv[]) {
 				usage("can only specify rrtype one way");
 			if (mode != no_mode && mode != ip_mode)
 				fprintf(stderr,
-					"Warning: -t option should be before "
-					"the -R, -r, -N, or -n options\n");
+					"%s: warning: -t option should precede"
+					" the -R, -r, -N, or -n options\n",
+					program_name);
 			rrtype = strdup(optarg);
 			break;
 		case 'b':
@@ -613,10 +616,10 @@ main(int argc, char *argv[]) {
 			else
 				json_fd = open(optarg, O_RDONLY);
 			if (json_fd < 0)
-				my_panic(optarg);
+				my_panic(true, optarg);
 			break;
 		case 'd':
-			debuglev++;
+			debug_level++;
 			break;
 		case 'g':
 			gravel = true;
@@ -684,31 +687,27 @@ main(int argc, char *argv[]) {
 		output_limit = query_limit;
 
 	/* optionally dump program options as interpreted. */
-	if (debuglev > 0) {
+	if (debug_level >= 1) {
 		if (thing != NULL)
-			fprintf(stderr, "thing = '%s'\n", thing);
+			debug(true, "thing = '%s'\n", thing);
 		if (rrtype != NULL)
-			fprintf(stderr, "type = '%s'\n", rrtype);
+			debug(true, "type = '%s'\n", rrtype);
 		if (bailiwick != NULL)
-			fprintf(stderr, "bailiwick = '%s'\n", bailiwick);
+			debug(true, "bailiwick = '%s'\n", bailiwick);
 		if (pfxlen != NULL)
-			fprintf(stderr, "pfxlen = '%s'\n", pfxlen);
-		if (after != 0) {
-			fprintf(stderr, "after = %ld : ", (long)after);
-			time_print(after, stderr);
-			putc('\n', stderr);
-		}
-		if (before != 0) {
-			fprintf(stderr, "before = %ld : ", (long)before);
-			time_print(before, stderr);
-			putc('\n', stderr);
-		}
+			debug(true, "pfxlen = '%s'\n", pfxlen);
+		if (after != 0)
+			debug(true, "after = %ld : %s\n",
+			      after, time_str(after, false));
+		if (before != 0)
+			debug(true, "before = %ld : ",
+			      before, time_str(before, false));
 		if (query_limit != -1)
-			fprintf(stderr, "query_limit = %ld\n", query_limit);
+			debug(true, "query_limit = %ld\n", query_limit);
 		if (output_limit != -1)
-			fprintf(stderr, "output_limit = %ld\n", output_limit);
-		fprintf(stderr, "batching=%d, merge=%d\n",
-			(int)batching, merge);
+			debug(true, "output_limit = %ld\n", output_limit);
+		debug(true, "batching=%d, merge=%d\n",
+		      batching != false, merge);
 	}
 
 	/* validate some interrelated options. */
@@ -717,8 +716,9 @@ main(int argc, char *argv[]) {
 			usage("-A -B requires after <= before (for now)");
 		if (sorted == no_sort && json_fd == -1 && !complete) {
 			fprintf(stderr,
-				"-A and -B w/o -c requires sorting for dedup, "
-				"so turning on -S here.\n");
+				"%s: warning: -A and -B w/o -c requires"
+				" sorting for dedup, so turning on -S here.\n",
+				program_name);
 			sorted = reverse_sort;
 		}
 	}
@@ -856,82 +856,98 @@ main(int argc, char *argv[]) {
 /* Private. */
 
 /* help -- display a brief usage-help text; then exit.
+ *
+ * this goes to stdout since we can expect it not to be piped unless to $PAGER.
  */
 static void
 help(void) {
 	pdns_sys_t t;
 	verb_t v;
 
-	fprintf(stderr,
-		"usage: %s [-djsShcIgqv] [-p dns|json|csv]\n"
-		"\t[-k (first|last|count|name|data)[,...]]\n"
-		"\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
-		"\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
-		"\t\t-f |\n"
-		"\t\t-J inputfile |\n"
-		"\t\t[-t rrtype] [-b bailiwick] {\n"
-		"\t\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
-		"\t\t\t-n NAME[/TYPE] |\n"
-		"\t\t\t-i IP[/PFXLEN] |\n"
-		"\t\t\t-N RAW-NAME-DATA[/TYPE]\n"
-		"\t\t\t-R RAW-OWNER-DATA[/TYPE[/BAILIWICK]]\n"
-		"\t\t}\n"
-		"\t}\n",
-		program_name);
-	fprintf(stderr,
-		"for -A and -B, use abs. YYYY-MM-DD[ HH:MM:SS] "
-		"or rel. %%dw%%dd%%dh%%dm%%ds format.\n"
-		"use -c to get complete (strict) time matching for -A and -B.\n"
-		"use -d one or more times to ramp up the diagnostic output.\n"
-		"for -f, stdin must contain lines of the following forms:\n"
-		"\t  rrset/name/NAME[/TYPE[/BAILIWICK]]\n"
-		"\t  rrset/raw/HEX-PAIRS[/RRTYPE[/BAILIWICK]]\n"
-		"\t  rdata/name/NAME[/TYPE]\n"
-		"\t  rdata/ip/ADDR[,PFXLEN]\n"
-		"\t  rdata/raw/HEX-PAIRS[/RRTYPE]\n"
-		"\t  (output format will be determined by -p, "
-		"using --\\n framing.\n"
-		"use -g to get graveled results.\n"
-		"use -h to reliably display this helpful text.\n"
-		"use -I to see a system-specific account/key summary.\n"
-		"for -J, input format is newline-separated JSON, "
-		"as from -j output.\n"
-		"use -j as a synonym for -p json.\n"
-		"use -M # to end a summarize op when count exceeds threshold.\n"
-		"use -O # to skip this many results in what is returned.\n"
-		"use -q for warning reticence.\n"
-		"use -v to show the program version.\n"
-		"use -s to sort in ascending order, "
-		"or -S for descending order.\n");
-	fprintf(stderr, "for -u, system must be one of:\n");
+	printf("usage: %s [-djsShcIgqv] [-p dns|json|csv]\n", program_name);
+	puts("\t[-k (first|last|count|name|data)[,...]]\n"
+	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
+	     "\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
+	     "\t\t-f |\n"
+	     "\t\t-J inputfile |\n"
+	     "\t\t[-t rrtype] [-b bailiwick] {\n"
+	     "\t\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
+	     "\t\t\t-n NAME[/TYPE] |\n"
+	     "\t\t\t-i IP[/PFXLEN] |\n"
+	     "\t\t\t-N RAW-NAME-DATA[/TYPE]\n"
+	     "\t\t\t-R RAW-OWNER-DATA[/TYPE[/BAILIWICK]]\n"
+	     "\t\t}\n"
+	     "\t}");
+	puts("for -A and -B, use absolute format YYYY-MM-DD[ HH:MM:SS],\n"
+	     "\tor relative format %dw%dd%dh%dm%ds.\n"
+	     "use -c to get complete (strict) time matching for -A and -B.\n"
+	     "use -d one or more times to ramp up the diagnostic output.\n"
+	     "for -f, stdin must contain lines of the following forms:\n"
+	     "\t  rrset/name/NAME[/TYPE[/BAILIWICK]]\n"
+	     "\t  rrset/raw/HEX-PAIRS[/RRTYPE[/BAILIWICK]]\n"
+	     "\t  rdata/name/NAME[/TYPE]\n"
+	     "\t  rdata/ip/ADDR[,PFXLEN]\n"
+	     "\t  rdata/raw/HEX-PAIRS[/RRTYPE]\n"
+	     "\t  (output format will be determined by -p, "
+	     "using --\\n framing.\n"
+	     "use -g to get graveled results.\n"
+	     "use -h to reliably display this helpful text.\n"
+	     "use -I to see a system-specific account/key summary.\n"
+	     "for -J, input format is newline-separated JSON, "
+	     "as from -j output.\n"
+	     "use -j as a synonym for -p json.\n"
+	     "use -M # to end a summarize op when count exceeds threshold.\n"
+	     "use -O # to skip this many results in what is returned.\n"
+	     "use -q for warning reticence.\n"
+	     "use -v to show the program version.\n"
+	     "use -s to sort in ascending order, "
+	     "or -S for descending order.");
+	puts("for -u, system must be one of:");
 	for (t = pdns_systems; t->name != NULL; t++)
-		fprintf(stderr, "\t%s\n", t->name);
-	fprintf(stderr, "for -V, verb must be one of:\n");
+		printf("\t%s\n", t->name);
+	puts("for -V, verb must be one of:");
 	for (v = verbs; v->cmd_opt_val != NULL; v++)
-		fprintf(stderr, "\t%s\n", v->cmd_opt_val);
-	fprintf(stderr,
-		"\nGetting Started:\n"
-		"\tAdd your API key to ~/.dnsdb-query.conf like this:\n"
-		"\t\tAPIKEY=\"YOURAPIKEYHERE\"\n");
-	fprintf(stderr, "\nTry   man %s  for full documentation.\n",
-		program_name);
+		printf("\t%s\n", v->cmd_opt_val);
+	puts("\nGetting Started:\n"
+	     "\tAdd your API key to ~/.dnsdb-query.conf like this:\n"
+	     "\t\tAPIKEY=\"YOURAPIKEYHERE\"");
+	printf("\nTry   man %s  for full documentation.\n", program_name);
 }
 
 static void
 report_version(void) {
-	fprintf(stderr, "%s: version %s\n",
-		program_name, id_version);
+	printf("%s: version %s\n", program_name, id_version);
 }
 
+/* debug -- at the moment, dump to stderr.
+ */
+static void
+debug(bool want_header, const char *fmtstr, ...) {
+	va_list ap;
+
+	va_start(ap, fmtstr);
+	if (want_header)
+		fputs("debug: ", stderr);
+	vfprintf(stderr, fmtstr, ap);
+	va_end(ap);
+}	
+
 /* usage -- display a usage error message, brief usage help text; then exit.
+ *
+ * this goes to stderr in case stdout has been piped or redirected.
  */
 static __attribute__((noreturn)) void
-usage(const char *error) {
+usage(const char *fmtstr, ...) {
+	va_list ap;
+
+	va_start(ap, fmtstr);
+	fputs("error: ", stderr);
+	vfprintf(stderr, fmtstr, ap);
+	va_end(ap);
+	fputs("\n\n", stderr);
 	fprintf(stderr,
-		"error: %s\n"
-		"\n"
 		"try   %s -h   for a short description of program usage.\n",
-		error, program_name);
+		program_name);
 	my_exit(1, NULL);
 }
 
@@ -971,16 +987,19 @@ my_exit(int code, ...) {
 	}
 
 	/* terminate process. */
-	if (debuglev > 0)
-		fprintf(stderr, "about to call exit(%d)\n", code);
+	DEBUG(1, (true, "about to call exit(%d)\n", code));
 	exit(code);
 }
 
 /* my_panic -- display an error on diagnostic output stream, exit ungracefully
  */
 static __attribute__((noreturn)) void
-my_panic(const char *s) {
-	perror(s);
+my_panic(bool want_perror, const char *s) {
+	fprintf(stderr, "%s: ", program_name);
+	if (want_perror)
+		perror(s);
+	else
+		fprintf(stderr, "%s\n", s);
 	my_exit(1, NULL);
 }
 
@@ -1124,13 +1143,12 @@ read_configs(void) {
 		cf = strdup(we.we_wordv[0]);
 		wordfree(&we);
 		if (access(cf, R_OK) == 0) {
-			if (debuglev > 0)
-				fprintf(stderr, "conf found: '%s'\n", cf);
+			DEBUG(1, (true, "conf found: '%s'\n", cf));
 			break;
 		}
 		DESTROY(cf);
 	}
-	if (*conf != NULL) {
+	if (cf != NULL) {
 		char *cmd, *tok1, *tok2, *line;
 		size_t n;
 		FILE *f;
@@ -1145,15 +1163,16 @@ read_configs(void) {
 			     "echo circls $CIRCL_SERVER;"
 #endif
 			     "exit", cf);
+		DESTROY(cf);
 		if (x < 0)
-			my_panic("asprintf");
+			my_panic(true, "asprintf");
 		f = popen(cmd, "r");
 		if (f == NULL) {
-			perror(cmd);
+			fprintf(stderr, "%s: [%s]: %s",
+				program_name, cmd, strerror(errno));
 			my_exit(1, cmd, NULL);
 		}
-		if (debuglev > 0)
-			fprintf(stderr, "conf cmd = '%s'\n", cmd);
+		DEBUG(1, (true, "conf cmd = '%s'\n", cmd));
 		DESTROY(cmd);
 		line = NULL;
 		n = 0;
@@ -1166,7 +1185,7 @@ read_configs(void) {
 				fprintf(stderr,
 					"%s: conf line #%d: too long\n",
 					program_name, l);
-				my_exit(1, cf, NULL);
+				my_exit(1, NULL);
 			}
 			tok1 = strtok(line, "\040\012");
 			tok2 = strtok(NULL, "\040\012");
@@ -1174,14 +1193,12 @@ read_configs(void) {
 				fprintf(stderr,
 					"%s: conf line #%d: malformed\n",
 					program_name, l);
-				my_exit(1, cf, NULL);
+				my_exit(1, NULL);
 			}
 			if (tok2 == NULL)
 				continue;
 
-			if (debuglev > 0)
-				fprintf(stderr, "line #%d: sets %s\n",
-					l, tok1);
+			DEBUG(1, (true, "line #%d: sets %s\n", l, tok1));
 			pp = NULL;
 			if (strcmp(tok1, "apikey") == 0) {
 				pp = &api_key;
@@ -1201,7 +1218,6 @@ read_configs(void) {
 		DESTROY(line);
 		pclose(f);
 	}
-	DESTROY(cf);
 }
 
 /* read_environ -- override the config file from environment variables?
@@ -1215,22 +1231,18 @@ read_environ() {
 		if (api_key != NULL)
 			DESTROY(api_key);
 		api_key = strdup(val);
-		if (debuglev > 0)
-			fprintf(stderr, "conf env api_key was set\n");
+		DEBUG(1, (true, "conf env api_key was set\n"));
 	}
 	val = getenv(env_dnsdb_base_url);
 	if (val != NULL) {
 		if (dnsdb_base_url != NULL)
 			DESTROY(dnsdb_base_url);
 		dnsdb_base_url = strdup(val);
-		if (debuglev > 0)
-			fprintf(stderr, "conf env dnsdb_server = '%s'\n",
-				dnsdb_base_url);
+		DEBUG(1, (true, "conf env dnsdb_server = '%s'\n",
+			  dnsdb_base_url));
 	}
-	if (api_key == NULL) {
-		fprintf(stderr, "%s: no API key given\n", program_name);
-		my_exit(1, NULL);
-	}
+	if (api_key == NULL)
+		usage("no API key given");
 }
 
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
@@ -1257,8 +1269,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 		if (nl != NULL)
 			*nl = '\0';
 		
-		if (debuglev > 0)
-			fprintf(stderr, "do_batch(%s)\n", command);
+		DEBUG(1, (true, "do_batch(%s)\n", command));
 
 		/* if not merging, start a writer here instead. */
 		if (!merge) {
@@ -1291,8 +1302,8 @@ do_batch(FILE *f, u_long after, u_long before) {
 		}
 		if (writer->status != NULL && batching != batch_verbose) {
 			assert(writer->message != NULL);
-			fprintf(stderr, "batch line status: %s (%s)\n",
-				writer->status, writer->message);
+			fprintf(stderr, "%s: batch line status: %s (%s)\n",
+				program_name, writer->status, writer->message);
 		}
 
 		/* think about showing the end-of-object separator. */
@@ -1424,7 +1435,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			x = asprintf(&command, "rrset/name/%s",
 				     name);
 		if (x < 0)
-			my_panic("asprintf");
+			my_panic(true, "asprintf");
 		break;
 	case name_mode:
 		if (rrtype != NULL)
@@ -1434,7 +1445,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			x = asprintf(&command, "rdata/name/%s",
 				     name);
 		if (x < 0)
-			my_panic("asprintf");
+			my_panic(true, "asprintf");
 		break;
 	case ip_mode:
 		if (pfxlen != NULL)
@@ -1444,7 +1455,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			x = asprintf(&command, "rdata/ip/%s",
 				     name);
 		if (x < 0)
-			my_panic("asprintf");
+			my_panic(true, "asprintf");
 		break;
 	case raw_rrset_mode:
 		if (rrtype != NULL)
@@ -1454,7 +1465,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			x = asprintf(&command, "rrset/raw/%s",
 				     name);
 		if (x < 0)
-			my_panic("asprintf");
+			my_panic(true, "asprintf");
 		break;
 	case raw_name_mode:
 		if (rrtype != NULL)
@@ -1464,7 +1475,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 			x = asprintf(&command, "rdata/raw/%s",
 				     name);
 		if (x < 0)
-			my_panic("asprintf");
+			my_panic(true, "asprintf");
 		break;
 	case no_mode:
 		/*FALLTHROUGH*/
@@ -1482,7 +1493,8 @@ make_curl(void) {
 	curl_cleanup_needed++;
 	multi = curl_multi_init();
 	if (multi == NULL) {
-		fprintf(stderr, "curl_multi_init() failed\n");
+		fprintf(stderr, "%s: curl_multi_init() failed\n",
+			program_name);
 		my_exit(1, NULL);
 	}
 }
@@ -1506,14 +1518,14 @@ unmake_curl(void) {
  * this is the non-batch path where only one query is made before exit.
  */
 static void
-pdns_query(query_ct q) {
+pdns_query(query_ct qp) {
 	writer_t writer;
 
 	/* start a writer, which might be format functions, or POSIX sort. */
-	writer = writer_init(q->after, q->before);
+	writer = writer_init(qp->after, qp->before);
 
 	/* start a small and finite number of readers on that writer. */
-	query_launcher(q, writer);
+	query_launcher(qp, writer);
 	
 	/* run all jobs to completion. */
 	io_engine(0);
@@ -1646,8 +1658,7 @@ launch(const char *command, writer_t writer,
 		tmp = NULL;
 		sep = '&';
 	}
-	if (debuglev > 0)
-		fprintf(stderr, "url [%s]\n", url);
+	DEBUG(1, (true, "url [%s]\n", url));
 
 	launch_one(writer, url);
 }
@@ -1659,8 +1670,7 @@ launch_one(writer_t writer, char *url) {
 	reader_t reader = NULL;
 	CURLMcode res;
 
-	if (debuglev > 1)
-		fprintf(stderr, "launch_one(%s)\n", url);
+	DEBUG(2, (true, "launch_one(%s)\n", url));
 	CREATE(reader, sizeof *reader);
 	reader->writer = writer;
 	writer = NULL;
@@ -1683,7 +1693,7 @@ launch_one(writer_t writer, char *url) {
 	/* do not allow curl to swallow /./ and /../ in our URLs */
 	curl_easy_setopt(reader->easy, CURLOPT_PATH_AS_IS, 1L);
 #endif /* CURL_AT_LEAST_VERSION */
-	if (debuglev > 2)
+	if (debug_level >= 3)
 		curl_easy_setopt(reader->easy, CURLOPT_VERBOSE, 1L);
 
 	/* linked-list insert. */
@@ -1692,8 +1702,8 @@ launch_one(writer_t writer, char *url) {
 
 	res = curl_multi_add_handle(multi, reader->writer->readers->easy);
 	if (res != CURLM_OK) {
-		fprintf(stderr, "curl_multi_add_handle() failed: %s\n",
-			curl_multi_strerror(res));
+		fprintf(stderr, "%s: curl_multi_add_handle() failed: %s\n",
+			program_name, curl_multi_strerror(res));
 		my_exit(1, NULL);
 	}
 }
@@ -1758,9 +1768,9 @@ writer_init(u_long after, u_long before) {
 		int p1[2], p2[2];
 
 		if (pipe(p1) < 0 || pipe(p2) < 0)
-			my_panic("pipe");
+			my_panic(true, "pipe");
 		if ((writer->sort_pid = fork()) < 0)
-			my_panic("fork");
+			my_panic(true, "fork");
 		if (writer->sort_pid == 0) {
 			char *sort_argv[3+MAX_KEYS], **sap;
 			int n;
@@ -1780,16 +1790,14 @@ writer_init(u_long after, u_long before) {
 						 keys[n].computed,
 						 sorted==reverse_sort?"r":"");
 				if (x < 0)
-					my_panic("asprintf");
+					my_panic(true, "asprintf");
 			}
 			*sap++ = NULL;
 			putenv(strdup("LC_ALL=C"));
-			if (debuglev > 0) {
-				fprintf(stderr, "\"%s\" args:", path_sort);
-				for (sap = sort_argv; *sap != NULL; sap++)
-					fprintf(stderr, " [%s]", *sap);
-				fputc('\n', stderr);
-			}
+			DEBUG(1, (true, "\"%s\" args:", path_sort));
+			for (sap = sort_argv; *sap != NULL; sap++)
+				DEBUG(1, (false, " [%s]", *sap));
+			DEBUG(1, (false, "\n"));
 			execve(path_sort, sort_argv, environ);
 			perror("execve");
 			for (sap = sort_argv; *sap != NULL; sap++)
@@ -1827,7 +1835,7 @@ print_rateval(const char *key, rateval_ct tp, FILE *outf) {
 		break;
 	case rk_int:
 		if (strcmp(key, "reset") == 0 || strcmp(key, "expires") == 0)
-			time_print(tp->as_int, outf);
+			fputs(time_str(tp->as_int, iso), outf);
 		else
 			fprintf(outf, "%lu", tp->as_int);
 		break;
@@ -1921,9 +1929,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	FILE *outf;
 	char *nl;
 
-	if (debuglev > 2)
-		fprintf(stderr, "writer_func(%d, %d): %d\n",
-			(int)size, (int)nmemb, (int)bytes);
+	DEBUG(3, (true, "writer_func(%d, %d): %d\n",
+		   (int)size, (int)nmemb, (int)bytes));
 
 	reader->buf = realloc(reader->buf, reader->len + bytes);
 	memcpy(reader->buf + reader->len, ptr, bytes);
@@ -1954,14 +1961,15 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 							 CURLINFO_EFFECTIVE_URL,
 							  &url);
 					fprintf(stderr,
-						"%s: libcurl: %ld (%s)\n",
+						"%s: warning: "
+						"libcurl %ld [%s]\n",
 						program_name, reader->rcode,
 						url);
 				}
 				reader->writer->once = true;
 			}
 			if (!quiet)
-				fprintf(stderr, "%s: libcurl: [%s]\n",
+				fprintf(stderr, "%s: warning: libcurl: [%s]\n",
 					program_name, message);
 			DESTROY(message);
 			reader->buf[0] = '\0';
@@ -1984,13 +1992,11 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			return (bytes);
 		}
 
-		if (sorted == no_sort &&
-		    output_limit != -1 &&
+		if (sorted == no_sort && output_limit != -1 &&
 		    reader->writer->count >= output_limit)
 		{
-			if (debuglev > 2)
-				fprintf(stderr,
-					"hit output limit %ld\n", output_limit);
+			DEBUG(1, (true, "hit output limit %ld\n",
+				  output_limit));
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);
@@ -2041,16 +2047,14 @@ input_blob(const char *buf, size_t len,
 	 * we have to winnow it down upon receipt. (see also -J.)
 	 */
 	whynot = NULL;
-	if (debuglev > 1)
-		fprintf(stderr, "filtering-- ");
+	DEBUG(2, (true, "filtering-- "));
 	if (after != 0) {
 		int first_vs_after, last_vs_after;
 
 		first_vs_after = timecmp(first, after);
 		last_vs_after = timecmp(last, after);
-		if (debuglev > 1)
-			fprintf(stderr, "FvA %d LvA %d: ",
-				first_vs_after, last_vs_after);
+		DEBUG(2, (false, "FvA %d LvA %d: ",
+			  first_vs_after, last_vs_after));
 
 		if (complete) {
 			if (first_vs_after < 0) {
@@ -2067,9 +2071,8 @@ input_blob(const char *buf, size_t len,
 
 		first_vs_before = timecmp(first, before);
 		last_vs_before = timecmp(last, before);
-		if (debuglev > 1)
-			fprintf(stderr, "FvB %d LvB %d: ",
-				first_vs_before, last_vs_before);
+		DEBUG(2, (false, "FvB %d LvB %d: ",
+			  first_vs_before, last_vs_before));
 
 		if (complete) {
 			if (last_vs_before > 0) {
@@ -2083,24 +2086,14 @@ input_blob(const char *buf, size_t len,
 	}
 
 	if (whynot == NULL) {
-		if (debuglev > 1)
-			fprintf(stderr, "selected!\n");
+		DEBUG(2, (false, "selected!\n"));
 	} else {
-		if (debuglev > 1)
-			fprintf(stderr, "skipped (%s).\n", whynot);
+		DEBUG(2, (false, "skipped (%s).\n", whynot));
 	}
-	if (debuglev > 2) {
-		fputs("\tF..L = ", stderr);
-		time_print(first, stderr);
-		fputs(" .. ", stderr);
-		time_print(last, stderr);
-		fputc('\n', stderr);
-		fputs("\tA..B = ", stderr);
-		time_print(after, stderr);
-		fputs(" .. ", stderr);
-		time_print(before, stderr);
-		fputc('\n', stderr);
-	}
+	DEBUG(3, (true, "\tF..L = %s", time_str(first, false)));
+	DEBUG(3, (false, " .. %s\n", time_str(last, false)));
+	DEBUG(3, (true, "\tA..B = %s", time_str(after, false)));
+	DEBUG(3, (false, " .. %s\n", time_str(before, false)));
 	if (whynot != NULL)
 		goto next;
 
@@ -2116,17 +2109,11 @@ input_blob(const char *buf, size_t len,
 		char *dyn_rrname = NULL, *dyn_rdata = NULL;
 		if (sort_byname) {
 			dyn_rrname = sortable_rrname(&tup);
-			if (debuglev > 1) {
-				fprintf(stderr, "dyn_rrname = '%s'\n",
-					dyn_rrname);
-			}
+			DEBUG(2, (true, "dyn_rrname = '%s'\n", dyn_rrname));
 		}
 		if (sort_bydata) {
 			dyn_rdata = sortable_rdata(&tup);
-			if (debuglev > 1) {
-				fprintf(stderr, "dyn_rdata = '%s'\n",
-					dyn_rdata);
-			}
+			DEBUG(2, (true, "dyn_rdata = '%s'\n", dyn_rdata));
 		}
 		fprintf(outf, "%lu %lu %lu %s %s %*.*s\n",
 			(unsigned long)first,
@@ -2135,15 +2122,13 @@ input_blob(const char *buf, size_t len,
 			or_else(dyn_rrname, "n/a"),
 			or_else(dyn_rdata, "n/a"),
 			(int)len, (int)len, buf);
-		if (debuglev > 1) {
-			fprintf(stderr, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
-				(unsigned long)first,
-				(unsigned long)last,
-				(unsigned long)tup.count,
-				or_else(dyn_rrname, "n/a"),
-				or_else(dyn_rdata, "n/a"),
-				(int)len, (int)len, buf);
-		}
+		DEBUG(2, (true, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
+			  (unsigned long)first,
+			  (unsigned long)last,
+			  (unsigned long)tup.count,
+			  or_else(dyn_rrname, "n/a"),
+			  or_else(dyn_rdata, "n/a"),
+			  (int)len, (int)len, buf));
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {
@@ -2173,10 +2158,6 @@ writer_fini(writer_t writer) {
 				break;
 			}
 		}
-		if (prev == NULL) {
-			fprintf(stderr, "writer_fini(): no prev found.\n");
-			abort();
-		}
 		prev->next = writer->next;
 	}
 
@@ -2187,8 +2168,8 @@ writer_fini(writer_t writer) {
 		/* release any buffered info. */
 		DESTROY(reader->buf);
 		if (reader->len != 0) {
-			fprintf(stderr, "stranding %d octets!\n",
-				(int)reader->len);
+			fprintf(stderr, "%s: warning: stranding %d octets!\n",
+				program_name, (int)reader->len);
 			reader->len = 0;
 		}
 
@@ -2210,10 +2191,8 @@ writer_fini(writer_t writer) {
 		 * skip over the sort keys we added earlier, and process.
 		 */
 		fclose(writer->sort_stdin);
-		if (debuglev > 0)
-			fprintf(stderr,
-				"closed sort_stdin, wrote %d objs\n",
-				writer->count);
+		DEBUG(1, (true, "closed sort_stdin, wrote %d objs\n",
+			  writer->count));
 		count = 0;
 		while (getline(&line, &n, writer->sort_stdout) > 0) {
 			/* if we're above the limit, ignore remaining output.
@@ -2233,57 +2212,61 @@ writer_fini(writer_t writer) {
 			struct pdns_tuple tup;
 
 			if ((nl = strchr(line, '\n')) == NULL) {
-				fprintf(stderr, "no \\n found in '%s'\n",
-					line);
+				fprintf(stderr,
+					"%s: warning: no \\n found in '%s'\n",
+					program_name, line);
 				continue;
 			}
 			linep = line;
-			if (debuglev > 1) {
-				fprintf(stderr, "sort1: '%*.*s'\n",
-					(int)(nl - linep),
-					(int)(nl - linep),
-					linep);
-			}
+			DEBUG(2, (true, "sort1: '%*.*s'\n",
+				  (int)(nl - linep),
+				  (int)(nl - linep),
+				  linep));
 			/* skip sort keys (first, last, count, name, data). */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
-					"no SP found in '%s'\n", line);
+					"%s: warning: no SP found in '%s'\n",
+					program_name, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
-					"no second SP found in '%s'\n", line);
+					"%s: warning: no second SP in '%s'\n",
+					program_name, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
-					"no third SP found in '%s'\n", line);
+					"%s: warning: no third SP in '%s'\n",
+					program_name, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
-					"no fourth SP found in '%s'\n", line);
+					"%s: warning: no fourth SP in '%s'\n",
+					program_name, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
-					"no fifth SP found in '%s'\n", line);
+					"%s: warning: no fifth SP in '%s'\n",
+					program_name, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
-			if (debuglev > 1) {
-				fprintf(stderr, "sort2: '%*.*s'\n",
-					(int)(nl - linep),
-					(int)(nl - linep),
-					linep);
-			}
+			DEBUG(2, (true, "sort2: '%*.*s'\n",
+				  (int)(nl - linep),
+				  (int)(nl - linep),
+				  linep));
 			msg = tuple_make(&tup, linep, (size_t)(nl - linep));
 			if (msg != NULL) {
-				fprintf(stderr, "tuple_make: %s\n", msg);
+				fprintf(stderr,
+					"%s: warning: tuple_make: %s\n",
+					program_name, msg);
 				continue;
 			}
 			(*pres)(&tup, linep, (size_t)(nl - linep), stdout);
@@ -2292,16 +2275,16 @@ writer_fini(writer_t writer) {
 		}
 		DESTROY(line);
 		fclose(writer->sort_stdout);
-		if (debuglev > 0)
-			fprintf(stderr,
-				"closed sort_stdout, read %d objs (lim %ld)\n",
-				count, query_limit);
+		DEBUG(1, (true, "closed sort_stdout, read %d objs (lim %ld)\n",
+			  count, query_limit));
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
 			if (!writer->sort_killed && status != 0)
-				fprintf(stderr, "sort exit status is %u\n",
-					status);
+				fprintf(stderr,
+					"%s: warning: sort "
+					"exit status is %u\n",
+					program_name, status);
 		}
 	}
 
@@ -2322,15 +2305,13 @@ io_engine(int jobs) {
 	int still, repeats, numfds;
 	struct CURLMsg *cm;
 
-	if (debuglev > 1)
-		fprintf(stderr, "io_engine(%d)\n", jobs);
+	DEBUG(2, (true, "io_engine(%d)\n", jobs));
 
 	/* let libcurl run while there are too many jobs remaining. */
 	still = 0;
 	repeats = 0;
 	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs) {
-		if (debuglev > 3)
-			fprintf(stderr, "...waiting (still %d)\n", still);
+		DEBUG(4, (true, "...waiting (still %d)\n", still));
 		numfds = 0;
 		if (curl_multi_wait(multi, NULL, 0, 0, &numfds) != CURLM_OK)
 			break;
@@ -2347,19 +2328,23 @@ io_engine(int jobs) {
 	while ((cm = curl_multi_info_read(multi, &still)) != NULL) {
 		if (cm->msg == CURLMSG_DONE && cm->data.result != CURLE_OK) {
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST)
-				fprintf(stderr, "libcurl failed since "
-						"could not resolve host\n");
+				fprintf(stderr,
+					"%s: warning: libcurl failed since "
+					"could not resolve host\n",
+					program_name);
 			else if (cm->data.result == CURLE_COULDNT_CONNECT)
-				fprintf(stderr, "libcurl failed since "
-						"could not connect\n");
+				fprintf(stderr,
+					"%s: warning: libcurl failed since "
+					"could not connect\n",
+					program_name);
 			else
-				fprintf(stderr, "libcurl failed with "
-						"curl error %d\n",
-					cm->data.result);
+				fprintf(stderr,
+					"%s: warning: libcurl failed with "
+					"curl error %d\n",
+					program_name, cm->data.result);
 			exit_code = 1;
 		}
-		if (debuglev > 3)
-			fprintf(stderr, "...info read (still %d)\n", still);
+		DEBUG(4, (true, "...info read (still %d)\n", still));
 	}
 }
 
@@ -2378,19 +2363,17 @@ present_text(pdns_tuple_ct tup,
 
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
-		fputs(";; record times: ", outf);
-		time_print(tup->time_first, outf);
-		fputs(" .. ", outf);
-		time_print(tup->time_last, outf);
-		putc('\n', outf);
+		fprintf(outf, ";; record times: %s",
+			time_str(tup->time_first, iso));
+		fprintf(outf, " .. %s\n",
+			time_str(tup->time_last, iso));
 		ppflag = true;
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
-		fputs(";;   zone times: ", outf);
-		time_print(tup->zone_first, outf);
-		fputs(" .. ", outf);
-		time_print(tup->zone_last, outf);
-		putc('\n', outf);
+		fprintf(outf, ";;   zone times: %s",
+			time_str(tup->zone_first, iso));
+		fprintf(outf, " .. %s\n",
+			time_str(tup->zone_last, iso));
 		ppflag = true;
 	}
 
@@ -2452,17 +2435,16 @@ present_text_summarize(pdns_tuple_ct tup,
 
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
-		fputs(";; record times: ", outf);
-		time_print(tup->time_first, outf);
-		fputs(" .. ", outf);
-		time_print(tup->time_last, outf);
-		putc('\n', outf);
+		fprintf(outf, ";; record times: %s",
+			time_str(tup->time_first, iso));
+		fprintf(outf, " .. %s\n",
+			time_str(tup->time_last, iso));
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
-		fputs(";;   zone times: ", outf);
-		time_print(tup->zone_first, outf);
-		fputs(" .. ", outf);
-		time_print(tup->zone_last, outf);
+		fprintf(outf, ";;   zone times: %s",
+			time_str(tup->zone_first, iso));
+		fprintf(outf, " .. %s\n",
+			time_str(tup->zone_last, iso));
 		putc('\n', outf);
 	}
 
@@ -2552,29 +2534,17 @@ present_csv_line(pdns_tuple_ct tup,
 		 FILE *outf)
 {
 	/* Timestamps. */
-	if (tup->obj.time_first != NULL) {
-		putc('"', outf);
-		time_print(tup->time_first, outf);
-		putc('"', outf);
-	}
+	if (tup->obj.time_first != NULL)
+		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso));
 	putc(',', outf);
-	if (tup->obj.time_last != NULL) {
-		putc('"', outf);
-		time_print(tup->time_last, outf);
-		putc('"', outf);
-	}
+	if (tup->obj.time_last != NULL)
+		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso));
 	putc(',', outf);
-	if (tup->obj.zone_first != NULL) {
-		putc('"', outf);
-		time_print(tup->zone_first, outf);
-		putc('"', outf);
-	}
+	if (tup->obj.zone_first != NULL)
+		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso));
 	putc(',', outf);
-	if (tup->obj.zone_last != NULL) {
-		putc('"', outf);
-		time_print(tup->zone_last, outf);
-		putc('"', outf);
-	}
+	if (tup->obj.zone_last != NULL)
+		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso));
 	putc(',', outf);
 
 	/* Count and bailiwick. */
@@ -2610,29 +2580,17 @@ present_csv_summarize(pdns_tuple_ct tup,
 		"count,num_results\n");
 
 	/* Timestamps. */
-	if (tup->obj.time_first != NULL) {
-		putc('"', outf);
-		time_print(tup->time_first, outf);
-		putc('"', outf);
-	}
+	if (tup->obj.time_first != NULL)
+		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso));
 	putc(',', outf);
-	if (tup->obj.time_last != NULL) {
-		putc('"', outf);
-		time_print(tup->time_last, outf);
-		putc('"', outf);
-	}
+	if (tup->obj.time_last != NULL)
+		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso));
 	putc(',', outf);
-	if (tup->obj.zone_first != NULL) {
-		putc('"', outf);
-		time_print(tup->zone_first, outf);
-		putc('"', outf);
-	}
+	if (tup->obj.zone_first != NULL)
+		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso));
 	putc(',', outf);
-	if (tup->obj.zone_last != NULL) {
-		putc('"', outf);
-		time_print(tup->zone_last, outf);
-		putc('"', outf);
-	}
+	if (tup->obj.zone_last != NULL)
+		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso));
 	putc(',', outf);
 
 	/* Count and num_results. */
@@ -2652,20 +2610,15 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	json_error_t error;
 
 	memset(tup, 0, sizeof *tup);
-	if (debuglev > 2)
-		fprintf(stderr, "[%d] '%-*.*s'\n",
-			(int)len, (int)len, (int)len, buf);
+	DEBUG(3, (true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf));
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
-		fprintf(stderr, "%d:%d: %s %s\n",
-			error.line, error.column,
+		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
+			program_name, error.line, error.column,
 			error.text, error.source);
 		abort();
 	}
-	if (debuglev > 3) {
-		json_dumpf(tup->obj.main, stderr, JSON_INDENT(2));
-		fputc('\n', stderr);
-	}
+	DEBUG(4, (true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2))));
 
 	/* Timestamps. */
 	tup->obj.zone_first = json_object_get(tup->obj.main,
@@ -2824,20 +2777,15 @@ dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 	json_t *rate;
 
 	memset(tup, 0, sizeof *tup);
-	if (debuglev > 2)
-		fprintf(stderr, "[%d] '%-*.*s'\n",
-			(int)len, (int)len, (int)len, buf);
+	DEBUG(3, (true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf));
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
-		fprintf(stderr, "%d:%d: %s %s\n",
-			error.line, error.column,
+		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
+			program_name, error.line, error.column,
 			error.text, error.source);
 		abort();
 	}
-	if (debuglev > 3) {
-		json_dumpf(tup->obj.main, stderr, JSON_INDENT(2));
-		fputc('\n', stderr);
-	}
+	DEBUG(4, (true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2))));
 
 	rate = json_object_get(tup->obj.main, "rate");
 	if (rate == NULL) {
@@ -2905,27 +2853,21 @@ timecmp(u_long a, u_long b) {
 	return (0);
 }
 
-/* time_print -- format one (possibly relative) timestamp.
+/* time_str -- format one (possibly relative) timestamp (returns static string)
  */
-static void
-time_print(u_long x, FILE *outf) {
+static const char *
+time_str(u_long x, bool isofmt) {
+	static char ret[sizeof "yyyy-mm-ddThh:mm:ssZ"];
+
 	if (x == 0) {
-		fputs("0", outf);
+		strcpy(ret, "0");
 	} else {
-		const char *val;
 		time_t t = (time_t)x;
 		struct tm *y = gmtime(&t);
-		char z[99];
-		/* only allow "iso" or "csv", but default to "csv",
-		 * so only "iso" matters.
-		 */
-		val = getenv(env_time_fmt);
-		if (val != NULL && strcmp(val, "iso") == 0)
-			strftime(z, sizeof z, "%FT%TZ", y);
-		else
-			strftime(z, sizeof z, "%F %T", y);
-		fputs(z, outf);
+
+		strftime(ret, sizeof ret, isofmt ? "%FT%TZ" : "%F %T", y);
 	}
+	return ret;
 }
 
 /* time_get -- parse and return one (possibly relative) timestamp.
@@ -2967,7 +2909,8 @@ escape(char **src) {
 
 	escaped = curl_escape(*src, (int)strlen(*src));
 	if (escaped == NULL) {
-		fprintf(stderr, "curl_escape(%s) failed\n", *src);
+		fprintf(stderr, "%s: curl_escape(%s) failed\n",
+			program_name, *src);
 		my_exit(1, NULL);
 	}
 	DESTROY(*src);
@@ -3005,7 +2948,10 @@ sortable_rdata(pdns_tuple_ct tup) {
 				sortable_rdatum(&buf, tup->rrtype,
 						json_string_value(rr));
 			else
-				fprintf(stderr, "rdata slot not a string?\n");
+				fprintf(stderr,
+					"%s: warning: rdata slot "
+					"is not a string\n",
+					program_name);
 		}
 	} else {
 		sortable_rdatum(&buf, tup->rrtype, tup->rdata);
@@ -3219,8 +3165,7 @@ static void
 dnsdb_request_info(void) {
 	writer_t writer;
 
-	if (debuglev > 0)
-		fprintf(stderr, "dnsdb_request_info()\n");
+	DEBUG(1, (true, "dnsdb_request_info()\n"));
 
 	/* start a writer, which might be format functions, or POSIX sort. */
 	writer = writer_init(0, 0);
@@ -3241,7 +3186,7 @@ dnsdb_auth(reader_t reader) {
 		char *key_header;
 
 		if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0)
-			my_panic("asprintf");
+			my_panic(true, "asprintf");
 		reader->hdrs = curl_slist_append(reader->hdrs, key_header);
 		DESTROY(key_header);
 	}
@@ -3293,25 +3238,27 @@ circl_url(const char *path, char *sep) {
 
 	for (pi = 0; valid_paths[pi] != NULL; pi++)
 		if (strncasecmp(path, valid_paths[pi], strlen(valid_paths[pi]))
-		    == 0) {
+		    == 0)
+		{
 			val = path + strlen(valid_paths[pi]);
 			break;
 		}
 	if (valid_paths[pi] == NULL) {
 		fprintf(stderr,
-			"Unsupported type of query for CIRCL pDNS: %s\n",
-			path);
+			"%s: unsupported type of query for CIRCL pDNS: %s\n",
+			program_name, path);
 		my_exit(1, NULL);
 	}
 
 	if (strchr(val, '/') != NULL) {
-		fprintf(stderr, "Qualifiers not supported by CIRCL pDNS: %s\n",
-			val);
+		fprintf(stderr,
+			"%s: qualifiers not supported by CIRCL pDNS: %s\n",
+			program_name, val);
 		my_exit(1, NULL);
 	}
 	x = asprintf(&ret, "%s/%s", circl_base_url, val);
 	if (x < 0)
-		my_panic("asprintf");
+		my_panic(true, "asprintf");
 
 	/* because we will NOT append query parameters,
 	 * tell the caller to use ? for its query parameters.
