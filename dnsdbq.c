@@ -28,7 +28,6 @@
 /* optional features. */
 #define WANT_PDNS_CIRCL 1
 
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <sys/errno.h>
@@ -589,15 +588,16 @@ main(int argc, char *argv[]) {
 			bailiwick = strdup(optarg);
 			break;
 		case 'k': {
+			char *saveptr = NULL;
 			const char *tok;
 			if (nkeys > 0)
 				usage("Can only specify -k once; use commas "
 				      "to separate multiple sort fields");
 
 			nkeys = 0;
-			for (tok = strtok(optarg, ",");
+			for (tok = strtok_r(optarg, ",", &saveptr);
 			     tok != NULL;
-			     tok = strtok(NULL, ","))
+			     tok = strtok_r(NULL, ",", &saveptr))
 			{
 				const char *msg;
 
@@ -658,13 +658,13 @@ main(int argc, char *argv[]) {
 			break;
 		case 'v':
 			report_version();
-			my_exit(0, NULL);
+			my_exit(0);
 		case 'q':
 			quiet = true;
 			break;
 		case 'h':
 			help();
-			my_exit(0, NULL);
+			my_exit(0);
 		default:
 			usage("unrecognized option");
 		}
@@ -850,7 +850,7 @@ main(int argc, char *argv[]) {
 	DESTROY(rrtype);
 	DESTROY(bailiwick);
 	DESTROY(pfxlen);
-	my_exit(exit_code, NULL);
+	my_exit(exit_code);
 }
 
 /* Private. */
@@ -948,7 +948,7 @@ usage(const char *fmtstr, ...) {
 	fprintf(stderr,
 		"try   %s -h   for a short description of program usage.\n",
 		program_name);
-	my_exit(1, NULL);
+	my_exit(1);
 }
 
 /* my_exit -- free all known heap objects, then exit.
@@ -1000,7 +1000,7 @@ my_panic(bool want_perror, const char *s) {
 		perror(s);
 	else
 		fprintf(stderr, "%s\n", s);
-	my_exit(1, NULL);
+	my_exit(1);
 }
 
 /* parse a base 10 long value.	Return true if ok, else return false.
@@ -1149,10 +1149,10 @@ read_configs(void) {
 		DESTROY(cf);
 	}
 	if (cf != NULL) {
-		char *cmd, *tok1, *tok2, *line;
+		char *cmd, *line;
 		size_t n;
-		FILE *f;
 		int x, l;
+		FILE *f;
 
 		x = asprintf(&cmd,
 			     ". %s;"
@@ -1170,7 +1170,7 @@ read_configs(void) {
 		if (f == NULL) {
 			fprintf(stderr, "%s: [%s]: %s",
 				program_name, cmd, strerror(errno));
-			my_exit(1, cmd, NULL);
+			my_exit(1, cmd);
 		}
 		DEBUG(1, (true, "conf cmd = '%s'\n", cmd));
 		DESTROY(cmd);
@@ -1178,22 +1178,23 @@ read_configs(void) {
 		n = 0;
 		l = 0;
 		while (getline(&line, &n, f) > 0) {
-			char **pp;
+			char **pp, *tok1, *tok2;
+			char *saveptr = NULL;
 
 			l++;
 			if (strchr(line, '\n') == NULL) {
 				fprintf(stderr,
 					"%s: conf line #%d: too long\n",
 					program_name, l);
-				my_exit(1, NULL);
+				my_exit(1);
 			}
-			tok1 = strtok(line, "\040\012");
-			tok2 = strtok(NULL, "\040\012");
+			tok1 = strtok_r(line, "\040\012", &saveptr);
+			tok2 = strtok_r(NULL, "\040\012", &saveptr);
 			if (tok1 == NULL) {
 				fprintf(stderr,
 					"%s: conf line #%d: malformed\n",
 					program_name, l);
-				my_exit(1, NULL);
+				my_exit(1);
 			}
 			if (tok2 == NULL)
 				continue;
@@ -1342,32 +1343,37 @@ do_batch(FILE *f, u_long after, u_long before) {
 static const char *
 batch_parse(char *line, query_t qp) {
 	struct query q = (struct query) { };
+	char *saveptr = NULL;
 	char *t;
 	
-	if ((t = strtok(line, "/")) == NULL)
+	if ((t = strtok_r(line, "/", &saveptr)) == NULL)
 		return "too few terms";
 	if (strcmp(t, "rrset") == 0) {
-		if ((t = strtok(NULL, "/")) == NULL)
+		if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 			return "missing term after 'rrset/'";
 		if (strcmp(t, "name") == 0) {
 			q.mode = rrset_mode;
-			if ((t = strtok(NULL, "/")) == NULL)
+			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rrset/name/'";
 			q.thing = t;
-			if ((t = strtok(NULL, "/")) != NULL) {
+			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				q.rrtype = t;
-				if ((t = strtok(NULL, "/")) != NULL) {
+				if ((t = strtok_r(NULL, "/", &saveptr))
+				    != NULL)
+				{
 					q.bailiwick = t;
 				}
 			}
 		} else if (strcmp(t, "raw") == 0) {
 			q.mode = raw_rrset_mode;
-			if ((t = strtok(NULL, "/")) == NULL)
+			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rrset/raw/'";
 			q.thing = t;
-			if ((t = strtok(NULL, "/")) != NULL) {
+			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				q.rrtype = t;
-				if ((t = strtok(NULL, "/")) != NULL) {
+				if ((t = strtok_r(NULL, "/", &saveptr))
+				    != NULL)
+				{
 					q.bailiwick = t;
 				}
 			}
@@ -1375,27 +1381,27 @@ batch_parse(char *line, query_t qp) {
 			return "unrecognized term after 'rrset/'";
 		}
 	} else if (strcmp(t, "rdata") == 0) {
-		if ((t = strtok(NULL, "/")) == NULL)
+		if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 			return "missing term after 'rdata/'";
 		if (strcmp(t, "name") == 0) {
 			q.mode = name_mode;
-			if ((t = strtok(NULL, "/")) == NULL)
+			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/name/'";
 			q.thing = t;
-			if ((t = strtok(NULL, "/")) != NULL) {
+			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				q.rrtype = t;
 			}
 		} else if (strcmp(t, "raw") == 0) {
 			q.mode = raw_name_mode;
-			if ((t = strtok(NULL, "/")) == NULL)
+			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/raw/'";
 			q.thing = t;
-			if ((t = strtok(NULL, "/")) != NULL) {
+			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				q.rrtype = t;
 			}
 		} else if (strcmp(t, "ip") == 0) {
 			q.mode = ip_mode;
-			if ((t = strtok(NULL, "/")) == NULL)
+			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/ip/'";
 			q.thing = t;
 		} else {
@@ -1404,7 +1410,7 @@ batch_parse(char *line, query_t qp) {
 	} else {
 		return "unrecognized initial term";
 	}
-	t = strtok(NULL, "/");
+	t = strtok_r(NULL, "/", &saveptr);
 	if (t != NULL)
 		return "extra garbage";
 	*qp = q;
@@ -1495,7 +1501,7 @@ make_curl(void) {
 	if (multi == NULL) {
 		fprintf(stderr, "%s: curl_multi_init() failed\n",
 			program_name);
-		my_exit(1, NULL);
+		my_exit(1);
 	}
 }
 
@@ -1597,13 +1603,13 @@ launch(const char *command, writer_t writer,
 
 	url = sys->url(command, &sep);
 	if (url == NULL)
-		my_exit(1, NULL);
+		my_exit(1);
 
 	if (query_limit != -1) {
 		x = asprintf(&tmp, "%s%c" "limit=%ld", url, sep, query_limit);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url, NULL);
+			my_exit(1, url);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1615,7 +1621,7 @@ launch(const char *command, writer_t writer,
 			     url, sep, (u_long)first_after);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url, NULL);
+			my_exit(1, url);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1627,7 +1633,7 @@ launch(const char *command, writer_t writer,
 			     url, sep, (u_long)first_before);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url, NULL);
+			my_exit(1, url);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1639,7 +1645,7 @@ launch(const char *command, writer_t writer,
 			     url, sep, (u_long)last_after);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url, NULL);
+			my_exit(1, url);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1651,7 +1657,7 @@ launch(const char *command, writer_t writer,
 			     url, sep, (u_long)last_before);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url, NULL);
+			my_exit(1, url);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1677,7 +1683,7 @@ launch_one(writer_t writer, char *url) {
 	reader->easy = curl_easy_init();
 	if (reader->easy == NULL) {
 		/* an error will have been output by libcurl in this case. */
-		my_exit(1, reader, url, NULL);
+		my_exit(1, reader, url);
 	}
 	reader->url = url;
 	url = NULL;
@@ -1704,7 +1710,7 @@ launch_one(writer_t writer, char *url) {
 	if (res != CURLM_OK) {
 		fprintf(stderr, "%s: curl_multi_add_handle() failed: %s\n",
 			program_name, curl_multi_strerror(res));
-		my_exit(1, NULL);
+		my_exit(1);
 	}
 }
 
@@ -2158,6 +2164,7 @@ writer_fini(writer_t writer) {
 				break;
 			}
 		}
+		assert(prev != NULL);
 		prev->next = writer->next;
 	}
 
@@ -2284,7 +2291,7 @@ writer_fini(writer_t writer) {
 				fprintf(stderr,
 					"%s: warning: sort "
 					"exit status is %u\n",
-					program_name, status);
+					program_name, (unsigned)status);
 		}
 	}
 
@@ -2316,8 +2323,17 @@ io_engine(int jobs) {
 		if (curl_multi_wait(multi, NULL, 0, 0, &numfds) != CURLM_OK)
 			break;
 		if (numfds == 0) {
-			if (++repeats > 1)
-				usleep(100000);
+			if (++repeats > 1) {
+				struct timespec req, rem;
+
+				req = (struct timespec){
+					.tv_sec = 0,
+					.tv_nsec = 100*1000*1000  // 100ms
+				};
+				while (nanosleep(&req, &rem) == EINTR) {
+					req = rem;
+				}
+			}
 		} else {
 			repeats = 0;
 		}
@@ -2863,7 +2879,7 @@ time_str(u_long x, bool isofmt) {
 		strcpy(ret, "0");
 	} else {
 		time_t t = (time_t)x;
-		struct tm *y = gmtime(&t);
+		struct tm result, *y = gmtime_r(&t, &result);
 
 		strftime(ret, sizeof ret, isofmt ? "%FT%TZ" : "%F %T", y);
 	}
@@ -2911,7 +2927,7 @@ escape(char **src) {
 	if (escaped == NULL) {
 		fprintf(stderr, "%s: curl_escape(%s) failed\n",
 			program_name, *src);
-		my_exit(1, NULL);
+		my_exit(1);
 	}
 	DESTROY(*src);
 	*src = strdup(escaped);
@@ -3110,7 +3126,7 @@ dnsdb_url(const char *path, char *sep) {
 	if (x >= 3 && chosen_verb != &verbs[DEFAULT_VERB])
 		usage("Cannot specify a verb other than 'lookup' "
 		      "if the server URL contains a path");
-	verb_path = "";
+	verb_path = NULL;
 	if (chosen_verb->url_fragment != NULL)
 		verb_path = chosen_verb->url_fragment;
 	else
@@ -3243,18 +3259,18 @@ circl_url(const char *path, char *sep) {
 			val = path + strlen(valid_paths[pi]);
 			break;
 		}
-	if (valid_paths[pi] == NULL) {
+	if (val == NULL) {
 		fprintf(stderr,
 			"%s: unsupported type of query for CIRCL pDNS: %s\n",
 			program_name, path);
-		my_exit(1, NULL);
+		my_exit(1);
 	}
 
 	if (strchr(val, '/') != NULL) {
 		fprintf(stderr,
 			"%s: qualifiers not supported by CIRCL pDNS: %s\n",
 			program_name, val);
-		my_exit(1, NULL);
+		my_exit(1);
 	}
 	x = asprintf(&ret, "%s/%s", circl_base_url, val);
 	if (x < 0)
