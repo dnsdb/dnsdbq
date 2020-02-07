@@ -575,11 +575,6 @@ main(int argc, char *argv[]) {
 		case 't':
 			if (rrtype != NULL)
 				usage("can only specify rrtype one way");
-			if (mode != no_mode && mode != ip_mode)
-				fprintf(stderr,
-					"%s: warning: -t option should precede"
-					" the -R, -r, -N, or -n options\n",
-					program_name);
 			rrtype = strdup(optarg);
 			break;
 		case 'b':
@@ -714,7 +709,9 @@ main(int argc, char *argv[]) {
 	if (after != 0 && before != 0) {
 		if (after > 0 && before > 0 && after > before)
 			usage("-A -B requires after <= before (for now)");
-		if (sorted == no_sort && json_fd == -1 && !complete) {
+		if (sorted == no_sort && json_fd == -1 &&
+		    !complete && !quiet)
+		{
 			fprintf(stderr,
 				"%s: warning: -A and -B w/o -c requires"
 				" sorting for dedup, so turning on -S here.\n",
