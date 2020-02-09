@@ -192,7 +192,7 @@ static bool parse_long(const char *, long *);
 static void report_version(void);
 static void debug(bool, const char *, ...);
 static __attribute__((noreturn)) void usage(const char *, ...);
-static __attribute__((noreturn)) void my_exit(int, ...);
+static __attribute__((noreturn)) void my_exit(int);
 static __attribute__((noreturn)) void my_panic(bool, const char *);
 static void server_setup(void);
 static const char *add_sort_key(const char *);
@@ -585,11 +585,9 @@ main(int argc, char *argv[]) {
 		case 'k': {
 			char *saveptr = NULL;
 			const char *tok;
-			if (nkeys > 0)
-				usage("Can only specify -k once; use commas "
-				      "to separate multiple sort fields");
 
-			nkeys = 0;
+			if (sorted == no_sort)
+				usage("-k must be preceded by -s or -S");
 			for (tok = strtok_r(optarg, ",", &saveptr);
 			     tok != NULL;
 			     tok = strtok_r(NULL, ",", &saveptr))
@@ -898,7 +896,8 @@ help(void) {
 	     "use -q for warning reticence.\n"
 	     "use -v to show the program version.\n"
 	     "use -s to sort in ascending order, "
-	     "or -S for descending order.");
+	     "or -S for descending order.\n"
+	     "\t-s/-S can be repeated before several -k arguments");
 	puts("for -u, system must be one of:");
 	for (t = pdns_systems; t->name != NULL; t++)
 		printf("\t%s\n", t->name);
@@ -948,19 +947,11 @@ usage(const char *fmtstr, ...) {
 	my_exit(1);
 }
 
-/* my_exit -- free all known heap objects, then exit.
+/* my_exit -- close or destroy global objects, then exit.
  */
 static __attribute__((noreturn)) void
-my_exit(int code, ...) {
-	va_list ap;
-	void *p;
+my_exit(int code) {
 	int n;
-
-	/* our varargs are things to be freed. */
-	va_start(ap, code);
-	while (p = va_arg(ap, void *), p != NULL)
-		DESTROY(p);
-	va_end(ap);
 
 	/* writers and readers which are still known, must be freed. */
 	while (writers != NULL)
@@ -1058,6 +1049,8 @@ or_else(const char *p, const char *or_else) {
 static const char *
 add_sort_key(const char *tok) {
 	const char *key = NULL;
+	char *computed;
+	int x;
 
 	if (nkeys == MAX_KEYS)
 		return ("too many sort keys given.");
@@ -1077,7 +1070,11 @@ add_sort_key(const char *tok) {
 	if (key == NULL)
 		return ("key must be one of first, "
 			"last, count, name, or data");
-	keys[nkeys++] = (struct sortkey){strdup(tok), strdup(key)};
+	x = asprintf(&computed, "%s%s", key,
+		     sorted == reverse_sort ? "r" : "");
+	if (x < 0)
+		my_panic(true, "asprintf");
+	keys[nkeys++] = (struct sortkey){strdup(tok), computed};
 	return (NULL);
 }
 
@@ -1167,7 +1164,8 @@ read_configs(void) {
 		if (f == NULL) {
 			fprintf(stderr, "%s: [%s]: %s",
 				program_name, cmd, strerror(errno));
-			my_exit(1, cmd);
+			DESTROY(cmd);
+			my_exit(1);
 		}
 		DEBUG(1, (true, "conf cmd = '%s'\n", cmd));
 		DESTROY(cmd);
@@ -1606,7 +1604,8 @@ launch(const char *command, writer_t writer,
 		x = asprintf(&tmp, "%s%c" "limit=%ld", url, sep, query_limit);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url);
+			DESTROY(url);
+			my_exit(1);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1618,7 +1617,8 @@ launch(const char *command, writer_t writer,
 			     url, sep, (u_long)first_after);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url);
+			DESTROY(url);
+			my_exit(1);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1630,7 +1630,8 @@ launch(const char *command, writer_t writer,
 			     url, sep, (u_long)first_before);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url);
+			DESTROY(url);
+			my_exit(1);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1642,7 +1643,8 @@ launch(const char *command, writer_t writer,
 			     url, sep, (u_long)last_after);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url);
+			DESTROY(url);
+			my_exit(1);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1654,7 +1656,8 @@ launch(const char *command, writer_t writer,
 			     url, sep, (u_long)last_before);
 		if (x < 0) {
 			perror("asprintf");
-			my_exit(1, url);
+			DESTROY(url);
+			my_exit(1);
 		}
 		DESTROY(url);
 		url = tmp;
@@ -1680,7 +1683,9 @@ launch_one(writer_t writer, char *url) {
 	reader->easy = curl_easy_init();
 	if (reader->easy == NULL) {
 		/* an error will have been output by libcurl in this case. */
-		my_exit(1, reader, url);
+		DESTROY(reader);
+		DESTROY(url);
+		my_exit(1);
 	}
 	reader->url = url;
 	url = NULL;
@@ -1788,13 +1793,8 @@ writer_init(u_long after, u_long before) {
 			sap = sort_argv;
 			*sap++ = strdup("sort");
 			*sap++ = strdup("-u");
-			for (n = 0; n < nkeys; n++) {
-				int x = asprintf(sap++, "%s%s",
-						 keys[n].computed,
-						 sorted==reverse_sort?"r":"");
-				if (x < 0)
-					my_panic(true, "asprintf");
-			}
+			for (n = 0; n < nkeys; n++)
+				*sap++ = strdup(keys[n].computed);
 			*sap++ = NULL;
 			putenv(strdup("LC_ALL=C"));
 			DEBUG(1, (true, "\"%s\" args:", path_sort));
@@ -2102,7 +2102,7 @@ input_blob(const char *buf, size_t len,
 
 	if (sorted != no_sort) {
 		/* POSIX sort is given five extra fields at the
-		 * front of each line (first, last, count)
+		 * front of each line (first,last,count,name,data)
 		 * which are accessed as -k1 .. -k5 on the
 		 * sort command line. we strip them off later
 		 * when reading the result back. the reason

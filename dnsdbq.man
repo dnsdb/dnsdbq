@@ -200,9 +200,16 @@ specify newline delimited json output mode.
 .It Fl k Ar sort_keys
 when sorting with -s or -S, selects one or more comma separated sort keys,
 among "first", "last", "count", "name", and/or "data".
-The default order is be "first,last,count" (if sorting is requested.)
+The default order is be "first,last,count,name,data" (if sorting is requested.)
 Names are sorted right to left (by TLD then 2LD etc). Data is sorted either
 by name if present, or else by numeric value (e.g., for A and AAAA RRsets.)
+Several
+.Fl k
+options can be given after different
+.Fl s
+and
+.Fl S
+options, to sort in ascending order for some keys, descending for others.
 .It Fl l Ar query_limit
 query for that limit's number of responses. If specified as 0 then the DNSDB
 API server will return the maximum limit of results allowed.  If
