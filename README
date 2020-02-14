@@ -1,4 +1,4 @@
-This is a pure C program that accesses passive DNS database systems such as:
+This is a pure C99 program that accesses passive DNS database systems such as:
 	* the DNSDB API server at Farsight Security
 	* the CIRCL pDNS server at Computer Incident Response Center (LU)
 
@@ -10,6 +10,7 @@ new features such as CSV output and JSON reprocessing.
 Dependencies:
 	jansson (2.5 or later)
 	libcurl (7.28 or later)
+	modern compiler (clang or GCC)
 
 On Linux (Debian 8):
 	apt-get install libcurl4-openssl-dev

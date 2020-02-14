@@ -283,7 +283,7 @@ static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
 
 /* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
 static const char id_swclient[] = "dnsdbq";
-static const char id_version[] = "1.5";
+static const char id_version[] = "1.6";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the DEFAULT_SYS. */
@@ -314,7 +314,7 @@ static const struct verb verbs[] = {
 	else if (((p) = malloc(s)) == NULL) { my_panic(true, "malloc"); } \
 	else { memset((p), 0, s); }
 #define DESTROY(p) { if ((p) != NULL) { free(p); (p) = NULL; } }
-#define DEBUG(ge, va) { if (debug_level >= (ge)) debug va; }
+#define DEBUG(ge, ...) { if (debug_level >= (ge)) debug(__VA_ARGS__); }
 
 /* Private. */
 
@@ -350,7 +350,7 @@ static bool sort_bydata = false;
 static writer_t writers = NULL;
 static int exit_code = 0; /* hopeful */
 static size_t ideal_buffer;
-static bool iso = false;
+static bool iso8601 = false;
 
 /* Public. */
 
@@ -373,7 +373,7 @@ main(int argc, char *argv[]) {
 		program_name++;
 	value = getenv(env_time_fmt);
 	if (value != NULL && strcasecmp(value, "iso") == 0)
-		iso = true;
+		iso8601 = true;
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
@@ -836,7 +836,7 @@ main(int argc, char *argv[]) {
 		};
 		server_setup();
 		make_curl();
-		pdns_query((query_ct)&q);
+		pdns_query(&q);
 		unmake_curl();
 	}
 
@@ -975,7 +975,7 @@ my_exit(int code) {
 	}
 
 	/* terminate process. */
-	DEBUG(1, (true, "about to call exit(%d)\n", code));
+	DEBUG(1, true, "about to call exit(%d)\n", code);
 	exit(code);
 }
 
@@ -1137,7 +1137,7 @@ read_configs(void) {
 		cf = strdup(we.we_wordv[0]);
 		wordfree(&we);
 		if (access(cf, R_OK) == 0) {
-			DEBUG(1, (true, "conf found: '%s'\n", cf));
+			DEBUG(1, true, "conf found: '%s'\n", cf);
 			break;
 		}
 		DESTROY(cf);
@@ -1167,7 +1167,7 @@ read_configs(void) {
 			DESTROY(cmd);
 			my_exit(1);
 		}
-		DEBUG(1, (true, "conf cmd = '%s'\n", cmd));
+		DEBUG(1, true, "conf cmd = '%s'\n", cmd);
 		DESTROY(cmd);
 		line = NULL;
 		n = 0;
@@ -1194,7 +1194,7 @@ read_configs(void) {
 			if (tok2 == NULL)
 				continue;
 
-			DEBUG(1, (true, "line #%d: sets %s\n", l, tok1));
+			DEBUG(1, true, "line #%d: sets %s\n", l, tok1);
 			pp = NULL;
 			if (strcmp(tok1, "apikey") == 0) {
 				pp = &api_key;
@@ -1227,15 +1227,15 @@ read_environ() {
 		if (api_key != NULL)
 			DESTROY(api_key);
 		api_key = strdup(val);
-		DEBUG(1, (true, "conf env api_key was set\n"));
+		DEBUG(1, true, "conf env api_key was set\n");
 	}
 	val = getenv(env_dnsdb_base_url);
 	if (val != NULL) {
 		if (dnsdb_base_url != NULL)
 			DESTROY(dnsdb_base_url);
 		dnsdb_base_url = strdup(val);
-		DEBUG(1, (true, "conf env dnsdb_server = '%s'\n",
-			  dnsdb_base_url));
+		DEBUG(1, true, "conf env dnsdb_server = '%s'\n",
+		      dnsdb_base_url);
 	}
 	if (api_key == NULL)
 		usage("no API key given");
@@ -1265,7 +1265,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 		if (nl != NULL)
 			*nl = '\0';
 		
-		DEBUG(1, (true, "do_batch(%s)\n", command));
+		DEBUG(1, true, "do_batch(%s)\n", command);
 
 		/* if not merging, start a writer here instead. */
 		if (!merge) {
@@ -1664,7 +1664,7 @@ launch(const char *command, writer_t writer,
 		tmp = NULL;
 		sep = '&';
 	}
-	DEBUG(1, (true, "url [%s]\n", url));
+	DEBUG(1, true, "url [%s]\n", url);
 
 	launch_one(writer, url);
 }
@@ -1676,7 +1676,7 @@ launch_one(writer_t writer, char *url) {
 	reader_t reader = NULL;
 	CURLMcode res;
 
-	DEBUG(2, (true, "launch_one(%s)\n", url));
+	DEBUG(2, true, "launch_one(%s)\n", url);
 	CREATE(reader, sizeof *reader);
 	reader->writer = writer;
 	writer = NULL;
@@ -1797,10 +1797,10 @@ writer_init(u_long after, u_long before) {
 				*sap++ = strdup(keys[n].computed);
 			*sap++ = NULL;
 			putenv(strdup("LC_ALL=C"));
-			DEBUG(1, (true, "\"%s\" args:", path_sort));
+			DEBUG(1, true, "\"%s\" args:", path_sort);
 			for (sap = sort_argv; *sap != NULL; sap++)
-				DEBUG(1, (false, " [%s]", *sap));
-			DEBUG(1, (false, "\n"));
+				DEBUG(1, false, " [%s]", *sap);
+			DEBUG(1, false, "\n");
 			execve(path_sort, sort_argv, environ);
 			perror("execve");
 			for (sap = sort_argv; *sap != NULL; sap++)
@@ -1838,7 +1838,7 @@ print_rateval(const char *key, rateval_ct tp, FILE *outf) {
 		break;
 	case rk_int:
 		if (strcmp(key, "reset") == 0 || strcmp(key, "expires") == 0)
-			fputs(time_str(tp->as_int, iso), outf);
+			fputs(time_str(tp->as_int, iso8601), outf);
 		else
 			fprintf(outf, "%lu", tp->as_int);
 		break;
@@ -1932,8 +1932,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	FILE *outf;
 	char *nl;
 
-	DEBUG(3, (true, "writer_func(%d, %d): %d\n",
-		   (int)size, (int)nmemb, (int)bytes));
+	DEBUG(3, true, "writer_func(%d, %d): %d\n",
+	      (int)size, (int)nmemb, (int)bytes);
 
 	reader->buf = realloc(reader->buf, reader->len + bytes);
 	memcpy(reader->buf + reader->len, ptr, bytes);
@@ -1998,8 +1998,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		if (sorted == no_sort && output_limit != -1 &&
 		    reader->writer->count >= output_limit)
 		{
-			DEBUG(1, (true, "hit output limit %ld\n",
-				  output_limit));
+			DEBUG(1, true, "hit output limit %ld\n", output_limit);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);
@@ -2050,14 +2049,14 @@ input_blob(const char *buf, size_t len,
 	 * we have to winnow it down upon receipt. (see also -J.)
 	 */
 	whynot = NULL;
-	DEBUG(2, (true, "filtering-- "));
+	DEBUG(2, true, "filtering-- ");
 	if (after != 0) {
 		int first_vs_after, last_vs_after;
 
 		first_vs_after = timecmp(first, after);
 		last_vs_after = timecmp(last, after);
-		DEBUG(2, (false, "FvA %d LvA %d: ",
-			  first_vs_after, last_vs_after));
+		DEBUG(2, false, "FvA %d LvA %d: ",
+			 first_vs_after, last_vs_after);
 
 		if (complete) {
 			if (first_vs_after < 0) {
@@ -2074,8 +2073,8 @@ input_blob(const char *buf, size_t len,
 
 		first_vs_before = timecmp(first, before);
 		last_vs_before = timecmp(last, before);
-		DEBUG(2, (false, "FvB %d LvB %d: ",
-			  first_vs_before, last_vs_before));
+		DEBUG(2, false, "FvB %d LvB %d: ",
+			 first_vs_before, last_vs_before);
 
 		if (complete) {
 			if (last_vs_before > 0) {
@@ -2089,14 +2088,14 @@ input_blob(const char *buf, size_t len,
 	}
 
 	if (whynot == NULL) {
-		DEBUG(2, (false, "selected!\n"));
+		DEBUG(2, false, "selected!\n");
 	} else {
-		DEBUG(2, (false, "skipped (%s).\n", whynot));
+		DEBUG(2, false, "skipped (%s).\n", whynot);
 	}
-	DEBUG(3, (true, "\tF..L = %s", time_str(first, false)));
-	DEBUG(3, (false, " .. %s\n", time_str(last, false)));
-	DEBUG(3, (true, "\tA..B = %s", time_str(after, false)));
-	DEBUG(3, (false, " .. %s\n", time_str(before, false)));
+	DEBUG(3, true, "\tF..L = %s", time_str(first, false));
+	DEBUG(3, false, " .. %s\n", time_str(last, false));
+	DEBUG(3, true, "\tA..B = %s", time_str(after, false));
+	DEBUG(3, false, " .. %s\n", time_str(before, false));
 	if (whynot != NULL)
 		goto next;
 
@@ -2112,11 +2111,11 @@ input_blob(const char *buf, size_t len,
 		char *dyn_rrname = NULL, *dyn_rdata = NULL;
 		if (sort_byname) {
 			dyn_rrname = sortable_rrname(&tup);
-			DEBUG(2, (true, "dyn_rrname = '%s'\n", dyn_rrname));
+			DEBUG(2, true, "dyn_rrname = '%s'\n", dyn_rrname);
 		}
 		if (sort_bydata) {
 			dyn_rdata = sortable_rdata(&tup);
-			DEBUG(2, (true, "dyn_rdata = '%s'\n", dyn_rdata));
+			DEBUG(2, true, "dyn_rdata = '%s'\n", dyn_rdata);
 		}
 		fprintf(outf, "%lu %lu %lu %s %s %*.*s\n",
 			(unsigned long)first,
@@ -2125,13 +2124,13 @@ input_blob(const char *buf, size_t len,
 			or_else(dyn_rrname, "n/a"),
 			or_else(dyn_rdata, "n/a"),
 			(int)len, (int)len, buf);
-		DEBUG(2, (true, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
-			  (unsigned long)first,
-			  (unsigned long)last,
-			  (unsigned long)tup.count,
-			  or_else(dyn_rrname, "n/a"),
-			  or_else(dyn_rdata, "n/a"),
-			  (int)len, (int)len, buf));
+		DEBUG(2, true, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
+			 (unsigned long)first,
+			 (unsigned long)last,
+			 (unsigned long)tup.count,
+			 or_else(dyn_rrname, "n/a"),
+			 or_else(dyn_rdata, "n/a"),
+			 (int)len, (int)len, buf);
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {
@@ -2195,8 +2194,8 @@ writer_fini(writer_t writer) {
 		 * skip over the sort keys we added earlier, and process.
 		 */
 		fclose(writer->sort_stdin);
-		DEBUG(1, (true, "closed sort_stdin, wrote %d objs\n",
-			  writer->count));
+		DEBUG(1, true, "closed sort_stdin, wrote %d objs\n",
+			 writer->count);
 		count = 0;
 		while (getline(&line, &n, writer->sort_stdout) > 0) {
 			/* if we're above the limit, ignore remaining output.
@@ -2222,10 +2221,10 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep = line;
-			DEBUG(2, (true, "sort1: '%*.*s'\n",
-				  (int)(nl - linep),
-				  (int)(nl - linep),
-				  linep));
+			DEBUG(2, true, "sort1: '%*.*s'\n",
+				 (int)(nl - linep),
+				 (int)(nl - linep),
+				 linep);
 			/* skip sort keys (first, last, count, name, data). */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
@@ -2262,10 +2261,10 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
-			DEBUG(2, (true, "sort2: '%*.*s'\n",
-				  (int)(nl - linep),
-				  (int)(nl - linep),
-				  linep));
+			DEBUG(2, true, "sort2: '%*.*s'\n",
+				 (int)(nl - linep),
+				 (int)(nl - linep),
+				 linep);
 			msg = tuple_make(&tup, linep, (size_t)(nl - linep));
 			if (msg != NULL) {
 				fprintf(stderr,
@@ -2279,8 +2278,8 @@ writer_fini(writer_t writer) {
 		}
 		DESTROY(line);
 		fclose(writer->sort_stdout);
-		DEBUG(1, (true, "closed sort_stdout, read %d objs (lim %ld)\n",
-			  count, query_limit));
+		DEBUG(1, true, "closed sort_stdout, read %d objs (lim %ld)\n",
+		      count, query_limit);
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
@@ -2309,17 +2308,18 @@ io_engine(int jobs) {
 	int still, repeats, numfds;
 	struct CURLMsg *cm;
 
-	DEBUG(2, (true, "io_engine(%d)\n", jobs));
+	DEBUG(2, true, "io_engine(%d)\n", jobs);
 
 	/* let libcurl run while there are too many jobs remaining. */
 	still = 0;
 	repeats = 0;
 	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs) {
-		DEBUG(4, (true, "...waiting (still %d)\n", still));
+		DEBUG(4, true, "...waiting (still %d)\n", still);
 		numfds = 0;
 		if (curl_multi_wait(multi, NULL, 0, 0, &numfds) != CURLM_OK)
 			break;
 		if (numfds == 0) {
+			/* curl_multi_wait() can return 0 fds for no reason. */
 			if (++repeats > 1) {
 				struct timespec req, rem;
 
@@ -2328,6 +2328,7 @@ io_engine(int jobs) {
 					.tv_nsec = 100*1000*1000  // 100ms
 				};
 				while (nanosleep(&req, &rem) == EINTR) {
+					/* as required by nanosleep(3). */
 					req = rem;
 				}
 			}
@@ -2357,7 +2358,7 @@ io_engine(int jobs) {
 					program_name, cm->data.result);
 			exit_code = 1;
 		}
-		DEBUG(4, (true, "...info read (still %d)\n", still));
+		DEBUG(4, true, "...info read (still %d)\n", still);
 	}
 }
 
@@ -2377,16 +2378,16 @@ present_text(pdns_tuple_ct tup,
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
 		fprintf(outf, ";; record times: %s",
-			time_str(tup->time_first, iso));
+			time_str(tup->time_first, iso8601));
 		fprintf(outf, " .. %s\n",
-			time_str(tup->time_last, iso));
+			time_str(tup->time_last, iso8601));
 		ppflag = true;
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
 		fprintf(outf, ";;   zone times: %s",
-			time_str(tup->zone_first, iso));
+			time_str(tup->zone_first, iso8601));
 		fprintf(outf, " .. %s\n",
-			time_str(tup->zone_last, iso));
+			time_str(tup->zone_last, iso8601));
 		ppflag = true;
 	}
 
@@ -2449,15 +2450,15 @@ present_text_summarize(pdns_tuple_ct tup,
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
 		fprintf(outf, ";; record times: %s",
-			time_str(tup->time_first, iso));
+			time_str(tup->time_first, iso8601));
 		fprintf(outf, " .. %s\n",
-			time_str(tup->time_last, iso));
+			time_str(tup->time_last, iso8601));
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
 		fprintf(outf, ";;   zone times: %s",
-			time_str(tup->zone_first, iso));
+			time_str(tup->zone_first, iso8601));
 		fprintf(outf, " .. %s\n",
-			time_str(tup->zone_last, iso));
+			time_str(tup->zone_last, iso8601));
 		putc('\n', outf);
 	}
 
@@ -2548,16 +2549,16 @@ present_csv_line(pdns_tuple_ct tup,
 {
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso));
+		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso8601));
 	putc(',', outf);
 	if (tup->obj.time_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso));
+		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso8601));
 	putc(',', outf);
 	if (tup->obj.zone_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso));
+		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso8601));
 	putc(',', outf);
 	if (tup->obj.zone_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso));
+		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso8601));
 	putc(',', outf);
 
 	/* Count and bailiwick. */
@@ -2594,16 +2595,16 @@ present_csv_summarize(pdns_tuple_ct tup,
 
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso));
+		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso8601));
 	putc(',', outf);
 	if (tup->obj.time_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso));
+		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso8601));
 	putc(',', outf);
 	if (tup->obj.zone_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso));
+		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso8601));
 	putc(',', outf);
 	if (tup->obj.zone_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso));
+		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso8601));
 	putc(',', outf);
 
 	/* Count and num_results. */
@@ -2623,7 +2624,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	json_error_t error;
 
 	memset(tup, 0, sizeof *tup);
-	DEBUG(3, (true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf));
+	DEBUG(3, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
 		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
@@ -2631,7 +2632,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			error.text, error.source);
 		abort();
 	}
-	DEBUG(4, (true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2))));
+	DEBUG(4, true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2)));
 
 	/* Timestamps. */
 	tup->obj.zone_first = json_object_get(tup->obj.main,
@@ -2790,7 +2791,7 @@ dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 	json_t *rate;
 
 	memset(tup, 0, sizeof *tup);
-	DEBUG(3, (true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf));
+	DEBUG(3, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
 		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
@@ -2798,7 +2799,7 @@ dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 			error.text, error.source);
 		abort();
 	}
-	DEBUG(4, (true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2))));
+	DEBUG(4, true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2)));
 
 	rate = json_object_get(tup->obj.main, "rate");
 	if (rate == NULL) {
@@ -2869,7 +2870,7 @@ timecmp(u_long a, u_long b) {
 /* time_str -- format one (possibly relative) timestamp (returns static string)
  */
 static const char *
-time_str(u_long x, bool isofmt) {
+time_str(u_long x, bool iso8601fmt) {
 	static char ret[sizeof "yyyy-mm-ddThh:mm:ssZ"];
 
 	if (x == 0) {
@@ -2878,7 +2879,7 @@ time_str(u_long x, bool isofmt) {
 		time_t t = (time_t)x;
 		struct tm result, *y = gmtime_r(&t, &result);
 
-		strftime(ret, sizeof ret, isofmt ? "%FT%TZ" : "%F %T", y);
+		strftime(ret, sizeof ret, iso8601fmt ? "%FT%TZ" : "%F %T", y);
 	}
 	return ret;
 }
@@ -3178,7 +3179,7 @@ static void
 dnsdb_request_info(void) {
 	writer_t writer;
 
-	DEBUG(1, (true, "dnsdb_request_info()\n"));
+	DEBUG(1, true, "dnsdb_request_info()\n");
 
 	/* start a writer, which might be format functions, or POSIX sort. */
 	writer = writer_init(0, 0);
@@ -3300,7 +3301,7 @@ circl_status(reader_t reader __attribute__((unused))) {
 static const char *
 circl_validate_verb(const char *verb_name) {
 	/* Only "lookup" is valid */
-	if (strcasecmp(verb_name, "lookup") == 0)
+	if (strcasecmp(verb_name, "lookup") != 0)
 		return ("the CIRCL system only understands 'lookup'");
 	return (NULL);
 }
