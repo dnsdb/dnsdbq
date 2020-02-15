@@ -332,6 +332,7 @@ static bool merge = false;
 static bool complete = false;
 static bool info = false;
 static bool gravel = false;
+static bool donotverify = false;
 static bool quiet = false;
 static int debug_level = 0;
 static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
@@ -377,7 +378,9 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:R:r:N:n:i:l:L:M:u:p:t:b:k:J:O:V:djfmsShcIgqv"))
+			    "A:B:R:r:N:n:i:l:L:M:u:p:t:b:k:J:O:V:"
+			    "cdfghIjmqSsUv"))
+
 	       != -1)
 	{
 		switch (ch) {
@@ -558,6 +561,9 @@ main(int argc, char *argv[]) {
 			sys = find_system(optarg);
 			if (sys == NULL)
 				usage("-u must refer to a pdns system");
+			break;
+		case 'U':
+			donotverify = true;
 			break;
 		case 'p':
 			if (strcasecmp(optarg, "json") == 0)
@@ -859,7 +865,7 @@ help(void) {
 	pdns_sys_t t;
 	verb_t v;
 
-	printf("usage: %s [-cdfghIjmqsSv] [-p dns|json|csv]\n", program_name);
+	printf("usage: %s [-cdfghIjmqSsUv] [-p dns|json|csv]\n", program_name);
 	puts("\t[-k (first|last|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
 	     "\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
@@ -897,7 +903,8 @@ help(void) {
 	     "use -q for warning reticence.\n"
 	     "use -s to sort in ascending order, "
 	     "or -S for descending order.\n"
-	     "\t-s/-S can be repeated before several -k arguments\n"
+	     "\t-s/-S can be repeated before several -k arguments.\n"
+	     "use -U to turn off SSL certificate verification.\n"
 	     "use -v to show the program version.");
 	puts("for -u, system must be one of:");
 	for (t = pdns_systems; t->name != NULL; t++)
@@ -1691,8 +1698,10 @@ launch_one(writer_t writer, char *url) {
 	reader->url = url;
 	url = NULL;
 	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
-	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
-	curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
+	if (donotverify) {
+		curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
+		curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
+	}
 	sys->auth(reader);
 	reader->hdrs = curl_slist_append(reader->hdrs, json_header);
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);

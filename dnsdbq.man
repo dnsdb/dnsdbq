@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl cdfghIjmqsSv
+.Op Fl cdfghIjmqSsUv
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -321,6 +321,8 @@ result size.  At-a-glance, it provides information on when a given
 domain name, IP address or other DNS asset was first-seen and
 last-seen by the global sensor network, as well as the total
 observation count.
+.It Fl U
+turns off TLS certificate verification (unsafe).
 .It Fl v
 report the version of dnsdbq and exit.
 .El
