@@ -859,7 +859,7 @@ help(void) {
 	pdns_sys_t t;
 	verb_t v;
 
-	printf("usage: %s [-djsShcIgqv] [-p dns|json|csv]\n", program_name);
+	printf("usage: %s [-cdfghIjmqsSv] [-p dns|json|csv]\n", program_name);
 	puts("\t[-k (first|last|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
 	     "\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
@@ -892,12 +892,13 @@ help(void) {
 	     "as from -j output.\n"
 	     "use -j as a synonym for -p json.\n"
 	     "use -M # to end a summarize op when count exceeds threshold.\n"
+	     "use -m with -f to merge all answers into a single result.\n"
 	     "use -O # to skip this many results in what is returned.\n"
 	     "use -q for warning reticence.\n"
-	     "use -v to show the program version.\n"
 	     "use -s to sort in ascending order, "
 	     "or -S for descending order.\n"
-	     "\t-s/-S can be repeated before several -k arguments");
+	     "\t-s/-S can be repeated before several -k arguments\n"
+	     "use -v to show the program version.");
 	puts("for -u, system must be one of:");
 	for (t = pdns_systems; t->name != NULL; t++)
 		printf("\t%s\n", t->name);

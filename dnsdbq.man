@@ -20,25 +20,25 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl dfgmhjsShcIqv
+.Op Fl cdfghIjmqsSv
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
 .Op Fl i Ar ip
-.Op Fl l Ar query_limit
+.Op Fl J Ar input_file
+.Op Fl k Ar sort_keys
 .Op Fl L Ar output_limit
-.Op Fl u Ar server_sys
+.Op Fl l Ar query_limit
+.Op Fl M Ar max_count
 .Op Fl N Ar raw_name
 .Op Fl n Ar name
-.Op Fl k Ar sort_keys
-.Op Fl M Ar max_count
 .Op Fl O Ar offset
 .Op Fl p Ar output_type
-.Op Fl t Ar rrtype
 .Op Fl R Ar raw_rrset
 .Op Fl r Ar rrset
+.Op Fl t Ar rrtype
+.Op Fl u Ar server_sys
 .Op Fl V Ar verb
-.Op Fl J Ar input_file
 .Sh DESCRIPTION
 .Nm dnsdbq
 constructs and issues queries to the Farsight DNSDB and displays
