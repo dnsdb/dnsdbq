@@ -25,9 +25,6 @@
 /* modern glibc will complain about the above if it doesn't see this. */
 #define _DEFAULT_SOURCE
 
-/* optional features. */
-#define WANT_PDNS_CIRCL 1
-
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <sys/errno.h>
@@ -55,39 +52,7 @@ extern char **environ;
 
 /* Types. */
 
-/* conforms to the fields in the IETF passive DNS COF draft
- * except for num_results which is an addition for summarize.
- */
-struct pdns_json {
-	json_t	*main,
-		*time_first, *time_last, *zone_first, *zone_last,
-		*bailiwick, *rrname, *rrtype, *rdata,
-		*count, *num_results;
-};
-
-struct pdns_tuple {
-	struct pdns_json  obj;
-	u_long		  time_first, time_last, zone_first, zone_last;
-	const char	 *bailiwick, *rrname, *rrtype, *rdata;
-	json_int_t	  count, num_results;
-};
-typedef struct pdns_tuple *pdns_tuple_t;
-typedef const struct pdns_tuple *pdns_tuple_ct;
-
-/* presentation formatter function for a passive DNS tuple */
-typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
-
-struct rateval {
-	enum {
-		rk_naught = 0,		/* not present. */
-		rk_na,			/* "n/a". */
-		rk_unlimited,		/* "unlimited". */
-		rk_int			/* some integer in as_int. */
-	} rk;
-	u_long	as_int;		/* only for rk == rk_int. */
-};
-typedef struct rateval *rateval_t;
-typedef const struct rateval *rateval_ct;
+#include "pdns.h"
 
 struct reader {
 	struct reader	*next;
@@ -167,23 +132,8 @@ struct sortkey { char *specified, *computed; };
 typedef struct sortkey *sortkey_t;
 typedef const struct sortkey *sortkey_ct;
 
-/* DNSDB specific Types. */
-
-struct dnsdb_rate_json {
-	json_t	*main,
-		*reset, *expires, *limit, *remaining,
-		*burst_size, *burst_window, *results_max,
-		*offset_max;
-};
-
-struct dnsdb_rate_tuple {
-	struct dnsdb_rate_json	obj;
-	struct rateval	reset, expires, limit, remaining,
-			burst_size, burst_window, results_max,
-			offset_max;
-};
-typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
-
+#include "pdns_dnsdb.h"
+#include "pdns_circl.h"
 
 /* Forward. */
 
@@ -210,27 +160,16 @@ static void unmake_curl(void);
 static void pdns_query(query_ct);
 static void query_launcher(query_ct, writer_t);
 static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
-static void launch_one(writer_t, char *);
-static void rendezvous(reader_t);
+static void reader_launch(writer_t, char *);
+static void reader_reap(reader_t);
 static void ruminate_json(int, u_long, u_long);
 static writer_t writer_init(u_long, u_long);
 static void writer_status(writer_t, const char *, const char *);
 static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 static int input_blob(const char *, size_t, u_long, u_long, FILE *);
 static void writer_fini(writer_t);
+stativ void unmake_writers(void);
 static void io_engine(int);
-static void present_text(pdns_tuple_ct, const char *, size_t, FILE *);
-static void present_json(pdns_tuple_ct, const char *, size_t, FILE *);
-static void present_csv(pdns_tuple_ct, const char *, size_t, FILE *);
-static void present_csv_line(pdns_tuple_ct, const char *, FILE *);
-static void present_text_summarize(pdns_tuple_ct, const char *, size_t, FILE *);
-static void present_json_summarize(pdns_tuple_ct, const char *, size_t, FILE *);
-static void present_csv_summarize(pdns_tuple_ct, const char *, size_t, FILE *);
-static const char *tuple_make(pdns_tuple_t, const char *, size_t);
-static void print_rateval(const char *, rateval_ct, FILE *);
-static void print_burstrate(const char *, rateval_ct, rateval_ct, FILE *);
-static const char *rateval_make(rateval_t, const json_t *, const char *);
-static void tuple_unmake(pdns_tuple_t);
 static int timecmp(u_long, u_long);
 static const char * time_str(u_long, bool);
 static int time_get(const char *src, u_long *dst);
@@ -244,26 +183,7 @@ static void validate_cmd_opts_lookup(void);
 static void validate_cmd_opts_summarize(void);
 static const char *or_else(const char *, const char *);
 
-/* DNSDB specific Forward. */
-
-static const char *dnsdb_rate_tuple_make(dnsdb_rate_tuple_t, const char *,
-					 size_t);
-static void dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t);
-static char *dnsdb_url(const char *, char *);
-static void dnsdb_request_info(void);
-static void dnsdb_write_info(reader_t);
-static void dnsdb_auth(reader_t);
-static const char *dnsdb_status(reader_t);
-static const char *dnsdb_validate_verb(const char *);
-
-#if WANT_PDNS_CIRCL
-/* CIRCL specific Forward. */
-
-static char *circl_url(const char *, char *);
-static void circl_auth(reader_t);
-static const char *circl_status(reader_t);
-static const char *circl_validate_verb(const char *);
-#endif
+#include "globals.h"
 
 /* Constants. */
 
@@ -277,13 +197,7 @@ static const char * const conf_files[] = {
 
 static const char path_sort[] = "/usr/bin/sort";
 static const char json_header[] = "Accept: application/json";
-static const char env_api_key[] = "DNSDB_API_KEY";
-static const char env_dnsdb_base_url[] = "DNSDB_SERVER";
-static const char env_time_fmt[] = "DNSDB_TIME_FORMAT";
-
-/* We pass swclient=$id_swclient&version=$id_version in all queries to DNSDB. */
-static const char id_swclient[] = "dnsdbq";
-static const char id_version[] = "1.6";
+static const char env_time_fmt[] = "DNSDBQ_TIME_FORMAT";
 
 static const struct pdns_sys pdns_systems[] = {
 	/* note: element [0] of this array is the DEFAULT_SYS. */
@@ -319,13 +233,7 @@ static const struct verb verbs[] = {
 /* Private. */
 
 static const char *program_name = NULL;
-static char *api_key = NULL;
 static verb_t chosen_verb = &verbs[DEFAULT_VERB];
-static char *dnsdb_base_url = NULL;
-#if WANT_PDNS_CIRCL
-static char *circl_base_url = NULL;
-static char *circl_authinfo = NULL;
-#endif
 static pdns_sys_t sys = &pdns_systems[DEFAULT_SYS];
 static enum { batch_none, batch_original, batch_verbose } batching = batch_none;
 static bool merge = false;
@@ -962,19 +870,13 @@ my_exit(int code) {
 	int n;
 
 	/* writers and readers which are still known, must be freed. */
-	while (writers != NULL)
-		writer_fini(writers);
+	unmake_writers();
 
 	/* if curl is operating, it must be shut down. */
 	unmake_curl();
 
 	/* globals which may have been initialized, are to be freed. */
-	DESTROY(api_key);
-	DESTROY(dnsdb_base_url);
-#if WANT_PDNS_CIRCL
-	DESTROY(circl_base_url);
-	DESTROY(circl_authinfo);
-#endif
+	sys->destroy();
 
 	/* sort key specifications and computations, are to be freed. */
 	for (n = 0; n < nkeys; n++) {
@@ -1224,30 +1126,6 @@ read_configs(void) {
 	}
 }
 
-/* read_environ -- override the config file from environment variables?
- */
-static void
-read_environ() {
-	const char *val;
-
-	val = getenv(env_api_key);
-	if (val != NULL) {
-		if (api_key != NULL)
-			DESTROY(api_key);
-		api_key = strdup(val);
-		DEBUG(1, true, "conf env api_key was set\n");
-	}
-	val = getenv(env_dnsdb_base_url);
-	if (val != NULL) {
-		if (dnsdb_base_url != NULL)
-			DESTROY(dnsdb_base_url);
-		dnsdb_base_url = strdup(val);
-		DEBUG(1, true, "conf env dnsdb_server = '%s'\n",
-		      dnsdb_base_url);
-	}
-	if (api_key == NULL)
-		usage("no API key given");
-}
 
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
  *
@@ -1674,17 +1552,17 @@ launch(const char *command, writer_t writer,
 	}
 	DEBUG(1, true, "url [%s]\n", url);
 
-	launch_one(writer, url);
+	reader_launch(writer, url);
 }
 
-/* launch_one -- given a url, tell libcurl to go fetch it.
+/* reader_launch -- given a url, tell libcurl to go fetch it.
  */
 static void
-launch_one(writer_t writer, char *url) {
+reader_launch(writer_t writer, char *url) {
 	reader_t reader = NULL;
 	CURLMcode res;
 
-	DEBUG(2, true, "launch_one(%s)\n", url);
+	DEBUG(2, true, "reader_launch(%s)\n", url);
 	CREATE(reader, sizeof *reader);
 	reader->writer = writer;
 	writer = NULL;
@@ -1726,10 +1604,10 @@ launch_one(writer_t writer, char *url) {
 	}
 }
 
-/* rendezvous -- reap one reader.
+/* reader_reap -- reap one reader.
  */
 static void
-rendezvous(reader_t reader) {
+reader_reap(reader_t reader) {
 	if (reader->easy != NULL) {
 		curl_multi_remove_handle(multi, reader->easy);
 		curl_easy_cleanup(reader->easy);
@@ -1828,98 +1706,6 @@ writer_init(u_long after, u_long before) {
 	writer->next = writers;
 	writers = writer;
 	return (writer);
-}
-
-/* print_rateval -- output formatter for rateval.
- */
-static void
-print_rateval(const char *key, rateval_ct tp, FILE *outf) {
-	/* if unspecified, output nothing, not even the key name. */
-	if (tp->rk == rk_naught)
-		return;
-
-	fprintf(outf, "\t%s: ", key);
-	switch (tp->rk) {
-	case rk_na:
-		fprintf(outf, "n/a");
-		break;
-	case rk_unlimited:
-		fprintf(outf, "unlimited");
-		break;
-	case rk_int:
-		if (strcmp(key, "reset") == 0 || strcmp(key, "expires") == 0)
-			fputs(time_str(tp->as_int, iso8601), outf);
-		else
-			fprintf(outf, "%lu", tp->as_int);
-		break;
-	case rk_naught: /*FALLTHROUGH*/
-	default:
-		abort();
-	}
-	fputc('\n', outf);
-}
-
-/* print_burstrate -- output formatter for burst_size, burst_window ratevals.
- */
-static void
-print_burstrate(const char *key,
-		rateval_ct tp_size,
-		rateval_ct tp_window,
-		FILE *outf)
-{
-	/* if unspecified, output nothing, not even the key name. */
-	if (tp_size->rk == rk_naught || tp_window->rk == rk_naught)
-		return;
-
-	assert(tp_size->rk == rk_int);
-	assert(tp_window->rk == rk_int);
-
-	u_long b_w = tp_window->as_int;
-	u_long b_s = tp_size->as_int;
-
-	fprintf(outf, "\t%s: ", key);
-
-	if (b_w == 3600)
-		fprintf(outf, "%lu per hour", b_s);
-	else if (b_w == 60)
-		fprintf(outf, "%lu per minute", b_s);
-	else if ((b_w % 3600) == 0)
-		fprintf(outf, "%lu per %lu hours", b_s, b_w / 3600);
-	else if ((b_w % 60) == 0)
-		fprintf(outf, "%lu per %lu minutes", b_s, b_w / 60);
-	else
-		fprintf(outf, "%lu per %lu seconds", b_s, b_w);
-
-	fputc('\n', outf);
-}
-
-/* dnsdb_write_info -- assumes that reader contains the complete JSON block.
- */
-static void
-dnsdb_write_info(reader_t reader) {
-	if (pres == present_text) {
-		struct dnsdb_rate_tuple tup;
-		const char *msg;
-		msg = dnsdb_rate_tuple_make(&tup, reader->buf, reader->len);
-		if (msg != NULL) { /* there was an error */
-			puts(msg);
-		} else {
-			fprintf(stdout, "rate:\n");
-			print_rateval("reset", &tup.reset, stdout);
-			print_rateval("expires", &tup.expires, stdout);
-			print_rateval("limit", &tup.limit, stdout);
-			print_rateval("remaining", &tup.remaining, stdout);
-			print_rateval("results_max", &tup.results_max, stdout);
-			print_rateval("offset_max", &tup.offset_max, stdout);
-			print_burstrate("burst rate",
-					&tup.burst_size, &tup.burst_window,
-					stdout);
-		}
-	} else if (pres == present_json) {
-		fwrite(reader->buf, 1, reader->len, stdout);
-	} else {
-		abort();
-	}
 }
 
 /* writer_status -- install a status code and description in a writer.
@@ -2188,7 +1974,7 @@ writer_fini(writer_t writer) {
 
 		/* tear down any curl infrastructure on the reader & remove. */
 		reader_t next = reader->next;
-		rendezvous(reader);
+		reader_reap(reader);
 		reader = NULL;
 		writer->readers = next;
 	}
@@ -2311,6 +2097,12 @@ writer_fini(writer_t writer) {
 	DESTROY(writer);
 }
 
+static void
+unmake_writers(void) {
+	while (writers != NULL)
+		writer_fini(writers);
+}
+
 /* io_engine -- let libcurl run until there are few enough outstanding jobs.
  */
 static void
@@ -2370,500 +2162,6 @@ io_engine(int jobs) {
 		}
 		DEBUG(4, true, "...info read (still %d)\n", still);
 	}
-}
-
-/* present_text -- render one pdns tuple in "dig" style ascii text.
- */
-static void
-present_text(pdns_tuple_ct tup,
-	     const char *jsonbuf __attribute__ ((unused)),
-	     size_t jsonlen __attribute__ ((unused)),
-	     FILE *outf)
-{
-	bool pflag, ppflag;
-	const char *prefix;
-
-	ppflag = false;
-
-	/* Timestamps. */
-	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
-		fprintf(outf, ";; record times: %s",
-			time_str(tup->time_first, iso8601));
-		fprintf(outf, " .. %s\n",
-			time_str(tup->time_last, iso8601));
-		ppflag = true;
-	}
-	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
-		fprintf(outf, ";;   zone times: %s",
-			time_str(tup->zone_first, iso8601));
-		fprintf(outf, " .. %s\n",
-			time_str(tup->zone_last, iso8601));
-		ppflag = true;
-	}
-
-	/* Count and Bailiwick. */
-	prefix = ";;";
-	pflag = false;
-	if (tup->obj.count != NULL) {
-		fprintf(outf, "%s count: %lld", prefix, (long long)tup->count);
-		prefix = ";";
-		pflag = true;
-		ppflag = true;
-	}
-	if (tup->obj.bailiwick != NULL) {
-		fprintf(outf, "%s bailiwick: %s", prefix, tup->bailiwick);
-		prefix = NULL;
-		pflag = true;
-		ppflag = true;
-	}
-	if (pflag)
-		putc('\n', outf);
-
-	/* Records. */
-	if (json_is_array(tup->obj.rdata)) {
-		size_t slot, nslots;
-
-		nslots = json_array_size(tup->obj.rdata);
-		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(tup->obj.rdata, slot);
-			const char *rdata = NULL;
-
-			if (json_is_string(rr))
-				rdata = json_string_value(rr);
-			else
-				rdata = "[bad value]";
-			fprintf(outf, "%s  %s  %s\n",
-				tup->rrname, tup->rrtype, rdata);
-			ppflag = true;
-		}
-	} else {
-		fprintf(outf, "%s  %s  %s\n",
-			tup->rrname, tup->rrtype, tup->rdata);
-		ppflag = true;
-	}
-
-	/* Cleanup. */
-	if (ppflag)
-		putc('\n', outf);
-}
-
-/* present_text_summarize -- render summarize object in "dig" style ascii text.
- */
-static void
-present_text_summarize(pdns_tuple_ct tup,
-	     const char *jsonbuf __attribute__ ((unused)),
-	     size_t jsonlen __attribute__ ((unused)),
-	     FILE *outf)
-{
-	const char *prefix;
-
-	/* Timestamps. */
-	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
-		fprintf(outf, ";; record times: %s",
-			time_str(tup->time_first, iso8601));
-		fprintf(outf, " .. %s\n",
-			time_str(tup->time_last, iso8601));
-	}
-	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
-		fprintf(outf, ";;   zone times: %s",
-			time_str(tup->zone_first, iso8601));
-		fprintf(outf, " .. %s\n",
-			time_str(tup->zone_last, iso8601));
-		putc('\n', outf);
-	}
-
-	/* Count and Num_Results. */
-	prefix = ";;";
-	if (tup->obj.count != NULL) {
-		fprintf(outf, "%s count: %lld",
-			prefix, (long long)tup->count);
-		prefix = ";";
-	}
-	if (tup->obj.num_results != NULL) {
-		fprintf(outf, "%s num_results: %lld",
-			prefix, (long long)tup->num_results);
-		prefix = NULL;
-	}
-
-	putc('\n', outf);
-}
-
-/* present_json -- render one DNSDB tuple as newline-separated JSON.
- */
-static void
-present_json(pdns_tuple_ct tup __attribute__ ((unused)),
-	     const char *jsonbuf,
-	     size_t jsonlen,
-	     FILE *outf)
-{
-	fwrite(jsonbuf, 1, jsonlen, outf);
-	putc('\n', outf);
-}
-
-/* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
- * Same implementation as present_json()
- */
-static void
-present_json_summarize(pdns_tuple_ct tup __attribute__ ((unused)),
-	     const char *jsonbuf,
-	     size_t jsonlen,
-	     FILE *outf)
-{
-	fwrite(jsonbuf, 1, jsonlen, outf);
-	putc('\n', outf);
-}
-
-/* present_csv -- render one DNSDB tuple as comma-separated values (CSV).
- */
-static void
-present_csv(pdns_tuple_ct tup,
-	    const char *jsonbuf __attribute__ ((unused)),
-	    size_t jsonlen __attribute__ ((unused)),
-	    FILE *outf)
-{
-	static bool csv_headerp = false;
-
-	if (!csv_headerp) {
-		fprintf(outf,
-			"time_first,time_last,zone_first,zone_last,"
-			"count,bailiwick,"
-			"rrname,rrtype,rdata\n");
-		csv_headerp = true;
-	}
-
-	if (json_is_array(tup->obj.rdata)) {
-		size_t slot, nslots;
-
-		nslots = json_array_size(tup->obj.rdata);
-		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(tup->obj.rdata, slot);
-			const char *rdata = NULL;
-
-			if (json_is_string(rr))
-				rdata = json_string_value(rr);
-			else
-				rdata = "[bad value]";
-			present_csv_line(tup, rdata, outf);
-		}
-	} else {
-		present_csv_line(tup, tup->rdata, outf);
-	}
-}
-
-/* present_csv_line -- display a CSV for one rdatum out of an rrset.
- */
-static void
-present_csv_line(pdns_tuple_ct tup,
-		 const char *rdata,
-		 FILE *outf)
-{
-	/* Timestamps. */
-	if (tup->obj.time_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso8601));
-	putc(',', outf);
-	if (tup->obj.time_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso8601));
-	putc(',', outf);
-	if (tup->obj.zone_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso8601));
-	putc(',', outf);
-	if (tup->obj.zone_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso8601));
-	putc(',', outf);
-
-	/* Count and bailiwick. */
-	if (tup->obj.count != NULL)
-		fprintf(outf, "%lld", (long long) tup->count);
-	putc(',', outf);
-	if (tup->obj.bailiwick != NULL)
-		fprintf(outf, "\"%s\"", tup->bailiwick);
-	putc(',', outf);
-
-	/* Records. */
-	if (tup->obj.rrname != NULL)
-		fprintf(outf, "\"%s\"", tup->rrname);
-	putc(',', outf);
-	if (tup->obj.rrtype != NULL)
-		fprintf(outf, "\"%s\"", tup->rrtype);
-	putc(',', outf);
-	if (tup->obj.rdata != NULL)
-		fprintf(outf, "\"%s\"", rdata);
-	putc('\n', outf);
-}
-
-/* present_csv_summarize -- render a summarize result as CSV.
- */
-static void
-present_csv_summarize(pdns_tuple_ct tup,
-	    const char *jsonbuf __attribute__ ((unused)),
-	    size_t jsonlen __attribute__ ((unused)),
-	    FILE *outf)
-{
-	fprintf(outf,
-		"time_first,time_last,zone_first,zone_last,"
-		"count,num_results\n");
-
-	/* Timestamps. */
-	if (tup->obj.time_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso8601));
-	putc(',', outf);
-	if (tup->obj.time_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso8601));
-	putc(',', outf);
-	if (tup->obj.zone_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso8601));
-	putc(',', outf);
-	if (tup->obj.zone_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso8601));
-	putc(',', outf);
-
-	/* Count and num_results. */
-	if (tup->obj.count != NULL)
-		fprintf(outf, "%lld", (long long) tup->count);
-	putc(',', outf);
-	if (tup->obj.num_results != NULL)
-		fprintf(outf, "%lld", tup->num_results);
-	putc('\n', outf);
-}
-
-/* tuple_make -- create one DNSDB tuple object out of a JSON object.
- */
-static const char *
-tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
-	const char *msg = NULL;
-	json_error_t error;
-
-	memset(tup, 0, sizeof *tup);
-	DEBUG(3, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
-	tup->obj.main = json_loadb(buf, len, 0, &error);
-	if (tup->obj.main == NULL) {
-		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
-			program_name, error.line, error.column,
-			error.text, error.source);
-		abort();
-	}
-	DEBUG(4, true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2)));
-
-	/* Timestamps. */
-	tup->obj.zone_first = json_object_get(tup->obj.main,
-					      "zone_time_first");
-	if (tup->obj.zone_first != NULL) {
-		if (!json_is_integer(tup->obj.zone_first)) {
-			msg = "zone_time_first must be an integer";
-			goto ouch;
-		}
-		tup->zone_first = (u_long)
-			json_integer_value(tup->obj.zone_first);
-	}
-	tup->obj.zone_last = json_object_get(tup->obj.main, "zone_time_last");
-	if (tup->obj.zone_last != NULL) {
-		if (!json_is_integer(tup->obj.zone_last)) {
-			msg = "zone_time_last must be an integer";
-			goto ouch;
-		}
-		tup->zone_last = (u_long)
-			json_integer_value(tup->obj.zone_last);
-	}
-	tup->obj.time_first = json_object_get(tup->obj.main, "time_first");
-	if (tup->obj.time_first != NULL) {
-		if (!json_is_integer(tup->obj.time_first)) {
-			msg = "time_first must be an integer";
-			goto ouch;
-		}
-		tup->time_first = (u_long)
-			json_integer_value(tup->obj.time_first);
-	}
-	tup->obj.time_last = json_object_get(tup->obj.main, "time_last");
-	if (tup->obj.time_last != NULL) {
-		if (!json_is_integer(tup->obj.time_last)) {
-			msg = "time_last must be an integer";
-			goto ouch;
-		}
-		tup->time_last = (u_long)
-			json_integer_value(tup->obj.time_last);
-	}
-
-	/* Count. */
-	tup->obj.count = json_object_get(tup->obj.main, "count");
-	if (tup->obj.count != NULL) {
-		if (!json_is_integer(tup->obj.count)) {
-			msg = "count must be an integer";
-			goto ouch;
-		}
-		tup->count = json_integer_value(tup->obj.count);
-	}
-	/* Bailiwick. */
-	tup->obj.bailiwick = json_object_get(tup->obj.main, "bailiwick");
-	if (tup->obj.bailiwick != NULL) {
-		if (!json_is_string(tup->obj.bailiwick)) {
-			msg = "bailiwick must be a string";
-			goto ouch;
-		}
-		tup->bailiwick = json_string_value(tup->obj.bailiwick);
-	}
-	/* num_results -- just for a summarize. */
-	tup->obj.num_results = json_object_get(tup->obj.main, "num_results");
-	if (tup->obj.num_results != NULL) {
-		if (!json_is_integer(tup->obj.num_results)) {
-			msg = "num_results must be an integer";
-			goto ouch;
-		}
-		tup->num_results = json_integer_value(tup->obj.num_results);
-	}
-
-	/* Records. */
-	tup->obj.rrname = json_object_get(tup->obj.main, "rrname");
-	if (tup->obj.rrname != NULL) {
-		if (!json_is_string(tup->obj.rrname)) {
-			msg = "rrname must be a string";
-			goto ouch;
-		}
-		tup->rrname = json_string_value(tup->obj.rrname);
-	}
-	tup->obj.rrtype = json_object_get(tup->obj.main, "rrtype");
-	if (tup->obj.rrtype != NULL) {
-		if (!json_is_string(tup->obj.rrtype)) {
-			msg = "rrtype must be a string";
-			goto ouch;
-		}
-		tup->rrtype = json_string_value(tup->obj.rrtype);
-	}
-	tup->obj.rdata = json_object_get(tup->obj.main, "rdata");
-	if (tup->obj.rdata != NULL) {
-		if (json_is_string(tup->obj.rdata)) {
-			tup->rdata = json_string_value(tup->obj.rdata);
-		} else if (!json_is_array(tup->obj.rdata)) {
-			msg = "rdata must be a string or array";
-			goto ouch;
-		}
-		/* N.b., the array case is for the consumer to iterate over. */
-	}
-
-	assert(msg == NULL);
-	return (NULL);
-
-ouch:
-	assert(msg != NULL);
-	tuple_unmake(tup);
-	return (msg);
-}
-
-/* tuple_unmake -- deallocate the heap storage associated with one tuple.
- */
-static void
-tuple_unmake(pdns_tuple_t tup) {
-	json_decref(tup->obj.main);
-}
-
-/* rateval_make: make an optional key value from the json object.
- *
- * note: a missing key means the corresponding key's value is a "no value".
- */
-static const char *
-rateval_make(rateval_t tp, const json_t *obj, const char *key) {
-	struct rateval rvalue = {rk_naught, 0UL};
-	const json_t *jvalue = json_object_get(obj, key);
-
-	if (jvalue != NULL) {
-		if (json_is_integer(jvalue)) {
-			rvalue.rk = rk_int;
-			rvalue.as_int = (u_long)json_integer_value(jvalue);
-		} else {
-			const char *strvalue = json_string_value(jvalue);
-			bool ok = false;
-
-			if (strvalue != NULL) {
-				if (strcasecmp(strvalue, "n/a") == 0) {
-					rvalue.rk = rk_na;
-					ok = true;
-				} else if (strcasecmp(strvalue,
-						      "unlimited") == 0)
-				{
-					rvalue.rk = rk_unlimited;
-					ok = true;
-				}
-			}
-			if (!ok)
-				return ("value must be an integer "
-					"or \"n/a\" or \"unlimited\"");
-		}
-	}
-	*tp = rvalue;
-	return (NULL);
-}
-
-/* dnsdb_rate_tuple_make -- create one rate tuple object out of a JSON object.
- */
-static const char *
-dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
-	const char *msg = NULL;
-	json_error_t error;
-	json_t *rate;
-
-	memset(tup, 0, sizeof *tup);
-	DEBUG(3, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
-	tup->obj.main = json_loadb(buf, len, 0, &error);
-	if (tup->obj.main == NULL) {
-		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
-			program_name, error.line, error.column,
-			error.text, error.source);
-		abort();
-	}
-	DEBUG(4, true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2)));
-
-	rate = json_object_get(tup->obj.main, "rate");
-	if (rate == NULL) {
-		msg = "Missing \"rate\" object";
-		goto ouch;
-	}
-
-	msg = rateval_make(&tup->reset, rate, "reset");
-	if (msg != NULL)
-		goto ouch;
-
-	msg = rateval_make(&tup->expires, rate, "expires");
-	if (msg != NULL)
-		goto ouch;
-
-	msg = rateval_make(&tup->limit, rate, "limit");
-	if (msg != NULL)
-		goto ouch;
-
-	msg = rateval_make(&tup->remaining, rate, "remaining");
-	if (msg != NULL)
-		goto ouch;
-
-	msg = rateval_make(&tup->results_max, rate, "results_max");
-	if (msg != NULL)
-		goto ouch;
-
-	msg = rateval_make(&tup->offset_max, rate, "offset_max");
-	if (msg != NULL)
-		goto ouch;
-
-	msg = rateval_make(&tup->burst_size, rate, "burst_size");
-	if (msg != NULL)
-		goto ouch;
-
-	msg = rateval_make(&tup->burst_window, rate, "burst_window");
-	if (msg != NULL)
-		goto ouch;
-
-	assert(msg == NULL);
-	return (NULL);
-
- ouch:
-	assert(msg != NULL);
-	dnsdb_rate_tuple_unmake(tup);
-	return (msg);
-}
-
-/* dnsdb_rate_tuple_unmake -- deallocate heap storage associated with
- * one rate tuple.
- */
-static void
-dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t tup) {
-	json_decref(tup->obj.main);
 }
 
 /* timecmp -- compare two absolute timestamps, give -1, 0, or 1.
@@ -3101,219 +2399,3 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 		buf->base[buf->size++] = '.';
 	}
 }
-
-/* dnsdb_url -- create a URL corresponding to a command-path string.
- *
- * the batch file and command line syntax are in native DNSDB API format.
- * this function has the opportunity to crack this into pieces, and re-form
- * those pieces into the URL format needed by some other DNSDB-like system
- * which might have the same JSON output format but a different REST syntax.
- */
-static char *
-dnsdb_url(const char *path, char *sep) {
-	char max_count_if_needed[sizeof "&max_count=##################"] = "";
-	char offset_if_needed[sizeof "&offset=##################"] = "";
-	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
-	char *ret;
-	int x;
-
-	/* if the config file didn't specify our server, do it here. */
-	if (dnsdb_base_url == NULL)
-		dnsdb_base_url = strdup(sys->base_url);
-	assert(dnsdb_base_url != NULL);
-
-	/* count the number of slashes in the url, 2 is the base line,
-	 * from "//".  3 or more means there's a /path after the host.
-	 * In that case, don't add /[verb] here, and also don't allow
-	 * selecting a verb that's not "lookup" since the /path could
-	 * include its own verb. (this is from an old python-era rule.)
-	 */
-	x = 0;
-	for (p = dnsdb_base_url; *p != '\0'; p++)
-		x += (*p == '/');
-	if (x >= 3 && chosen_verb != &verbs[DEFAULT_VERB])
-		usage("Cannot specify a verb other than 'lookup' "
-		      "if the server URL contains a path");
-	verb_path = NULL;
-	if (chosen_verb->url_fragment != NULL)
-		verb_path = chosen_verb->url_fragment;
-	else
-		verb_path = "/lookup";
-
-	/* supply a scheme if the server string did not. */
-	scheme_if_needed = "";
-	if (strstr(dnsdb_base_url, "://") == NULL)
-		scheme_if_needed = "https://";
-
-	aggr_if_needed = "";
-	if (gravel)
-		aggr_if_needed = "&aggr=f";
-
-	if (offset > 0) {
-		x = snprintf(offset_if_needed, sizeof offset_if_needed,
-			     "&offset=%ld", offset);
-		if (x < 0) {
-			perror("snprintf");
-			ret = NULL;
-		}
-	}
-
-	if (max_count > 0) {
-		x = snprintf(max_count_if_needed, sizeof max_count_if_needed,
-			     "&max_count=%ld", max_count);
-		if (x < 0) {
-			perror("snprintf");
-			ret = NULL;
-		}
-	}
-
-	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s%s",
-		     scheme_if_needed, dnsdb_base_url, verb_path, path,
-		     id_swclient, id_version, aggr_if_needed,
-		     offset_if_needed, max_count_if_needed);
-	if (x < 0) {
-		perror("asprintf");
-		ret = NULL;
-	}
-
-	/* because we append query parameters, tell the caller to use & for
-	 * any further query parameters.
-	 */
-	if (sep != NULL)
-		*sep = '&';
-
-	return (ret);
-}
-
-static void
-dnsdb_request_info(void) {
-	writer_t writer;
-
-	DEBUG(1, true, "dnsdb_request_info()\n");
-
-	/* start a writer, which might be format functions, or POSIX sort. */
-	writer = writer_init(0, 0);
-
-	/* start a status fetch. */
-	launch_one(writer, dnsdb_url("rate_limit", NULL));
-
-	/* run all jobs to completion. */
-	io_engine(0);
-
-	/* stop the writer, which might involve reading POSIX sort's output. */
-	writer_fini(writer);
-}
-
-static void
-dnsdb_auth(reader_t reader) {
-	if (api_key != NULL) {
-		char *key_header;
-
-		if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0)
-			my_panic(true, "asprintf");
-		reader->hdrs = curl_slist_append(reader->hdrs, key_header);
-		DESTROY(key_header);
-	}
-}
-
-static const char *
-dnsdb_status(reader_t reader) {
-	/* early (current) versions of DNSDB returns 404 for "no rrs found". */
-	if (reader->rcode == 404)
-		return "NOERROR";
-	return "ERROR";
-}
-
-static const char *
-dnsdb_validate_verb(const char *verb_name) {
-	/* -O (offset) cannot be used except for verb "lookup". */
-	if (strcasecmp(verb_name, "lookup") != 0 && offset != 0)
-		return "only 'lookup' understands offsets";
-	return (NULL);
-}
-
-#if WANT_PDNS_CIRCL
-/* circl_url -- create a URL corresponding to a command-path string.
- *
- * the batch file and command line syntax are in native DNSDB API format.
- * this function has the opportunity to crack this into pieces, and re-form
- * those pieces into the URL format needed by some other DNSDB-like system
- * which might have the same JSON output format but a different REST syntax.
- *
- * CIRCL pDNS only "understands IP addresses, hostnames or domain names
- * (please note that CIDR block queries are not supported)". exit with an
- * error message if asked to do something the CIRCL server does not handle.
- *
- * 1. RRSet query: rrset/name/NAME[/TYPE[/BAILIWICK]]
- * 2. Rdata (name) query: rdata/name/NAME[/TYPE]
- * 3. Rdata (IP address) query: rdata/ip/ADDR[/PFXLEN]
- */
-static char *
-circl_url(const char *path, char *sep) {
-	const char *val = NULL;
-	char *ret;
-	int x, pi;
-	/* NULL-terminate array of valid query paths for CIRCL */
-	const char *valid_paths[] =
-		{ "rrset/name/", "rdata/name/", "rdata/ip/", NULL };
-
-	if (circl_base_url == NULL)
-		circl_base_url = strdup(sys->base_url);
-
-	for (pi = 0; valid_paths[pi] != NULL; pi++)
-		if (strncasecmp(path, valid_paths[pi], strlen(valid_paths[pi]))
-		    == 0)
-		{
-			val = path + strlen(valid_paths[pi]);
-			break;
-		}
-	if (val == NULL) {
-		fprintf(stderr,
-			"%s: unsupported type of query for CIRCL pDNS: %s\n",
-			program_name, path);
-		my_exit(1);
-	}
-
-	if (strchr(val, '/') != NULL) {
-		fprintf(stderr,
-			"%s: qualifiers not supported by CIRCL pDNS: %s\n",
-			program_name, val);
-		my_exit(1);
-	}
-	x = asprintf(&ret, "%s/%s", circl_base_url, val);
-	if (x < 0)
-		my_panic(true, "asprintf");
-
-	/* because we will NOT append query parameters,
-	 * tell the caller to use ? for its query parameters.
-	 */
-	if (sep != NULL)
-		*sep = '?';
-
-	return (ret);
-}
-
-static void
-circl_auth(reader_t reader) {
-	if (reader->easy != NULL) {
-		curl_easy_setopt(reader->easy, CURLOPT_USERPWD,
-				 circl_authinfo);
-		curl_easy_setopt(reader->easy, CURLOPT_HTTPAUTH,
-				 CURLAUTH_BASIC);
-	}
-}
-
-static const char *
-circl_status(reader_t reader __attribute__((unused))) {
-	return "ERROR";
-}
-
-static const char *
-circl_validate_verb(const char *verb_name) {
-	/* Only "lookup" is valid */
-	if (strcasecmp(verb_name, "lookup") != 0)
-		return ("the CIRCL system only understands 'lookup'");
-	return (NULL);
-}
-
-#endif /*WANT_PDNS_CIRCL*/

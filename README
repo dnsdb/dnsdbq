@@ -42,14 +42,9 @@ On FreeBSD 10:
 On OSX:
 	brew install jansson
 
-Usage notes:
-	If your rrname, bailiwick or rdata contains the '/' character you
-	will need to specify -t and/or -b options on the command line, e.g.:
-	
-	./dnsdbq -t ptr -r 1.0/1.0.168.192.in-addr.arpa
-	
-	Note that this is currently order-dependent (-t and -b must be first).
-
 Getting Started
 	Add the API key to ~/.dnsdb-query.conf in the below given format,
 	APIKEY="YOURAPIKEYHERE"
+
+	If you don't have an API key, you may qualify for a free one:
+	https://www.farsightsecurity.com/dnsdb-community-edition/

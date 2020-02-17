@@ -12,9 +12,10 @@ CWARN   +=-Werror
 # warning about bad indentation, only for clang 6.x+
 #CWARN   +=-Werror=misleading-indentation
 
+CDEFS = -DWANT_PDNS_CIRCL=1
 CGPROF =
 CDEBUG = -g
-CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN)
+CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)
 
 TOOL = dnsdbq
 TOOL_OBJ = $(TOOL).o ns_ttl.o
@@ -38,3 +39,5 @@ dnsdbq: $(TOOL_OBJ) Makefile
 
 .c.o:
 	$(CC) $(CFLAGS) $(CURLINCL) $(JANSINCL) -c $<
+
+dnsdbq.o ns_ttl.o: ns_ttl.h
