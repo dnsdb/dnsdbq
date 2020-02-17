@@ -1,8 +1,8 @@
-#if WANT_PDNS_CIRCL
-/* CIRCL specific Forward. */
+#ifndef PDNS_CIRCL_H_INCLUDED
+#define PDNS_CIRCL_H_INCLUDED 1
 
-static char *circl_url(const char *, char *);
-static void circl_auth(reader_t);
-static const char *circl_status(reader_t);
-static const char *circl_validate_verb(const char *);
+#if WANT_PDNS_CIRCL
+pdns_system_ct pdns_circl(void);
 #endif
+
+#endif /*PDNS_CIRCL_H_INCLUDED*/

@@ -1,3 +1,15 @@
+/* find_system -- locate a pdns system's metadata by name.
+ */
+static pdns_sys_t
+find_system(const char *name) {
+	pdns_sys_t t;
+
+	for (t = pdns_systems; t->name != NULL; t++)
+		if (strcasecmp(t->name, name) == 0)
+			return (t);
+	return (NULL);
+}
+
 /* present_text -- render one pdns tuple in "dig" style ascii text.
  */
 void
@@ -379,5 +391,134 @@ ouch:
 void
 tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
+}
+
+/* input_blob -- process one deblocked json blob as a counted string.
+ */
+static int
+input_blob(const char *buf, size_t len,
+	   u_long after, u_long before,
+	   FILE *outf)
+{
+	const char *msg, *whynot;
+	struct pdns_tuple tup;
+	u_long first, last;
+	int ret = 0;
+
+	msg = tuple_make(&tup, buf, len);
+	if (msg != NULL) {
+		fputs(msg, stderr);
+		fputc('\n', stderr);
+		goto more;
+	}
+
+	/* there are two sets of timestamps in a tuple. we prefer
+	 * the on-the-wire times to the zone times, when available.
+	 */
+	if (tup.time_first != 0 && tup.time_last != 0) {
+		first = (u_long)tup.time_first;
+		last = (u_long)tup.time_last;
+	} else {
+		first = (u_long)tup.zone_first;
+		last = (u_long)tup.zone_last;
+	}
+
+	/* time fencing can in some cases (-A & -B w/o -c) require
+	 * asking the server for more than we really want, and so
+	 * we have to winnow it down upon receipt. (see also -J.)
+	 */
+	whynot = NULL;
+	DEBUG(2, true, "filtering-- ");
+	if (after != 0) {
+		int first_vs_after, last_vs_after;
+
+		first_vs_after = timecmp(first, after);
+		last_vs_after = timecmp(last, after);
+		DEBUG(2, false, "FvA %d LvA %d: ",
+			 first_vs_after, last_vs_after);
+
+		if (complete) {
+			if (first_vs_after < 0) {
+				whynot = "first is too early";
+			}
+		} else {
+			if (last_vs_after < 0) {
+				whynot = "last is too early";
+			}
+		}
+	}
+	if (before != 0) {
+		int first_vs_before, last_vs_before;
+
+		first_vs_before = timecmp(first, before);
+		last_vs_before = timecmp(last, before);
+		DEBUG(2, false, "FvB %d LvB %d: ",
+			 first_vs_before, last_vs_before);
+
+		if (complete) {
+			if (last_vs_before > 0) {
+				whynot = "last is too late";
+			}
+		} else {
+			if (first_vs_before > 0) {
+				whynot = "first is too late";
+			}
+		}
+	}
+
+	if (whynot == NULL) {
+		DEBUG(2, false, "selected!\n");
+	} else {
+		DEBUG(2, false, "skipped (%s).\n", whynot);
+	}
+	DEBUG(3, true, "\tF..L = %s", time_str(first, false));
+	DEBUG(3, false, " .. %s\n", time_str(last, false));
+	DEBUG(3, true, "\tA..B = %s", time_str(after, false));
+	DEBUG(3, false, " .. %s\n", time_str(before, false));
+	if (whynot != NULL)
+		goto next;
+
+	if (sorted != no_sort) {
+		/* POSIX sort is given five extra fields at the
+		 * front of each line (first,last,count,name,data)
+		 * which are accessed as -k1 .. -k5 on the
+		 * sort command line. we strip them off later
+		 * when reading the result back. the reason
+		 * for all this PDP11-era logic is to avoid
+		 * having to store the full result in memory.
+		 */
+		char *dyn_rrname = NULL, *dyn_rdata = NULL;
+		if (sort_byname) {
+			dyn_rrname = sortable_rrname(&tup);
+			DEBUG(2, true, "dyn_rrname = '%s'\n", dyn_rrname);
+		}
+		if (sort_bydata) {
+			dyn_rdata = sortable_rdata(&tup);
+			DEBUG(2, true, "dyn_rdata = '%s'\n", dyn_rdata);
+		}
+		fprintf(outf, "%lu %lu %lu %s %s %*.*s\n",
+			(unsigned long)first,
+			(unsigned long)last,
+			(unsigned long)tup.count,
+			or_else(dyn_rrname, "n/a"),
+			or_else(dyn_rdata, "n/a"),
+			(int)len, (int)len, buf);
+		DEBUG(2, true, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
+			 (unsigned long)first,
+			 (unsigned long)last,
+			 (unsigned long)tup.count,
+			 or_else(dyn_rrname, "n/a"),
+			 or_else(dyn_rdata, "n/a"),
+			 (int)len, (int)len, buf);
+		DESTROY(dyn_rrname);
+		DESTROY(dyn_rdata);
+	} else {
+		(*pres)(&tup, buf, len, outf);
+	}
+	ret = 1;
+ next:
+	tuple_unmake(&tup);
+ more:
+	return (ret);
 }
 

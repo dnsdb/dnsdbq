@@ -29,6 +29,13 @@ typedef const struct rateval *rateval_ct;
 
 /* forwards. */
 
+char *dnsdb_url(const char *, char *);
+void dnsdb_request_info(void);
+void dnsdb_write_info(reader_t);
+void dnsdb_auth(reader_t);
+const char *dnsdb_status(reader_t);
+const char *dnsdb_verb_ok(const char *);
+
 static void print_rateval(const char *, rateval_ct, FILE *);
 static void print_burstrate(const char *, rateval_ct, rateval_ct, FILE *);
 static const char *rateval_make(rateval_t, const json_t *, const char *);
@@ -44,15 +51,25 @@ static const char env_dnsdb_base_url[] = "DNSDB_SERVER";
 static char *api_key = NULL;
 static char *base_url = NULL;
 
+static const struct pdns_sys dnsdb = {
+	"dnsdb", "https://api.dnsdb.info",
+	dnsdb_url, dnsdb_request_info, dnsdb_write_info,
+	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
+	dnsdb_ready, dnsdb_destroy
+};
+
 /*---------------------------------------------------------------- public
  */
+
+pdns_sys_t
+pdns_dnsdb(void) {
+	return &dnsdb;
+}
 
 /* dnsdb_ready() -- override the config file from environment variables?
  */
 void
 dnsdb_ready(void) {
-static void
-read_environ() {
 	const char *val;
 
 	val = getenv(env_api_key);
@@ -204,7 +221,7 @@ dnsdb_status(reader_t reader) {
 }
 
 const char *
-dnsdb_validate_verb(const char *verb_name) {
+dnsdb_verb_ok(const char *verb_name) {
 	/* -O (offset) cannot be used except for verb "lookup". */
 	if (strcasecmp(verb_name, "lookup") != 0 && offset != 0)
 		return "only 'lookup' understands offsets";
@@ -284,6 +301,7 @@ dnsdb_write_info(reader_t reader) {
 	if (pres == present_text) {
 		struct dnsdb_rate_tuple tup;
 		const char *msg;
+
 		msg = dnsdb_rate_tuple_make(&tup, reader->buf, reader->len);
 		if (msg != NULL) { /* there was an error */
 			puts(msg);

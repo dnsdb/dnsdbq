@@ -52,102 +52,22 @@ extern char **environ;
 
 /* Types. */
 
+#define MAIN_PROGRAM 1
+#include "defs.h"
+#include "netio.h"
 #include "pdns.h"
-
-struct reader {
-	struct reader	*next;
-	struct writer	*writer;
-	CURL		*easy;
-	struct curl_slist  *hdrs;
-	char		*url;
-	char		*buf;
-	size_t		len;
-	long		rcode;
-};
-typedef struct reader *reader_t;
-
-struct writer {
-	struct writer	*next;
-	struct reader	*readers;
-	u_long		after;
-	u_long		before;
-	FILE		*sort_stdin;
-	FILE		*sort_stdout;
-	pid_t		sort_pid;
-	bool		sort_killed;
-	int		count;
-	char		*status;
-	char		*message;
-	bool		once;
-};
-typedef struct writer *writer_t;
-
-struct verb {
-	const char	*cmd_opt_val;
-	const char	*url_fragment;
-	/* validate_cmd_opts can review the command line options and exit
-	 * if some verb-specific command line option constraint is not met.
-	 */
-	void		(*validate_cmd_opts)(void);
-};
-typedef const struct verb *verb_t;
-
-struct pdns_sys {
-	const char	*name;
-	const char	*base_url;
-	/* first argument is the input URL path.
-	 * second is an output parameter pointing to
-	 * the separator character (? or &) that the caller should
-	 * use between any further URL parameters.  May be
-	 * NULL if the caller doesn't care.
-	 */
-	char *		(*url)(const char *, char *);
-	void		(*request_info)(void);
-	void		(*write_info)(reader_t);
-	void		(*auth)(reader_t);
-	const char *	(*status)(reader_t);
-	const char *	(*validate_verb)(const char *);
-};
-typedef const struct pdns_sys *pdns_sys_t;
-
-typedef enum { no_mode = 0, rrset_mode, name_mode, ip_mode,
-	       raw_rrset_mode, raw_name_mode } mode_e;
-
-struct query {
-	mode_e	mode;
-	char	*thing;
-	char	*rrtype;
-	char	*bailiwick;
-	char	*pfxlen;
-	u_long	after;
-	u_long	before;
-};
-typedef struct query *query_t;
-typedef const struct query *query_ct;
-
-struct sortbuf { char *base; size_t size; };
-typedef struct sortbuf *sortbuf_t;
-
-struct sortkey { char *specified, *computed; };
-typedef struct sortkey *sortkey_t;
-typedef const struct sortkey *sortkey_ct;
-
 #include "pdns_dnsdb.h"
 #include "pdns_circl.h"
+#include "sort.h"
+#include "time.h"
+#include "globals.h"
+#undef MAIN_PROGRAM
 
 /* Forward. */
 
 static void help(void);
 static bool parse_long(const char *, long *);
-static void report_version(void);
-static void debug(bool, const char *, ...);
-static __attribute__((noreturn)) void usage(const char *, ...);
-static __attribute__((noreturn)) void my_exit(int);
-static __attribute__((noreturn)) void my_panic(bool, const char *);
 static void server_setup(void);
-static const char *add_sort_key(const char *);
-static sortkey_ct find_sort_key(const char *);
-static pdns_sys_t find_system(const char *);
 static verb_t find_verb(const char *);
 static void read_configs(void);
 static void read_environ(void);
@@ -155,35 +75,13 @@ static void do_batch(FILE *, u_long, u_long);
 static const char *batch_parse(char *, query_t);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
-static void make_curl(void);
-static void unmake_curl(void);
-static void pdns_query(query_ct);
 static void query_launcher(query_ct, writer_t);
 static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
-static void reader_launch(writer_t, char *);
-static void reader_reap(reader_t);
 static void ruminate_json(int, u_long, u_long);
-static writer_t writer_init(u_long, u_long);
-static void writer_status(writer_t, const char *, const char *);
-static size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
-static int input_blob(const char *, size_t, u_long, u_long, FILE *);
-static void writer_fini(writer_t);
-stativ void unmake_writers(void);
-static void io_engine(int);
-static int timecmp(u_long, u_long);
-static const char * time_str(u_long, bool);
-static int time_get(const char *src, u_long *dst);
 static void escape(char **);
-static char *sortable_rrname(pdns_tuple_ct);
-static char *sortable_rdata(pdns_tuple_ct);
-static void sortable_rdatum(sortbuf_t, const char *, const char *);
-static void sortable_dnsname(sortbuf_t, const char *);
-static void sortable_hexify(sortbuf_t, const u_char *, size_t);
 static void validate_cmd_opts_lookup(void);
 static void validate_cmd_opts_summarize(void);
 static const char *or_else(const char *, const char *);
-
-#include "globals.h"
 
 /* Constants. */
 
@@ -195,46 +93,15 @@ static const char * const conf_files[] = {
 	NULL
 };
 
-static const char path_sort[] = "/usr/bin/sort";
-static const char json_header[] = "Accept: application/json";
-static const char env_time_fmt[] = "DNSDBQ_TIME_FORMAT";
-
-static const struct pdns_sys pdns_systems[] = {
-	/* note: element [0] of this array is the DEFAULT_SYS. */
-	{ "dnsdb", "https://api.dnsdb.info",
-	  dnsdb_url, dnsdb_request_info, dnsdb_write_info,
-	  dnsdb_auth, dnsdb_status, dnsdb_validate_verb },
-#if WANT_PDNS_CIRCL
-	{ "circl", "https://www.circl.lu/pdns/query",
-	  circl_url, NULL, NULL,
-	  circl_auth, circl_status, circl_validate_verb },
-#endif
-	{ NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL }
-};
-
-static const struct verb verbs[] = {
+const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
 	{ "lookup", "/lookup", validate_cmd_opts_lookup },
 	{ "summarize", "/summarize", validate_cmd_opts_summarize },
 	{ NULL, NULL, NULL }
 };
 
-#define DEFAULT_SYS 0
-#define DEFAULT_VERB 0
-#define	MAX_KEYS 5
-#define	MAX_JOBS 8
-
-#define CREATE(p, s) if ((p) != NULL) { my_panic(false, "non-NULL ptr"); } \
-	else if (((p) = malloc(s)) == NULL) { my_panic(true, "malloc"); } \
-	else { memset((p), 0, s); }
-#define DESTROY(p) { if ((p) != NULL) { free(p); (p) = NULL; } }
-#define DEBUG(ge, ...) { if (debug_level >= (ge)) debug(__VA_ARGS__); }
-
 /* Private. */
 
-static const char *program_name = NULL;
-static verb_t chosen_verb = &verbs[DEFAULT_VERB];
-static pdns_sys_t sys = &pdns_systems[DEFAULT_SYS];
 static enum { batch_none, batch_original, batch_verbose } batching = batch_none;
 static bool merge = false;
 static bool complete = false;
@@ -243,7 +110,7 @@ static bool gravel = false;
 static bool donotverify = false;
 static bool quiet = false;
 static int debug_level = 0;
-static enum { no_sort = 0, normal_sort, reverse_sort } sorted = no_sort;
+static sort_e sorted = no_sort;
 static int curl_cleanup_needed = 0;
 static present_t pres = present_text;
 static long query_limit = -1;	/* -1 means not set on command line. */
@@ -252,10 +119,6 @@ static long offset = 0;
 static long max_count = 0;
 static CURLM *multi = NULL;
 static struct timeval now;
-static int nkeys = 0;
-static struct sortkey keys[MAX_KEYS];
-static bool sort_byname = false;
-static bool sort_bydata = false;
 static writer_t writers = NULL;
 static int exit_code = 0; /* hopeful */
 static size_t ideal_buffer;
@@ -466,8 +329,13 @@ main(int argc, char *argv[]) {
 				usage("-O must be zero or positive");
 			break;
 		case 'u':
-			sys = find_system(optarg);
-			if (sys == NULL)
+			if (strcmp(optarg, "dnsdb") == 0)
+				sys = pdns_dnsdb();
+#if WANT_PDNS_CIRCL
+			else if (strcmp(optarg, "circl") == 0)
+				sys = pdns_circl();
+#endif
+			else
 				usage("-u must refer to a pdns system");
 			break;
 		case 'U':
@@ -564,7 +432,7 @@ main(int argc, char *argv[]) {
 			info = true;
 			break;
 		case 'v':
-			report_version();
+			printf("%s: version %s\n", program_name, id_version);
 			my_exit(0);
 		case 'q':
 			quiet = true;
@@ -643,27 +511,14 @@ main(int argc, char *argv[]) {
 			usage("using -m with more than one -f makes no sense.");
 		}
 	}
-	if (nkeys > 0 && sorted == no_sort)
-		usage("using -k without -s or -S makes no sense.");
-	if (nkeys < MAX_KEYS && sorted != no_sort) {
-		/* if sorting, all keys must be specified, to enable -u. */
-		if (find_sort_key("first") == NULL)
-			(void) add_sort_key("first");
-		if (find_sort_key("last") == NULL)
-			(void) add_sort_key("last");
-		if (find_sort_key("count") == NULL)
-			(void) add_sort_key("count");
-		if (find_sort_key("name") == NULL)
-			(void) add_sort_key("name");
-		if (find_sort_key("data") == NULL)
-			(void) add_sort_key("data");
-	}
+	if (sorted != no_sort)
+		sort_ready();
 
 	assert(chosen_verb != NULL);
 	if (chosen_verb->validate_cmd_opts != NULL)
 		(*chosen_verb->validate_cmd_opts)();
-	if (sys->validate_verb != NULL) {
-		const char *msg = sys->validate_verb(chosen_verb->cmd_opt_val);
+	if (sys->verb_ok != NULL) {
+		const char *msg = sys->verb_ok(chosen_verb->cmd_opt_val);
 		if (msg != NULL)
 			usage(msg);
 	}
@@ -682,8 +537,6 @@ main(int argc, char *argv[]) {
 			usage("can't mix -t with -J");
 		if (chosen_verb != &verbs[DEFAULT_VERB])
 			usage("can't mix -V with -J");
-		if (sys != &pdns_systems[DEFAULT_SYS])
-			usage("can't mix -u with -J");
 		if (max_count > 0)
 			usage("can't mix -M with -J");
 		if (gravel)
@@ -721,6 +574,7 @@ main(int argc, char *argv[]) {
 		sys->request_info();
 		unmake_curl();
 	} else {
+		writer_t writer;
 		struct query q;
 
 		if (mode == no_mode)
@@ -750,7 +604,11 @@ main(int argc, char *argv[]) {
 		};
 		server_setup();
 		make_curl();
-		pdns_query(&q);
+		writer = writer_init(q.after, q.before);
+		query_launcher(&q, writer);
+		io_engine(0);
+		writer_fini(writer);
+		writer = NULL;
 		unmake_curl();
 	}
 
@@ -770,7 +628,6 @@ main(int argc, char *argv[]) {
  */
 static void
 help(void) {
-	pdns_sys_t t;
 	verb_t v;
 
 	printf("usage: %s [-cdfghIjmqSsUv] [-p dns|json|csv]\n", program_name);
@@ -815,8 +672,10 @@ help(void) {
 	     "use -U to turn off SSL certificate verification.\n"
 	     "use -v to show the program version.");
 	puts("for -u, system must be one of:");
-	for (t = pdns_systems; t->name != NULL; t++)
-		printf("\t%s\n", t->name);
+	puts("\tdnsdb\n");
+#if WANT_PDNS_CIRCL
+	puts("\tcircl\n");
+#endif
 	puts("for -V, verb must be one of:");
 	for (v = verbs; v->cmd_opt_val != NULL; v++)
 		printf("\t%s\n", v->cmd_opt_val);
@@ -826,14 +685,9 @@ help(void) {
 	printf("\nTry   man %s  for full documentation.\n", program_name);
 }
 
-static void
-report_version(void) {
-	printf("%s: version %s\n", program_name, id_version);
-}
-
 /* debug -- at the moment, dump to stderr.
  */
-static void
+void
 debug(bool want_header, const char *fmtstr, ...) {
 	va_list ap;
 
@@ -848,7 +702,7 @@ debug(bool want_header, const char *fmtstr, ...) {
  *
  * this goes to stderr in case stdout has been piped or redirected.
  */
-static __attribute__((noreturn)) void
+__attribute__((noreturn)) void
 usage(const char *fmtstr, ...) {
 	va_list ap;
 
@@ -865,10 +719,8 @@ usage(const char *fmtstr, ...) {
 
 /* my_exit -- close or destroy global objects, then exit.
  */
-static __attribute__((noreturn)) void
+__attribute__((noreturn)) void
 my_exit(int code) {
-	int n;
-
 	/* writers and readers which are still known, must be freed. */
 	unmake_writers();
 
@@ -879,10 +731,7 @@ my_exit(int code) {
 	sys->destroy();
 
 	/* sort key specifications and computations, are to be freed. */
-	for (n = 0; n < nkeys; n++) {
-		DESTROY(keys[n].specified);
-		DESTROY(keys[n].computed);
-	}
+	sort_destroy();
 
 	/* terminate process. */
 	DEBUG(1, true, "about to call exit(%d)\n", code);
@@ -891,7 +740,7 @@ my_exit(int code) {
 
 /* my_panic -- display an error on diagnostic output stream, exit ungracefully
  */
-static __attribute__((noreturn)) void
+__attribute__((noreturn)) void
 my_panic(bool want_perror, const char *s) {
 	fprintf(stderr, "%s: ", program_name);
 	if (want_perror)
@@ -943,7 +792,6 @@ validate_cmd_opts_summarize(void) {
 
 	if (sorted != no_sort)
 		usage("Sorting with a summarize verb makes no sense");
-	/*TODO add more validations? */
 }
 
 /* or_else -- return one pointer or else the other. */
@@ -952,65 +800,6 @@ or_else(const char *p, const char *or_else) {
 	if (p != NULL)
 		return p;
 	return or_else;
-}
-
-/* add_sort_key -- add a key for use by POSIX sort.
- */
-static const char *
-add_sort_key(const char *tok) {
-	const char *key = NULL;
-	char *computed;
-	int x;
-
-	if (nkeys == MAX_KEYS)
-		return ("too many sort keys given.");
-	if (strcasecmp(tok, "first") == 0) {
-		key = "-k1n";
-	} else if (strcasecmp(tok, "last") == 0) {
-		key = "-k2n";
-	} else if (strcasecmp(tok, "count") == 0) {
-		key = "-k3n";
-	} else if (strcasecmp(tok, "name") == 0) {
-		key = "-k4";
-		sort_byname = true;
-	} else if (strcasecmp(tok, "data") == 0) {
-		key = "-k5";
-		sort_bydata = true;
-	}
-	if (key == NULL)
-		return ("key must be one of first, "
-			"last, count, name, or data");
-	x = asprintf(&computed, "%s%s", key,
-		     sorted == reverse_sort ? "r" : "");
-	if (x < 0)
-		my_panic(true, "asprintf");
-	keys[nkeys++] = (struct sortkey){strdup(tok), computed};
-	return (NULL);
-}
-
-/* find_sort_key -- return pointer to a sort key, or NULL if it's not specified
- */
-static sortkey_ct
-find_sort_key(const char *tok) {
-	int n;
-
-	for (n = 0; n < nkeys; n++) {
-		if (strcmp(keys[n].specified, tok) == 0)
-			return (&keys[n]);
-	}
-	return (NULL);
-}
-
-/* find_pdns -- locate a pdns system's metadata by name.
- */
-static pdns_sys_t
-find_system(const char *name) {
-	pdns_sys_t t;
-
-	for (t = pdns_systems; t->name != NULL; t++)
-		if (strcasecmp(t->name, name) == 0)
-			return (t);
-	return (NULL);
 }
 
 /* find_verb -- locate a verb by option parameter
@@ -1372,55 +1161,6 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 	return (command);
 }
 
-/* make_curl -- perform global initializations of libcurl.
- */
-static void
-make_curl(void) {
-	curl_global_init(CURL_GLOBAL_DEFAULT);
-	curl_cleanup_needed++;
-	multi = curl_multi_init();
-	if (multi == NULL) {
-		fprintf(stderr, "%s: curl_multi_init() failed\n",
-			program_name);
-		my_exit(1);
-	}
-}
-
-/* unmake_curl -- clean up and discard libcurl's global state.
- */
-static void
-unmake_curl(void) {
-	if (multi != NULL) {
-		curl_multi_cleanup(multi);
-		multi = NULL;
-	}
-	if (curl_cleanup_needed) {
-		curl_global_cleanup();
-		curl_cleanup_needed = 0;
-	}
-}
-
-/* pdns_query -- launch one or more libcurl jobs to fulfill this DNSDB query.
- *
- * this is the non-batch path where only one query is made before exit.
- */
-static void
-pdns_query(query_ct qp) {
-	writer_t writer;
-
-	/* start a writer, which might be format functions, or POSIX sort. */
-	writer = writer_init(qp->after, qp->before);
-
-	/* start a small and finite number of readers on that writer. */
-	query_launcher(qp, writer);
-	
-	/* run all jobs to completion. */
-	io_engine(0);
-
-	/* stop the writer, which might involve reading POSIX sort's output. */
-	writer_fini(writer);
-}
-
 /* query_launcher -- fork off some curl jobs via launch() for this query.
  */
 static void
@@ -1555,72 +1295,6 @@ launch(const char *command, writer_t writer,
 	reader_launch(writer, url);
 }
 
-/* reader_launch -- given a url, tell libcurl to go fetch it.
- */
-static void
-reader_launch(writer_t writer, char *url) {
-	reader_t reader = NULL;
-	CURLMcode res;
-
-	DEBUG(2, true, "reader_launch(%s)\n", url);
-	CREATE(reader, sizeof *reader);
-	reader->writer = writer;
-	writer = NULL;
-	reader->easy = curl_easy_init();
-	if (reader->easy == NULL) {
-		/* an error will have been output by libcurl in this case. */
-		DESTROY(reader);
-		DESTROY(url);
-		my_exit(1);
-	}
-	reader->url = url;
-	url = NULL;
-	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
-	if (donotverify) {
-		curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
-		curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
-	}
-	sys->auth(reader);
-	reader->hdrs = curl_slist_append(reader->hdrs, json_header);
-	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
-	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
-	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
-#if CURL_AT_LEAST_VERSION(7,42,0)
-	/* do not allow curl to swallow /./ and /../ in our URLs */
-	curl_easy_setopt(reader->easy, CURLOPT_PATH_AS_IS, 1L);
-#endif /* CURL_AT_LEAST_VERSION */
-	if (debug_level >= 3)
-		curl_easy_setopt(reader->easy, CURLOPT_VERBOSE, 1L);
-
-	/* linked-list insert. */
-	reader->next = reader->writer->readers;
-	reader->writer->readers = reader;
-
-	res = curl_multi_add_handle(multi, reader->writer->readers->easy);
-	if (res != CURLM_OK) {
-		fprintf(stderr, "%s: curl_multi_add_handle() failed: %s\n",
-			program_name, curl_multi_strerror(res));
-		my_exit(1);
-	}
-}
-
-/* reader_reap -- reap one reader.
- */
-static void
-reader_reap(reader_t reader) {
-	if (reader->easy != NULL) {
-		curl_multi_remove_handle(multi, reader->easy);
-		curl_easy_cleanup(reader->easy);
-		reader->easy = NULL;
-	}
-	if (reader->hdrs != NULL) {
-		curl_slist_free_all(reader->hdrs);
-		reader->hdrs = NULL;
-	}
-	DESTROY(reader->url);
-	DESTROY(reader);
-}
-
 /* ruminate_json -- process a json file from the filesys rather than the API.
  */
 static void
@@ -1644,585 +1318,6 @@ ruminate_json(int json_fd, u_long after, u_long before) {
 	writer = NULL;
 }
 
-/* writer_init -- instantiate a writer, which may involve forking a "sort".
- */
-static writer_t
-writer_init(u_long after, u_long before) {
-	writer_t writer = NULL;
-
-	CREATE(writer, sizeof(struct writer));
-
-	if (sorted != no_sort) {
-		/* sorting involves a subprocess (POSIX sort(1) command),
-		 * which will by definition not output anything until
-		 * after it receives EOF. this means we can pipe both
-		 * to its stdin and from its stdout, without risk of
-		 * deadlock. it also means a full store-and-forward of
-		 * the result, which increases latency to the first
-		 * output for our user.
-		 */
-		int p1[2], p2[2];
-
-		if (pipe(p1) < 0 || pipe(p2) < 0)
-			my_panic(true, "pipe");
-		if ((writer->sort_pid = fork()) < 0)
-			my_panic(true, "fork");
-		if (writer->sort_pid == 0) {
-			char *sort_argv[3+MAX_KEYS], **sap;
-			int n;
-
-			if (dup2(p1[0], STDIN_FILENO) < 0 ||
-			    dup2(p2[1], STDOUT_FILENO) < 0) {
-				perror("dup2");
-				_exit(1);
-			}
-			close(p1[0]); close(p1[1]);
-			close(p2[0]); close(p2[1]);
-			sap = sort_argv;
-			*sap++ = strdup("sort");
-			*sap++ = strdup("-u");
-			for (n = 0; n < nkeys; n++)
-				*sap++ = strdup(keys[n].computed);
-			*sap++ = NULL;
-			putenv(strdup("LC_ALL=C"));
-			DEBUG(1, true, "\"%s\" args:", path_sort);
-			for (sap = sort_argv; *sap != NULL; sap++)
-				DEBUG(1, false, " [%s]", *sap);
-			DEBUG(1, false, "\n");
-			execve(path_sort, sort_argv, environ);
-			perror("execve");
-			for (sap = sort_argv; *sap != NULL; sap++)
-				DESTROY(*sap);
-			_exit(1);
-		}
-		close(p1[0]);
-		writer->sort_stdin = fdopen(p1[1], "w");
-		writer->sort_stdout = fdopen(p2[0], "r");
-		close(p2[1]);
-	}
-
-	writer->after = after;
-	writer->before = before;
-	writer->next = writers;
-	writers = writer;
-	return (writer);
-}
-
-/* writer_status -- install a status code and description in a writer.
- */
-static void
-writer_status(writer_t writer, const char *status, const char *message) {
-	assert((writer->status == NULL) == (writer->message == NULL));
-	assert(writer->status == NULL);
-	writer->status = strdup(status);
-	writer->message = strdup(message);
-}
-
-/* writer_func -- process a block of json text, from filesys or API socket.
- */
-static size_t
-writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
-	reader_t reader = (reader_t) blob;
-	size_t bytes = size * nmemb;
-	u_long after, before;
-	FILE *outf;
-	char *nl;
-
-	DEBUG(3, true, "writer_func(%d, %d): %d\n",
-	      (int)size, (int)nmemb, (int)bytes);
-
-	reader->buf = realloc(reader->buf, reader->len + bytes);
-	memcpy(reader->buf + reader->len, ptr, bytes);
-	reader->len += bytes;
-
-	/* when the reader is a live web result, emit
-	 * !2xx errors and info payloads as reports.
-	 */
-	if (reader->easy != NULL) {
-		if (reader->rcode == 0)
-			curl_easy_getinfo(reader->easy,
-					  CURLINFO_RESPONSE_CODE,
-					  &reader->rcode);
-		if (reader->rcode != 200) {
-			char *message = strndup(reader->buf, reader->len);
-			char *newline = strchr(message, '\n');
-			if (newline != NULL)
-				*newline = '\0';
-
-			if (!reader->writer->once) {
-				writer_status(reader->writer,
-					      sys->status(reader),
-					      message);
-				if (!quiet) {
-					char *url;
-					
-					curl_easy_getinfo(reader->easy,
-							 CURLINFO_EFFECTIVE_URL,
-							  &url);
-					fprintf(stderr,
-						"%s: warning: "
-						"libcurl %ld [%s]\n",
-						program_name, reader->rcode,
-						url);
-				}
-				reader->writer->once = true;
-			}
-			if (!quiet)
-				fprintf(stderr, "%s: warning: libcurl: [%s]\n",
-					program_name, message);
-			DESTROY(message);
-			reader->buf[0] = '\0';
-			reader->len = 0;
-			return (bytes);
-		}
-	}
-
-	after = reader->writer->after;
-	before = reader->writer->before;
-	outf = (sorted != no_sort) ? reader->writer->sort_stdin : stdout;
-
-	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
-		size_t pre_len, post_len;
-
-		if (info) {
-			sys->write_info(reader);
-			reader->buf[0] = '\0';
-			reader->len = 0;
-			return (bytes);
-		}
-
-		if (sorted == no_sort && output_limit != -1 &&
-		    reader->writer->count >= output_limit)
-		{
-			DEBUG(1, true, "hit output limit %ld\n", output_limit);
-			reader->buf[0] = '\0';
-			reader->len = 0;
-			return (bytes);
-		}
-
-		pre_len = (size_t)(nl - reader->buf);
-		reader->writer->count += input_blob(reader->buf, pre_len,
-						    after, before, outf);
-		post_len = (reader->len - pre_len) - 1;
-		memmove(reader->buf, nl + 1, post_len);
-		reader->len = post_len;
-	}
-	return (bytes);
-}
-
-/* input_blob -- process one deblocked json blob as a counted string.
- */
-static int
-input_blob(const char *buf, size_t len,
-	   u_long after, u_long before,
-	   FILE *outf)
-{
-	const char *msg, *whynot;
-	struct pdns_tuple tup;
-	u_long first, last;
-	int ret = 0;
-
-	msg = tuple_make(&tup, buf, len);
-	if (msg != NULL) {
-		fputs(msg, stderr);
-		fputc('\n', stderr);
-		goto more;
-	}
-
-	/* there are two sets of timestamps in a tuple. we prefer
-	 * the on-the-wire times to the zone times, when available.
-	 */
-	if (tup.time_first != 0 && tup.time_last != 0) {
-		first = (u_long)tup.time_first;
-		last = (u_long)tup.time_last;
-	} else {
-		first = (u_long)tup.zone_first;
-		last = (u_long)tup.zone_last;
-	}
-
-	/* time fencing can in some cases (-A & -B w/o -c) require
-	 * asking the server for more than we really want, and so
-	 * we have to winnow it down upon receipt. (see also -J.)
-	 */
-	whynot = NULL;
-	DEBUG(2, true, "filtering-- ");
-	if (after != 0) {
-		int first_vs_after, last_vs_after;
-
-		first_vs_after = timecmp(first, after);
-		last_vs_after = timecmp(last, after);
-		DEBUG(2, false, "FvA %d LvA %d: ",
-			 first_vs_after, last_vs_after);
-
-		if (complete) {
-			if (first_vs_after < 0) {
-				whynot = "first is too early";
-			}
-		} else {
-			if (last_vs_after < 0) {
-				whynot = "last is too early";
-			}
-		}
-	}
-	if (before != 0) {
-		int first_vs_before, last_vs_before;
-
-		first_vs_before = timecmp(first, before);
-		last_vs_before = timecmp(last, before);
-		DEBUG(2, false, "FvB %d LvB %d: ",
-			 first_vs_before, last_vs_before);
-
-		if (complete) {
-			if (last_vs_before > 0) {
-				whynot = "last is too late";
-			}
-		} else {
-			if (first_vs_before > 0) {
-				whynot = "first is too late";
-			}
-		}
-	}
-
-	if (whynot == NULL) {
-		DEBUG(2, false, "selected!\n");
-	} else {
-		DEBUG(2, false, "skipped (%s).\n", whynot);
-	}
-	DEBUG(3, true, "\tF..L = %s", time_str(first, false));
-	DEBUG(3, false, " .. %s\n", time_str(last, false));
-	DEBUG(3, true, "\tA..B = %s", time_str(after, false));
-	DEBUG(3, false, " .. %s\n", time_str(before, false));
-	if (whynot != NULL)
-		goto next;
-
-	if (sorted != no_sort) {
-		/* POSIX sort is given five extra fields at the
-		 * front of each line (first,last,count,name,data)
-		 * which are accessed as -k1 .. -k5 on the
-		 * sort command line. we strip them off later
-		 * when reading the result back. the reason
-		 * for all this PDP11-era logic is to avoid
-		 * having to store the full result in memory.
-		 */
-		char *dyn_rrname = NULL, *dyn_rdata = NULL;
-		if (sort_byname) {
-			dyn_rrname = sortable_rrname(&tup);
-			DEBUG(2, true, "dyn_rrname = '%s'\n", dyn_rrname);
-		}
-		if (sort_bydata) {
-			dyn_rdata = sortable_rdata(&tup);
-			DEBUG(2, true, "dyn_rdata = '%s'\n", dyn_rdata);
-		}
-		fprintf(outf, "%lu %lu %lu %s %s %*.*s\n",
-			(unsigned long)first,
-			(unsigned long)last,
-			(unsigned long)tup.count,
-			or_else(dyn_rrname, "n/a"),
-			or_else(dyn_rdata, "n/a"),
-			(int)len, (int)len, buf);
-		DEBUG(2, true, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
-			 (unsigned long)first,
-			 (unsigned long)last,
-			 (unsigned long)tup.count,
-			 or_else(dyn_rrname, "n/a"),
-			 or_else(dyn_rdata, "n/a"),
-			 (int)len, (int)len, buf);
-		DESTROY(dyn_rrname);
-		DESTROY(dyn_rdata);
-	} else {
-		(*pres)(&tup, buf, len, outf);
-	}
-	ret = 1;
- next:
-	tuple_unmake(&tup);
- more:
-	return (ret);
-}
-
-/* writer_fini -- stop a writer's readers, and perhaps execute a POSIX "sort".
- */
-static void
-writer_fini(writer_t writer) {
-	/* unlink this writer from the global chain. */
-	if (writers == writer) {
-		writers = writer->next;
-	} else {
-		writer_t prev = NULL;
-		writer_t temp;
-
-		for (temp = writers; temp != NULL; temp = temp->next) {
-			if (temp->next == writer) {
-				prev = temp;
-				break;
-			}
-		}
-		assert(prev != NULL);
-		prev->next = writer->next;
-	}
-
-	/* finish and close any readers still cooking. */
-	while (writer->readers != NULL) {
-		reader_t reader = writer->readers;
-
-		/* release any buffered info. */
-		DESTROY(reader->buf);
-		if (reader->len != 0) {
-			fprintf(stderr, "%s: warning: stranding %d octets!\n",
-				program_name, (int)reader->len);
-			reader->len = 0;
-		}
-
-		/* tear down any curl infrastructure on the reader & remove. */
-		reader_t next = reader->next;
-		reader_reap(reader);
-		reader = NULL;
-		writer->readers = next;
-	}
-
-	/* drain the sort if there is one. */
-	if (writer->sort_pid != 0) {
-		int status, count;
-		char *line = NULL;
-		size_t n = 0;
-
-		/* when sorting, there has been no output yet. gather the
-		 * intermediate representation from the POSIX sort stdout,
-		 * skip over the sort keys we added earlier, and process.
-		 */
-		fclose(writer->sort_stdin);
-		DEBUG(1, true, "closed sort_stdin, wrote %d objs\n",
-			 writer->count);
-		count = 0;
-		while (getline(&line, &n, writer->sort_stdout) > 0) {
-			/* if we're above the limit, ignore remaining output.
-			 * this is nec'y to avoid SIGPIPE from sort if we were
-			 * to close its stdout pipe without emptying it first.
-			 */
-			if (output_limit != -1 && count >= output_limit) {
-				if (!writer->sort_killed) {
-					kill(writer->sort_pid, SIGTERM);
-					writer->sort_killed = true;
-				}
-				continue;
-			}
-
-			char *nl, *linep;
-			const char *msg;
-			struct pdns_tuple tup;
-
-			if ((nl = strchr(line, '\n')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no \\n found in '%s'\n",
-					program_name, line);
-				continue;
-			}
-			linep = line;
-			DEBUG(2, true, "sort1: '%*.*s'\n",
-				 (int)(nl - linep),
-				 (int)(nl - linep),
-				 linep);
-			/* skip sort keys (first, last, count, name, data). */
-			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no SP found in '%s'\n",
-					program_name, line);
-				continue;
-			}
-			linep += strspn(linep, " ");
-			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no second SP in '%s'\n",
-					program_name, line);
-				continue;
-			}
-			linep += strspn(linep, " ");
-			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no third SP in '%s'\n",
-					program_name, line);
-				continue;
-			}
-			linep += strspn(linep, " ");
-			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no fourth SP in '%s'\n",
-					program_name, line);
-				continue;
-			}
-			linep += strspn(linep, " ");
-			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no fifth SP in '%s'\n",
-					program_name, line);
-				continue;
-			}
-			linep += strspn(linep, " ");
-			DEBUG(2, true, "sort2: '%*.*s'\n",
-				 (int)(nl - linep),
-				 (int)(nl - linep),
-				 linep);
-			msg = tuple_make(&tup, linep, (size_t)(nl - linep));
-			if (msg != NULL) {
-				fprintf(stderr,
-					"%s: warning: tuple_make: %s\n",
-					program_name, msg);
-				continue;
-			}
-			(*pres)(&tup, linep, (size_t)(nl - linep), stdout);
-			tuple_unmake(&tup);
-			count++;
-		}
-		DESTROY(line);
-		fclose(writer->sort_stdout);
-		DEBUG(1, true, "closed sort_stdout, read %d objs (lim %ld)\n",
-		      count, query_limit);
-		if (waitpid(writer->sort_pid, &status, 0) < 0) {
-			perror("waitpid");
-		} else {
-			if (!writer->sort_killed && status != 0)
-				fprintf(stderr,
-					"%s: warning: sort "
-					"exit status is %u\n",
-					program_name, (unsigned)status);
-		}
-	}
-
-	/* drop message and status strings if present. */
-	assert((writer->status != NULL) == (writer->message != NULL));
-	if (writer->status != NULL)
-		DESTROY(writer->status);
-	if (writer->message != NULL)
-		DESTROY(writer->message);
-
-	DESTROY(writer);
-}
-
-static void
-unmake_writers(void) {
-	while (writers != NULL)
-		writer_fini(writers);
-}
-
-/* io_engine -- let libcurl run until there are few enough outstanding jobs.
- */
-static void
-io_engine(int jobs) {
-	int still, repeats, numfds;
-	struct CURLMsg *cm;
-
-	DEBUG(2, true, "io_engine(%d)\n", jobs);
-
-	/* let libcurl run while there are too many jobs remaining. */
-	still = 0;
-	repeats = 0;
-	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs) {
-		DEBUG(4, true, "...waiting (still %d)\n", still);
-		numfds = 0;
-		if (curl_multi_wait(multi, NULL, 0, 0, &numfds) != CURLM_OK)
-			break;
-		if (numfds == 0) {
-			/* curl_multi_wait() can return 0 fds for no reason. */
-			if (++repeats > 1) {
-				struct timespec req, rem;
-
-				req = (struct timespec){
-					.tv_sec = 0,
-					.tv_nsec = 100*1000*1000  // 100ms
-				};
-				while (nanosleep(&req, &rem) == EINTR) {
-					/* as required by nanosleep(3). */
-					req = rem;
-				}
-			}
-		} else {
-			repeats = 0;
-		}
-	}
-
-	/* drain the response code reports. */
-	still = 0;
-	while ((cm = curl_multi_info_read(multi, &still)) != NULL) {
-		if (cm->msg == CURLMSG_DONE && cm->data.result != CURLE_OK) {
-			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST)
-				fprintf(stderr,
-					"%s: warning: libcurl failed since "
-					"could not resolve host\n",
-					program_name);
-			else if (cm->data.result == CURLE_COULDNT_CONNECT)
-				fprintf(stderr,
-					"%s: warning: libcurl failed since "
-					"could not connect\n",
-					program_name);
-			else
-				fprintf(stderr,
-					"%s: warning: libcurl failed with "
-					"curl error %d\n",
-					program_name, cm->data.result);
-			exit_code = 1;
-		}
-		DEBUG(4, true, "...info read (still %d)\n", still);
-	}
-}
-
-/* timecmp -- compare two absolute timestamps, give -1, 0, or 1.
- */
-static int
-timecmp(u_long a, u_long b) {
-	if (a < b)
-		return (-1);
-	if (a > b)
-		return (1);
-	return (0);
-}
-
-/* time_str -- format one (possibly relative) timestamp (returns static string)
- */
-static const char *
-time_str(u_long x, bool iso8601fmt) {
-	static char ret[sizeof "yyyy-mm-ddThh:mm:ssZ"];
-
-	if (x == 0) {
-		strcpy(ret, "0");
-	} else {
-		time_t t = (time_t)x;
-		struct tm result, *y = gmtime_r(&t, &result);
-
-		strftime(ret, sizeof ret, iso8601fmt ? "%FT%TZ" : "%F %T", y);
-	}
-	return ret;
-}
-
-/* time_get -- parse and return one (possibly relative) timestamp.
- */
-static int
-time_get(const char *src, u_long *dst) {
-	struct tm tt;
-	long long ll;
-	u_long t;
-	char *ep;
-
-	memset(&tt, 0, sizeof tt);
-	if (((ep = strptime(src, "%F %T", &tt)) != NULL && *ep == '\0') ||
-	    ((ep = strptime(src, "%F", &tt)) != NULL && *ep == '\0'))
-	{
-		*dst = (u_long)(timegm(&tt));
-		return (1);
-	}
-	ll = strtoll(src, &ep, 10);
-	if (*src != '\0' && *ep == '\0') {
-		if (ll < 0)
-			*dst = (u_long)now.tv_sec - (u_long)imaxabs(ll);
-		else
-			*dst = (u_long)ll;
-		return (1);
-	}
-	if (ns_parse_ttl(src, &t) == 0) {
-		*dst = (u_long)now.tv_sec - t;
-		return (1);
-	}
-	return (0);
-}
-
 /* escape -- HTML-encode a string, in place.
  */
 static void
@@ -2241,161 +1336,3 @@ escape(char **src) {
 	escaped = NULL;
 }
 
-/* sortable_rrname -- return a POSIX-sort-collatable rendition of RR name+type.
- */
-static char *
-sortable_rrname(pdns_tuple_ct tup) {
-	struct sortbuf buf = {NULL, 0};
-
-	sortable_dnsname(&buf, tup->rrname);
-	buf.base = realloc(buf.base, buf.size+1);
-	buf.base[buf.size++] = '\0';
-	return (buf.base);
-}
-
-/* sortable_rdata -- return a POSIX-sort-collatable rendition of RR data set.
- */
-static char *
-sortable_rdata(pdns_tuple_ct tup) {
-	struct sortbuf buf = {NULL, 0};
-
-	if (json_is_array(tup->obj.rdata)) {
-		size_t slot, nslots;
-
-		nslots = json_array_size(tup->obj.rdata);
-		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(tup->obj.rdata, slot);
-
-			if (json_is_string(rr))
-				sortable_rdatum(&buf, tup->rrtype,
-						json_string_value(rr));
-			else
-				fprintf(stderr,
-					"%s: warning: rdata slot "
-					"is not a string\n",
-					program_name);
-		}
-	} else {
-		sortable_rdatum(&buf, tup->rrtype, tup->rdata);
-	}
-	buf.base = realloc(buf.base, buf.size+1);
-	buf.base[buf.size++] = '\0';
-	return (buf.base);
-}
-
-/* sortable_rdatum -- called only by sortable_rdata(), realloc and normalize.
- *
- * this converts (lossily) addresses into hex strings, and extracts the
- * server-name component of a few other types like MX. all other rdata
- * are left in their normal string form, because it's hard to know what
- * to sort by with something like TXT, and extracting the serial number
- * from an SOA using a language like C is a bit ugly.
- */
-static void
-sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
-	if (strcmp(rrtype, "A") == 0) {
-		u_char a[4];
-
-		if (inet_pton(AF_INET, rdatum, a) != 1)
-			memset(a, 0, sizeof a);
-		sortable_hexify(buf, a, sizeof a);
-	} else if (strcmp(rrtype, "AAAA") == 0) {
-		u_char aaaa[16];
-
-		if (inet_pton(AF_INET6, rdatum, aaaa) != 1)
-			memset(aaaa, 0, sizeof aaaa);
-		sortable_hexify(buf, aaaa, sizeof aaaa);
-	} else if (strcmp(rrtype, "NS") == 0 ||
-		   strcmp(rrtype, "PTR") == 0 ||
-		   strcmp(rrtype, "CNAME") == 0)
-	{
-		sortable_dnsname(buf, rdatum);
-	} else if (strcmp(rrtype, "MX") == 0 ||
-		   strcmp(rrtype, "RP") == 0)
-	{
-		const char *space = strrchr(rdatum, ' ');
-
-		if (space != NULL)
-			sortable_dnsname(buf, space+1);
-		else
-			sortable_hexify(buf, (const u_char *)rdatum,
-					strlen(rdatum));
-	} else {
-		sortable_hexify(buf, (const u_char *)rdatum, strlen(rdatum));
-	}
-}
-
-static void
-sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
-	size_t i;
-
-	buf->base = realloc(buf->base, buf->size + len*2);
-	for (i = 0; i < len; i++) {
-		const char hex[] = "0123456789abcdef";
-		unsigned int ch = src[i];
-
-		buf->base[buf->size++] = hex[ch >> 4];
-		buf->base[buf->size++] = hex[ch & 0xf];
-	}
-}
-
-/* sortable_dnsname -- make a sortable dns name; destructive and lossy.
- *
- * to be lexicographically sortable, a dnsname has to be converted to
- * TLD-first, all uppercase letters must be converted to lower case,
- * and all characters except dots then converted to hexadecimal. this
- * transformation is for POSIX sort's use, and is irreversibly lossy.
- */
-static void
-sortable_dnsname(sortbuf_t buf, const char *name) {
-	const char hex[] = "0123456789abcdef";
-	size_t len, new_size;
-	unsigned int dots;
-	signed int m, n;
-	char *p;
-
-	/* to avoid calling realloc() on every label, count the dots. */
-	for (dots = 0, len = 0; name[len] != '\0'; len++) {
-		if (name[len] == '.')
-			dots++;
-	}
-
-	/* collatable names are TLD-first, all lower case. */
-	new_size = buf->size + len*2 - (size_t)dots;
-	assert(new_size != 0);
-	if (new_size != buf->size)
-		buf->base = realloc(buf->base, new_size);
-	p = buf->base + buf->size;
-	for (m = (int)len - 1, n = m; m >= 0; m--) {
-		/* note: actual presentation form names can have \. and \\,
-		 * but we are destructive and lossy, and will ignore that.
-		 */
-		if (name[m] == '.') {
-			int i;
-
-			for (i = m+1; i <= n; i++) {
-				int ch = tolower(name[i]);
-				*p++ = hex[ch >> 4];
-				*p++ = hex[ch & 0xf];
-			}
-			*p++ = '.';
-			n = m-1;
-		}
-	}
-	assert(m == -1);
-	/* first label remains after loop. */
-	for (m = 0; m <= n; m++) {
-		int ch = tolower(name[m]);
-		*p++ = hex[ch >> 4];
-		*p++ = hex[ch & 0xf];
-	}
-	buf->size = (size_t)(p - buf->base);
-	assert(buf->size == new_size);
-	/* if no characters were written, it's the empty string,
-	 * meaning the dns root zone.
-	 */
-	if (len == 0) {
-		buf->base = realloc(buf->base, buf->size + 1);
-		buf->base[buf->size++] = '.';
-	}
-}

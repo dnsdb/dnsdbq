@@ -1,6 +1,24 @@
 #if WANT_PDNS_CIRCL
+
+static char *circl_url(const char *, char *);
+static void circl_auth(reader_t);
+static const char *circl_status(reader_t);
+static const char *circl_verb_ok(const char *);
+
 static char *circl_base_url = NULL;
 static char *circl_authinfo = NULL;
+
+static const struct pdns_sys circl = {
+	"circl", "https://www.circl.lu/pdns/query",
+	circl_url, NULL, NULL,
+	circl_auth, circl_status, circl_verb_ok,
+	circl_ready, circl_destroy
+};
+
+pdns_sys_t
+pdns_circl(void) {
+	return &circl;
+}
 
 void
 circl_destroy(void) {
@@ -23,7 +41,7 @@ circl_destroy(void) {
  * 2. Rdata (name) query: rdata/name/NAME[/TYPE]
  * 3. Rdata (IP address) query: rdata/ip/ADDR[/PFXLEN]
  */
-char *
+static char *
 circl_url(const char *path, char *sep) {
 	const char *val = NULL;
 	char *ret;
@@ -68,7 +86,7 @@ circl_url(const char *path, char *sep) {
 	return (ret);
 }
 
-void
+static void
 circl_auth(reader_t reader) {
 	if (reader->easy != NULL) {
 		curl_easy_setopt(reader->easy, CURLOPT_USERPWD,
@@ -78,13 +96,13 @@ circl_auth(reader_t reader) {
 	}
 }
 
-const char *
+static const char *
 circl_status(reader_t reader __attribute__((unused))) {
 	return "ERROR";
 }
 
-const char *
-circl_validate_verb(const char *verb_name) {
+static const char *
+circl_verb_ok(const char *verb_name) {
 	/* Only "lookup" is valid */
 	if (strcasecmp(verb_name, "lookup") != 0)
 		return ("the CIRCL system only understands 'lookup'");

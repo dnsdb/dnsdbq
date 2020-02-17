@@ -18,7 +18,8 @@ CDEBUG = -g
 CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)
 
 TOOL = dnsdbq
-TOOL_OBJ = $(TOOL).o ns_ttl.o
+TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o pdns.o pdns_circl.o pdns_dnsdb.o \
+	sort.o time.o
 
 all: $(TOOL)
 
