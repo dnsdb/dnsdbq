@@ -67,7 +67,7 @@ reader_launch(writer_t writer, char *url) {
 		curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
 		curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
 	}
-	sys->auth(reader);
+	psys->auth(reader);
 	reader->hdrs = curl_slist_append(reader->hdrs, json_header);
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
@@ -189,7 +189,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 
 			if (!reader->writer->once) {
 				writer_status(reader->writer,
-					      sys->status(reader),
+					      psys->status(reader),
 					      message);
 				if (!quiet) {
 					char *url;
@@ -223,7 +223,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		size_t pre_len, post_len;
 
 		if (info) {
-			sys->write_info(reader);
+			psys->write_info(reader);
 			reader->buf[0] = '\0';
 			reader->len = 0;
 			return (bytes);

@@ -82,7 +82,7 @@ circl_url(const char *path, char *sep) {
 		{ "rrset/name/", "rdata/name/", "rdata/ip/", NULL };
 
 	if (circl_base_url == NULL)
-		circl_base_url = strdup(sys->base_url);
+		circl_base_url = strdup(psys->base_url);
 
 	for (pi = 0; valid_paths[pi] != NULL; pi++)
 		if (strncasecmp(path, valid_paths[pi], strlen(valid_paths[pi]))

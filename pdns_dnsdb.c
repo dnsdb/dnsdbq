@@ -12,7 +12,7 @@
 
 /* types. */
 
-struct dnsdb_rate_json {
+struct rate_json {
 	json_t	*main,
 		*reset, *expires, *limit, *remaining,
 		*burst_size, *burst_window, *results_max,
@@ -31,13 +31,13 @@ struct rateval {
 typedef struct rateval *rateval_t;
 typedef const struct rateval *rateval_ct;
 
-struct dnsdb_rate_tuple {
-	struct dnsdb_rate_json	obj;
+struct rate_tuple {
+	struct rate_json  obj;
 	struct rateval	reset, expires, limit, remaining,
 			burst_size, burst_window, results_max,
 			offset_max;
 };
-typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
+typedef struct rate_tuple *rate_tuple_t;
 
 /* forwards. */
 
@@ -54,9 +54,8 @@ static const char *dnsdb_verb_ok(const char *);
 static void print_rateval(const char *, rateval_ct, FILE *);
 static void print_burstrate(const char *, rateval_ct, rateval_ct, FILE *);
 static const char *rateval_make(rateval_t, const json_t *, const char *);
-static const char *dnsdb_rate_tuple_make(dnsdb_rate_tuple_t, const char *,
-					 size_t);
-static void dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t);
+static const char *rate_tuple_make(rate_tuple_t, const char *, size_t);
+static void rate_tuple_unmake(rate_tuple_t);
 
 /* variables. */
 
@@ -116,7 +115,7 @@ dnsdb_ready(void) {
 		      dnsdb_base_url);
 	}
 	if (dnsdb_base_url == NULL)
-		dnsdb_base_url = strdup(sys->base_url);
+		dnsdb_base_url = strdup(psys->base_url);
 	if (api_key == NULL)
 		usage("no API key given");
 }
@@ -153,12 +152,12 @@ dnsdb_url(const char *path, char *sep) {
 	x = 0;
 	for (p = dnsdb_base_url; *p != '\0'; p++)
 		x += (*p == '/');
-	if (x >= 3 && chosen_verb != &verbs[DEFAULT_VERB])
+	if (x >= 3 && pverb != &verbs[DEFAULT_VERB])
 		usage("Cannot specify a verb other than 'lookup' "
 		      "if the server URL contains a path");
 	verb_path = NULL;
-	if (chosen_verb->url_fragment != NULL)
-		verb_path = chosen_verb->url_fragment;
+	if (pverb->url_fragment != NULL)
+		verb_path = pverb->url_fragment;
 	else
 		verb_path = "/lookup";
 
@@ -325,10 +324,10 @@ print_burstrate(const char *key,
 static void
 dnsdb_write_info(reader_t reader) {
 	if (pres == present_text) {
-		struct dnsdb_rate_tuple tup;
+		struct rate_tuple tup;
 		const char *msg;
 
-		msg = dnsdb_rate_tuple_make(&tup, reader->buf, reader->len);
+		msg = rate_tuple_make(&tup, reader->buf, reader->len);
 		if (msg != NULL) { /* there was an error */
 			puts(msg);
 		} else {
@@ -387,10 +386,10 @@ rateval_make(rateval_t tp, const json_t *obj, const char *key) {
 	return (NULL);
 }
 
-/* dnsdb_rate_tuple_make -- create one rate tuple object out of a JSON object.
+/* rate_tuple_make -- create one rate tuple object out of a JSON object.
  */
 static const char *
-dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
+rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 	json_t *rate;
@@ -449,15 +448,14 @@ dnsdb_rate_tuple_make(dnsdb_rate_tuple_t tup, const char *buf, size_t len) {
 
  ouch:
 	assert(msg != NULL);
-	dnsdb_rate_tuple_unmake(tup);
+	rate_tuple_unmake(tup);
 	return (msg);
 }
 
-/* dnsdb_rate_tuple_unmake -- deallocate heap storage associated with
- * one rate tuple.
+/* rate_tuple_unmake -- deallocate heap storage associated with a rate tuple.
  */
 static void
-dnsdb_rate_tuple_unmake(dnsdb_rate_tuple_t tup) {
+rate_tuple_unmake(rate_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 

@@ -14,13 +14,10 @@
 #define DEBUG(ge, ...) { if (debug_level >= (ge)) debug(__VA_ARGS__); }
 
 struct verb {
-	const char	*cmd_opt_val;
+	const char	*name;
 	const char	*url_fragment;
-	/* validate_cmd_opts can review the command line options and exit
-	 * if some verb-specific command line option constraint is not met.
-	 */
-	void		(*validate_cmd_opts)(void);
+	void		(*ready)(void);
 };
-typedef const struct verb *verb_t;
+typedef const struct verb *verb_ct;
 
 #endif /*DEFS_H_INCLUDED*/

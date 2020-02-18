@@ -63,7 +63,7 @@ extern char **environ;
 static void help(void);
 static bool parse_long(const char *, long *);
 static void server_setup(void);
-static verb_t find_verb(const char *);
+static verb_ct find_verb(const char *);
 static void read_configs(void);
 static void do_batch(FILE *, u_long, u_long);
 static const char *batch_parse(char *, query_t);
@@ -72,8 +72,8 @@ static char *makepath(mode_e, const char *, const char *,
 static void query_launcher(query_ct, writer_t);
 static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
 static void ruminate_json(int, u_long, u_long);
-static void validate_cmd_opts_lookup(void);
-static void validate_cmd_opts_summarize(void);
+static void lookup_ready(void);
+static void summarize_ready(void);
 
 /* Constants. */
 
@@ -87,8 +87,8 @@ static const char * const conf_files[] = {
 
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
-	{ "lookup", "/lookup", validate_cmd_opts_lookup },
-	{ "summarize", "/summarize", validate_cmd_opts_summarize },
+	{ "lookup", "/lookup", lookup_ready },
+	{ "summarize", "/summarize", summarize_ready },
 	{ NULL, NULL, NULL }
 };
 
@@ -107,6 +107,7 @@ main(int argc, char *argv[]) {
 	u_long after = 0;
 	u_long before = 0;
 	int json_fd = -1;
+	const char *msg;
 	char *value;
 	int ch;
 
@@ -120,8 +121,8 @@ main(int argc, char *argv[]) {
 	value = getenv(env_time_fmt);
 	if (value != NULL && strcasecmp(value, "iso") == 0)
 		iso8601 = true;
-	chosen_verb = &verbs[DEFAULT_VERB];
-	sys = pdns_dnsdb();
+	pverb = &verbs[DEFAULT_VERB];
+	psys = pdns_dnsdb();
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
@@ -281,8 +282,8 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'V': {
-			chosen_verb = find_verb(optarg);
-			if (chosen_verb == NULL)
+			pverb = find_verb(optarg);
+			if (pverb == NULL)
 				usage("Unsupported verb for -V argument");
 			break;
 		    }
@@ -306,10 +307,10 @@ main(int argc, char *argv[]) {
 			break;
 		case 'u':
 			if (strcmp(optarg, "dnsdb") == 0)
-				sys = pdns_dnsdb();
+				psys = pdns_dnsdb();
 #if WANT_PDNS_CIRCL
 			else if (strcmp(optarg, "circl") == 0)
-				sys = pdns_circl();
+				psys = pdns_circl();
 #endif
 			else
 				usage("-u must refer to a pdns system");
@@ -350,8 +351,6 @@ main(int argc, char *argv[]) {
 			     tok != NULL;
 			     tok = strtok_r(NULL, ",", &saveptr))
 			{
-				const char *msg;
-
 				if (find_sort_key(tok) != NULL)
 					usage("Each sort key may only be "
 					      "specified once");
@@ -487,17 +486,12 @@ main(int argc, char *argv[]) {
 			usage("using -m with more than one -f makes no sense.");
 		}
 	}
+
 	if (sorted != no_sort)
 		sort_ready();
-
-	assert(chosen_verb != NULL);
-	if (chosen_verb->validate_cmd_opts != NULL)
-		(*chosen_verb->validate_cmd_opts)();
-	if (sys->verb_ok != NULL) {
-		const char *msg = sys->verb_ok(chosen_verb->cmd_opt_val);
-		if (msg != NULL)
-			usage(msg);
-	}
+	(*pverb->ready)();
+	if ((msg = psys->verb_ok(pverb->name)) != NULL)
+		usage(msg);
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
@@ -511,7 +505,7 @@ main(int argc, char *argv[]) {
 			usage("can't mix -I with -J");
 		if (rrtype != NULL)
 			usage("can't mix -t with -J");
-		if (chosen_verb != &verbs[DEFAULT_VERB])
+		if (pverb != &verbs[DEFAULT_VERB])
 			usage("can't mix -V with -J");
 		if (max_count > 0)
 			usage("can't mix -M with -J");
@@ -543,11 +537,11 @@ main(int argc, char *argv[]) {
 			usage("can't mix -b with -I");
 		if (rrtype != NULL)
 			usage("can't mix -t with -I");
-		if (sys->request_info == NULL || sys->write_info == NULL)
+		if (psys->request_info == NULL || psys->write_info == NULL)
 			usage("there is no 'info' for this service");
 		server_setup();
 		make_curl();
-		sys->request_info();
+		psys->request_info();
 		unmake_curl();
 	} else {
 		writer_t writer;
@@ -604,7 +598,7 @@ main(int argc, char *argv[]) {
  */
 static void
 help(void) {
-	verb_t v;
+	verb_ct v;
 
 	printf("usage: %s [-cdfghIjmqSsUv] [-p dns|json|csv]\n", program_name);
 	puts("\t[-k (first|last|count|name|data)[,...]]\n"
@@ -653,8 +647,8 @@ help(void) {
 	puts("\tcircl\n");
 #endif
 	puts("for -V, verb must be one of:");
-	for (v = verbs; v->cmd_opt_val != NULL; v++)
-		printf("\t%s\n", v->cmd_opt_val);
+	for (v = verbs; v->name != NULL; v++)
+		printf("\t%s\n", v->name);
 	puts("\nGetting Started:\n"
 	     "\tAdd your API key to ~/.dnsdb-query.conf like this:\n"
 	     "\t\tAPIKEY=\"YOURAPIKEYHERE\"");
@@ -704,7 +698,7 @@ my_exit(int code) {
 	unmake_curl();
 
 	/* globals which may have been initialized, are to be freed. */
-	sys->destroy();
+	psys->destroy();
 
 	/* sort key specifications and computations, are to be freed. */
 	sort_destroy();
@@ -749,24 +743,24 @@ parse_long(const char *in, long *out) {
 	return true;
 }
 
-/* validate_cmd_opts_lookup -- validate command line options for
- * a lookup verb
+/* validate_cmd_opts_lookup -- validate command line options for 'lookup'.
  */
 static void
-validate_cmd_opts_lookup(void) {
+lookup_ready(void) {
 	/* TODO too many local variables would need to be global to check
-	 * more here
+	 * more here.
 	 */
 	if (max_count > 0)
 		usage("max_count only allowed for a summarize verb");
 }
 
-/* validate_cmd_opts_summarize -- validate command line options for
- * a summarize verb
+/* validate_cmd_opts_summarize -- validate commandline options for 'summarize'.
  */
 static void
-validate_cmd_opts_summarize(void) {
-	/* Remap the presentation format functions for the summarize variants */
+summarize_ready(void) {
+	/* Remap the presentation format functions for the
+	 * summarize variants.
+	 */
 	if (pres == present_json)
 		pres = present_json_summarize;
 	else if (pres == present_csv)
@@ -780,12 +774,12 @@ validate_cmd_opts_summarize(void) {
 
 /* find_verb -- locate a verb by option parameter
  */
-static verb_t
+static verb_ct
 find_verb(const char *option) {
-	verb_t v;
+	verb_ct v;
 
-	for (v = verbs; v->cmd_opt_val != NULL; v++)
-		if (strcasecmp(option, v->cmd_opt_val) == 0)
+	for (v = verbs; v->name != NULL; v++)
+		if (strcasecmp(option, v->name) == 0)
 			return (v);
 	return (NULL);
 }
@@ -795,7 +789,7 @@ find_verb(const char *option) {
 static void
 server_setup(void) {
 	read_configs();
-	sys->ready();
+	psys->ready();
 }
 
 /* read_configs -- try to find a config file in static path, then parse it.
@@ -850,6 +844,7 @@ read_configs(void) {
 		while (getline(&line, &n, f) > 0) {
 			char *tok1, *tok2, *tok3;
 			char *saveptr = NULL;
+			const char *msg;
 
 			l++;
 			if (strchr(line, '\n') == NULL) {
@@ -867,13 +862,14 @@ read_configs(void) {
 					program_name, l);
 				my_exit(1);
 			}
-			if (strcmp(tok1, sys->name) != 0 ||
+			if (strcmp(tok1, psys->name) != 0 ||
 			    tok3 == NULL || *tok3 == '\0')
 				continue;
 
 			DEBUG(1, true, "line #%d: sets %s|%s|%s\n",
 			      l, tok1, tok2, tok3);
-			sys->setenv(tok2, tok3);
+			if ((msg = psys->setenv(tok2, tok3)) != NULL)
+				usage(msg);
 		}
 		DESTROY(line);
 		pclose(f);
@@ -1187,7 +1183,7 @@ launch(const char *command, writer_t writer,
 	char *url, *tmp, sep;
 	int x;
 
-	url = sys->url(command, &sep);
+	url = psys->url(command, &sep);
 	if (url == NULL)
 		my_exit(1);
 
