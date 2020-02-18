@@ -24,7 +24,7 @@ struct pdns_system {
 	const char	*name;
 	const char	*base_url;
 	char *		(*url)(const char *, char *);
-	void		(*request_info)(void);
+	void		(*info_req)(void);
 	int		(*info_blob)(const char *, size_t);
 	void		(*auth)(reader_t);
 	const char *	(*status)(reader_t);

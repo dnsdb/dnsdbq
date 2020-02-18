@@ -45,7 +45,7 @@ static const char *dnsdb_setenv(const char *, const char *);
 static void dnsdb_ready(void);
 static void dnsdb_destroy(void);
 static char *dnsdb_url(const char *, char *);
-static void dnsdb_request_info(void);
+static void dnsdb_info_req(void);
 static int dnsdb_info_blob(const char *, size_t);
 static void dnsdb_auth(reader_t);
 static const char *dnsdb_status(reader_t);
@@ -67,7 +67,7 @@ static char *dnsdb_base_url = NULL;
 
 static const struct pdns_system dnsdb = {
 	"dnsdb", "https://api.dnsdb.info",
-	dnsdb_url, dnsdb_request_info, dnsdb_info_blob,
+	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
 	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
 	dnsdb_setenv, dnsdb_ready, dnsdb_destroy
 };
@@ -207,10 +207,10 @@ dnsdb_url(const char *path, char *sep) {
 }
 
 void
-dnsdb_request_info(void) {
+dnsdb_info_req(void) {
 	writer_t writer;
 
-	DEBUG(1, true, "dnsdb_request_info()\n");
+	DEBUG(1, true, "dnsdb_info_req()\n");
 
 	/* start a writer, which might be format functions, or POSIX sort. */
 	writer = writer_init(0, 0);

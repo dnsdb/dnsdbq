@@ -47,7 +47,7 @@ extern char **environ;
 
 /* Types. */
 
-#define MAIN_PROGRAM 1
+#define MAIN_PROGRAM
 #include "defs.h"
 #include "netio.h"
 #include "pdns.h"
@@ -554,11 +554,11 @@ main(int argc, char *argv[]) {
 			usage("can't mix -b with -I");
 		if (rrtype != NULL)
 			usage("can't mix -t with -I");
-		if (psys->request_info == NULL || psys->info_blob == NULL)
+		if (psys->info_req == NULL || psys->info_blob == NULL)
 			usage("there is no 'info' for this service");
 		server_setup();
 		make_curl();
-		psys->request_info();
+		psys->info_req();
 		unmake_curl();
 	} else {
 		writer_t writer;
