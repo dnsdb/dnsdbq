@@ -43,8 +43,6 @@
 #include <unistd.h>
 #include <wordexp.h>
 
-extern char **environ;
-
 /* Types. */
 
 #define MAIN_PROGRAM
