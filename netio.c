@@ -1,8 +1,13 @@
+#define _GNU_SOURCE
+#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
+
 #include <sys/wait.h>
 
 #include <assert.h>
 #include <errno.h>
 #include <signal.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "defs.h"
@@ -161,10 +166,8 @@ writer_status(writer_t writer, const char *status, const char *message) {
 size_t
 writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	reader_t reader = (reader_t) blob;
-	size_t bytes = size * nmemb;
-	u_long after, before;
-	FILE *outf;
-	char *nl;
+	size_t bytes = size * nmemb, info_len;
+	char *nl, *info_blob;
 
 	DEBUG(3, true, "writer_func(%d, %d): %d\n",
 	      (int)size, (int)nmemb, (int)bytes);
@@ -215,36 +218,37 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 	}
 
-	after = reader->writer->after;
-	before = reader->writer->before;
-	outf = (sorted != no_sort) ? reader->writer->sort_stdin : stdout;
-
+	/* deblock. */
+	if (info) {
+		info_blob = NULL;
+		info_len = 0;
+	}
 	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
-		size_t pre_len, post_len;
-
-		if (info) {
-			psys->write_info(reader);
-			reader->buf[0] = '\0';
-			reader->len = 0;
-			return (bytes);
-		}
+		size_t pre_len = (size_t)(nl - reader->buf),
+			post_len = (reader->len - pre_len) - 1;
 
 		if (sorted == no_sort && output_limit != -1 &&
 		    reader->writer->count >= output_limit)
 		{
-			DEBUG(1, true, "hit output limit %ld\n", output_limit);
-			reader->buf[0] = '\0';
-			reader->len = 0;
-			return (bytes);
+			DEBUG(9, true, "hit output limit %ld\n", output_limit);
+		} else if (info) {
+			asprintf(&info_blob, "%s%*.*s\n",
+				 or_else(info_blob, ""),
+				 (int)pre_len, (int)pre_len, reader->buf);
+			info_len += pre_len + 1;
+		} else {
+			reader->writer->count += data_blob(reader->writer,
+							   reader->buf,
+							   pre_len);
 		}
-
-		pre_len = (size_t)(nl - reader->buf);
-		reader->writer->count += input_blob(reader->buf, pre_len,
-						    after, before, outf);
-		post_len = (reader->len - pre_len) - 1;
 		memmove(reader->buf, nl + 1, post_len);
 		reader->len = post_len;
 	}
+	if (info) {
+		psys->info_blob(info_blob, info_len);
+		DESTROY(info_blob);
+	}
+
 	return (bytes);
 }
 
@@ -315,9 +319,10 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 
+			struct pdns_tuple tup;
 			char *nl, *linep;
 			const char *msg;
-			struct pdns_tuple tup;
+			size_t len;
 
 			if ((nl = strchr(line, '\n')) == NULL) {
 				fprintf(stderr,
@@ -370,14 +375,15 @@ writer_fini(writer_t writer) {
 				 (int)(nl - linep),
 				 (int)(nl - linep),
 				 linep);
-			msg = tuple_make(&tup, linep, (size_t)(nl - linep));
+			len = (size_t)(nl - linep);
+			msg = tuple_make(&tup, linep, len);
 			if (msg != NULL) {
 				fprintf(stderr,
 					"%s: warning: tuple_make: %s\n",
 					program_name, msg);
 				continue;
 			}
-			(*pres)(&tup, linep, (size_t)(nl - linep), stdout);
+			(*presenter)(&tup, linep, len, stdout);
 			tuple_unmake(&tup);
 			count++;
 		}

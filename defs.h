@@ -13,11 +13,6 @@
 #define DESTROY(p) { if ((p) != NULL) { free(p); (p) = NULL; } }
 #define DEBUG(ge, ...) { if (debug_level >= (ge)) debug(__VA_ARGS__); }
 
-struct verb {
-	const char	*name;
-	const char	*url_fragment;
-	void		(*ready)(void);
-};
-typedef const struct verb *verb_ct;
+typedef enum { text, json, csv } present_e;
 
 #endif /*DEFS_H_INCLUDED*/

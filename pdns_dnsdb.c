@@ -46,7 +46,7 @@ static void dnsdb_ready(void);
 static void dnsdb_destroy(void);
 static char *dnsdb_url(const char *, char *);
 static void dnsdb_request_info(void);
-static void dnsdb_write_info(reader_t);
+static int dnsdb_info_blob(const char *, size_t);
 static void dnsdb_auth(reader_t);
 static const char *dnsdb_status(reader_t);
 static const char *dnsdb_verb_ok(const char *);
@@ -67,7 +67,7 @@ static char *dnsdb_base_url = NULL;
 
 static const struct pdns_system dnsdb = {
 	"dnsdb", "https://api.dnsdb.info",
-	dnsdb_url, dnsdb_request_info, dnsdb_write_info,
+	dnsdb_url, dnsdb_request_info, dnsdb_info_blob,
 	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
 	dnsdb_setenv, dnsdb_ready, dnsdb_destroy
 };
@@ -321,13 +321,13 @@ print_burstrate(const char *key,
 
 /* dnsdb_write_info -- assumes that reader contains the complete JSON block.
  */
-static void
-dnsdb_write_info(reader_t reader) {
-	if (pres == present_text) {
+static int
+dnsdb_info_blob(const char *buf, size_t len) {
+	if (presentation == text) {
 		struct rate_tuple tup;
 		const char *msg;
 
-		msg = rate_tuple_make(&tup, reader->buf, reader->len);
+		msg = rate_tuple_make(&tup, buf, len);
 		if (msg != NULL) { /* there was an error */
 			puts(msg);
 		} else {
@@ -342,11 +342,12 @@ dnsdb_write_info(reader_t reader) {
 					&tup.burst_size, &tup.burst_window,
 					stdout);
 		}
-	} else if (pres == present_json) {
-		fwrite(reader->buf, 1, reader->len, stdout);
+	} else if (presentation == json) {
+		fwrite(buf, 1, len, stdout);
 	} else {
 		abort();
 	}
+	return 1;
 }
 
 /* rateval_make: make an optional key value from the json object.

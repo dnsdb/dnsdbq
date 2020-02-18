@@ -6,13 +6,15 @@
 #include "time.h"
 #include "globals.h"
 
-/* present_text -- render one pdns tuple in "dig" style ascii text.
+static void present_csv_line(pdns_tuple_ct, const char *, FILE *);
+
+/* present_text_look -- render one pdns tuple in "dig" style ascii text.
  */
 void
-present_text(pdns_tuple_ct tup,
-	     const char *jsonbuf __attribute__ ((unused)),
-	     size_t jsonlen __attribute__ ((unused)),
-	     FILE *outf)
+present_text_look(pdns_tuple_ct tup,
+		  const char *jsonbuf __attribute__ ((unused)),
+		  size_t jsonlen __attribute__ ((unused)),
+		  FILE *outf)
 {
 	bool pflag, ppflag;
 	const char *prefix;
@@ -81,13 +83,13 @@ present_text(pdns_tuple_ct tup,
 		putc('\n', outf);
 }
 
-/* present_text_summarize -- render summarize object in "dig" style ascii text.
+/* present_text_summ -- render summarize object in "dig" style ascii text.
  */
 void
-present_text_summarize(pdns_tuple_ct tup,
-	     const char *jsonbuf __attribute__ ((unused)),
-	     size_t jsonlen __attribute__ ((unused)),
-	     FILE *outf)
+present_text_summ(pdns_tuple_ct tup,
+		  const char *jsonbuf __attribute__ ((unused)),
+		  size_t jsonlen __attribute__ ((unused)),
+		  FILE *outf)
 {
 	const char *prefix;
 
@@ -123,6 +125,8 @@ present_text_summarize(pdns_tuple_ct tup,
 }
 
 /* present_json -- render one DNSDB tuple as newline-separated JSON.
+ *
+ * note: used by both lookup and summarize verbs.
  */
 void
 present_json(pdns_tuple_ct tup __attribute__ ((unused)),
@@ -134,26 +138,13 @@ present_json(pdns_tuple_ct tup __attribute__ ((unused)),
 	putc('\n', outf);
 }
 
-/* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
- * Same implementation as present_json()
+/* present_csv_look -- render one DNSDB tuple as comma-separated values (CSV).
  */
 void
-present_json_summarize(pdns_tuple_ct tup __attribute__ ((unused)),
-	     const char *jsonbuf,
-	     size_t jsonlen,
-	     FILE *outf)
-{
-	fwrite(jsonbuf, 1, jsonlen, outf);
-	putc('\n', outf);
-}
-
-/* present_csv -- render one DNSDB tuple as comma-separated values (CSV).
- */
-void
-present_csv(pdns_tuple_ct tup,
-	    const char *jsonbuf __attribute__ ((unused)),
-	    size_t jsonlen __attribute__ ((unused)),
-	    FILE *outf)
+present_csv_look(pdns_tuple_ct tup,
+		 const char *jsonbuf __attribute__ ((unused)),
+		 size_t jsonlen __attribute__ ((unused)),
+		 FILE *outf)
 {
 	static bool csv_headerp = false;
 
@@ -186,11 +177,8 @@ present_csv(pdns_tuple_ct tup,
 
 /* present_csv_line -- display a CSV for one rdatum out of an rrset.
  */
-void
-present_csv_line(pdns_tuple_ct tup,
-		 const char *rdata,
-		 FILE *outf)
-{
+static void
+present_csv_line(pdns_tuple_ct tup, const char *rdata, FILE *outf) {
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL)
 		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso8601));
@@ -225,13 +213,13 @@ present_csv_line(pdns_tuple_ct tup,
 	putc('\n', outf);
 }
 
-/* present_csv_summarize -- render a summarize result as CSV.
+/* present_csv_summ -- render a summarize result as CSV.
  */
 void
-present_csv_summarize(pdns_tuple_ct tup,
-	    const char *jsonbuf __attribute__ ((unused)),
-	    size_t jsonlen __attribute__ ((unused)),
-	    FILE *outf)
+present_csv_summ(pdns_tuple_ct tup,
+		 const char *jsonbuf __attribute__ ((unused)),
+		 size_t jsonlen __attribute__ ((unused)),
+		 FILE *outf)
 {
 	fprintf(outf,
 		"time_first,time_last,zone_first,zone_last,"
@@ -389,13 +377,10 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-/* input_blob -- process one deblocked json blob as a counted string.
+/* data_blob -- process one deblocked json blob as a counted string.
  */
 int
-input_blob(const char *buf, size_t len,
-	   u_long after, u_long before,
-	   FILE *outf)
-{
+data_blob(writer_t writer, const char *buf, size_t len) {
 	const char *msg, *whynot;
 	struct pdns_tuple tup;
 	u_long first, last;
@@ -425,9 +410,9 @@ input_blob(const char *buf, size_t len,
 	 */
 	whynot = NULL;
 	DEBUG(2, true, "filtering-- ");
-	if (after != 0) {
-		const int first_vs_after = time_cmp(first, after),
-			last_vs_after = time_cmp(last, after);
+	if (writer->after != 0) {
+		const int first_vs_after = time_cmp(first, writer->after),
+			last_vs_after = time_cmp(last, writer->after);
 
 		DEBUG(2, false, "FvA %d LvA %d: ",
 			 first_vs_after, last_vs_after);
@@ -442,9 +427,9 @@ input_blob(const char *buf, size_t len,
 			}
 		}
 	}
-	if (before != 0) {
-		const int first_vs_before = time_cmp(first, before),
-			last_vs_before = time_cmp(last, before);
+	if (writer->before != 0) {
+		const int first_vs_before = time_cmp(first, writer->before),
+			last_vs_before = time_cmp(last, writer->before);
 
 		DEBUG(2, false, "FvB %d LvB %d: ",
 			 first_vs_before, last_vs_before);
@@ -467,8 +452,8 @@ input_blob(const char *buf, size_t len,
 	}
 	DEBUG(3, true, "\tF..L = %s", time_str(first, false));
 	DEBUG(3, false, " .. %s\n", time_str(last, false));
-	DEBUG(3, true, "\tA..B = %s", time_str(after, false));
-	DEBUG(3, false, " .. %s\n", time_str(before, false));
+	DEBUG(3, true, "\tA..B = %s", time_str(writer->after, false));
+	DEBUG(3, false, " .. %s\n", time_str(writer->before, false));
 	if (whynot != NULL)
 		goto next;
 
@@ -490,7 +475,7 @@ input_blob(const char *buf, size_t len,
 			dyn_rdata = sortable_rdata(&tup);
 			DEBUG(2, true, "dyn_rdata = '%s'\n", dyn_rdata);
 		}
-		fprintf(outf, "%lu %lu %lu %s %s %*.*s\n",
+		fprintf(writer->sort_stdin, "%lu %lu %lu %s %s %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,
 			(unsigned long)tup.count,
@@ -507,7 +492,7 @@ input_blob(const char *buf, size_t len,
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {
-		(*pres)(&tup, buf, len, outf);
+		(*presenter)(&tup, buf, len, stdout);
 	}
 	ret = 1;
  next:

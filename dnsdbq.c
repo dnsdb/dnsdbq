@@ -87,9 +87,11 @@ static const char * const conf_files[] = {
 
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
-	{ "lookup", "/lookup", lookup_ready },
-	{ "summarize", "/summarize", summarize_ready },
-	{ NULL, NULL, NULL }
+	{ "lookup", "/lookup", lookup_ready,
+	  present_text_look, present_json, present_csv_look },
+	{ "summarize", "/summarize", summarize_ready,
+	  present_text_summ, present_json, present_csv_summ },
+	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 /* Private. */
@@ -320,13 +322,13 @@ main(int argc, char *argv[]) {
 			break;
 		case 'p':
 			if (strcasecmp(optarg, "json") == 0)
-				pres = present_json;
+				presentation = json;
 			else if (strcasecmp(optarg, "csv") == 0)
-				pres = present_csv;
+				presentation = csv;
 			else if (strcasecmp(optarg, "text") == 0 ||
 				 strcasecmp(optarg, "dns") == 0)
 			{
-				pres = present_text;
+				presentation = text;
 			} else {
 				usage("-p must specify json, text, or csv");
 			}
@@ -375,7 +377,7 @@ main(int argc, char *argv[]) {
 			gravel = true;
 			break;
 		case 'j':
-			pres = present_json;
+			presentation = json;
 			break;
 		case 'f':
 			switch (batching) {
@@ -460,6 +462,21 @@ main(int argc, char *argv[]) {
 		      batching != false, merge);
 	}
 
+	/* select presenter. */
+	switch (presentation) {
+	case text:
+		presenter = pverb->text;
+		break;
+	case json:
+		presenter = pverb->json;
+		break;
+	case csv:
+		presenter = pverb->csv;
+		break;
+	default:
+		abort();
+	}
+
 	/* validate some interrelated options. */
 	if (after != 0 && before != 0) {
 		if (after > 0 && before > 0 && after > before)
@@ -531,13 +548,13 @@ main(int argc, char *argv[]) {
 	} else if (info) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -I");
-		if (pres != present_text && pres != present_json)
+		if (presentation != text && presentation != json)
 			usage("info must be presented in json or text format");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -I");
 		if (rrtype != NULL)
 			usage("can't mix -t with -I");
-		if (psys->request_info == NULL || psys->write_info == NULL)
+		if (psys->request_info == NULL || psys->info_blob == NULL)
 			usage("there is no 'info' for this service");
 		server_setup();
 		make_curl();
@@ -758,16 +775,6 @@ lookup_ready(void) {
  */
 static void
 summarize_ready(void) {
-	/* Remap the presentation format functions for the
-	 * summarize variants.
-	 */
-	if (pres == present_json)
-		pres = present_json_summarize;
-	else if (pres == present_csv)
-		pres = present_csv_summarize;
-	else
-		pres = present_text_summarize; /* default to text format */
-
 	if (sorted != no_sort)
 		usage("Sorting with a summarize verb makes no sense");
 }
