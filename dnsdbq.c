@@ -480,13 +480,13 @@ main(int argc, char *argv[]) {
 	/* validate some interrelated options. */
 	if (after != 0 && before != 0) {
 		if (after > 0 && before > 0 && after > before)
-			usage("-A -B requires after <= before (for now)");
+			usage("-A -B requiress after <= before (for now)");
 		if (sorted == no_sort && json_fd == -1 &&
 		    !complete && !quiet)
 		{
 			fprintf(stderr,
-				"%s: warning: -A and -B w/o -c requires"
-				" sorting for dedup, so turning on -S here.\n",
+				"%s: warning: -A and -B w/o -c needs"
+				" sort for dedup; turning on -S here.\n",
 				program_name);
 			sorted = reverse_sort;
 		}
