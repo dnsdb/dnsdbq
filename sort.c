@@ -92,6 +92,7 @@ sort_destroy(void) {
  */
 __attribute__((noreturn)) void
 exec_sort(int p1[], int p2[]) {
+	extern char **environ;
 	char *sort_argv[3+MAX_KEYS], **sap;
 	int n;
 
