@@ -14,6 +14,8 @@
 
 #define	MAX_KEYS 5
 
+extern char **environ;
+
 static struct sortkey keys[MAX_KEYS];
 static int nkeys = 0;
 
@@ -92,7 +94,6 @@ sort_destroy(void) {
  */
 __attribute__((noreturn)) void
 exec_sort(int p1[], int p2[]) {
-	extern char **environ;
 	char *sort_argv[3+MAX_KEYS], **sap;
 	int n;
 
