@@ -1,6 +1,9 @@
 #ifndef NETIO_H_INCLUDED
 #define NETIO_H_INCLUDED 1
 
+#include <stdbool.h>
+#include <curl/curl.h>
+
 struct reader {
 	struct reader	*next;
 	struct writer	*writer;
@@ -39,5 +42,6 @@ size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 void writer_fini(writer_t);
 void unmake_writers(void);
 void io_engine(int);
+void escape(char **);
 
 #endif /*NETIO_H_INCLUDED*/

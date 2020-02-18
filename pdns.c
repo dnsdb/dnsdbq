@@ -1,14 +1,10 @@
-/* find_system -- locate a pdns system's metadata by name.
- */
-static pdns_sys_t
-find_system(const char *name) {
-	pdns_sys_t t;
+#include <assert.h>
 
-	for (t = pdns_systems; t->name != NULL; t++)
-		if (strcasecmp(t->name, name) == 0)
-			return (t);
-	return (NULL);
-}
+#include "defs.h"
+#include "netio.h"
+#include "pdns.h"
+#include "time.h"
+#include "globals.h"
 
 /* present_text -- render one pdns tuple in "dig" style ascii text.
  */
@@ -395,7 +391,7 @@ tuple_unmake(pdns_tuple_t tup) {
 
 /* input_blob -- process one deblocked json blob as a counted string.
  */
-static int
+int
 input_blob(const char *buf, size_t len,
 	   u_long after, u_long before,
 	   FILE *outf)
@@ -430,10 +426,9 @@ input_blob(const char *buf, size_t len,
 	whynot = NULL;
 	DEBUG(2, true, "filtering-- ");
 	if (after != 0) {
-		int first_vs_after, last_vs_after;
+		const int first_vs_after = time_cmp(first, after),
+			last_vs_after = time_cmp(last, after);
 
-		first_vs_after = timecmp(first, after);
-		last_vs_after = timecmp(last, after);
 		DEBUG(2, false, "FvA %d LvA %d: ",
 			 first_vs_after, last_vs_after);
 
@@ -448,10 +443,9 @@ input_blob(const char *buf, size_t len,
 		}
 	}
 	if (before != 0) {
-		int first_vs_before, last_vs_before;
+		const int first_vs_before = time_cmp(first, before),
+			last_vs_before = time_cmp(last, before);
 
-		first_vs_before = timecmp(first, before);
-		last_vs_before = timecmp(last, before);
 		DEBUG(2, false, "FvB %d LvB %d: ",
 			 first_vs_before, last_vs_before);
 

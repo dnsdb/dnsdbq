@@ -1,6 +1,9 @@
 #ifndef PDNS_H_INCLUDED
 #define PDNS_H_INCLUDED 1
 
+#include <jansson.h>
+#include "netio.h"
+
 struct pdns_json {
 	json_t	*main,
 		*time_first, *time_last, *zone_first, *zone_last,
@@ -26,6 +29,7 @@ struct pdns_system {
 	void		(*auth)(reader_t);
 	const char *	(*status)(reader_t);
 	const char *	(*verb_ok)(const char *);
+	const char *	(*setenv)(const char *, const char *);
 	void		(*ready)(void);
 	void		(*destroy)(void);
 };

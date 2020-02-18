@@ -1,3 +1,15 @@
+/* asprintf() does not appear on linux without this */
+#define _GNU_SOURCE
+
+#include <assert.h>
+#include <stdio.h>
+
+#include "defs.h"
+#include "pdns.h"
+#include "pdns_dnsdb.h"
+#include "time.h"
+#include "globals.h"
+
 /* types. */
 
 struct dnsdb_rate_json {
@@ -6,14 +18,6 @@ struct dnsdb_rate_json {
 		*burst_size, *burst_window, *results_max,
 		*offset_max;
 };
-
-struct dnsdb_rate_tuple {
-	struct dnsdb_rate_json	obj;
-	struct rateval	reset, expires, limit, remaining,
-			burst_size, burst_window, results_max,
-			offset_max;
-};
-typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
 
 struct rateval {
 	enum {
@@ -27,14 +31,25 @@ struct rateval {
 typedef struct rateval *rateval_t;
 typedef const struct rateval *rateval_ct;
 
+struct dnsdb_rate_tuple {
+	struct dnsdb_rate_json	obj;
+	struct rateval	reset, expires, limit, remaining,
+			burst_size, burst_window, results_max,
+			offset_max;
+};
+typedef struct dnsdb_rate_tuple *dnsdb_rate_tuple_t;
+
 /* forwards. */
 
-char *dnsdb_url(const char *, char *);
-void dnsdb_request_info(void);
-void dnsdb_write_info(reader_t);
-void dnsdb_auth(reader_t);
-const char *dnsdb_status(reader_t);
-const char *dnsdb_verb_ok(const char *);
+static const char *dnsdb_setenv(const char *, const char *);
+static void dnsdb_ready(void);
+static void dnsdb_destroy(void);
+static char *dnsdb_url(const char *, char *);
+static void dnsdb_request_info(void);
+static void dnsdb_write_info(reader_t);
+static void dnsdb_auth(reader_t);
+static const char *dnsdb_status(reader_t);
+static const char *dnsdb_verb_ok(const char *);
 
 static void print_rateval(const char *, rateval_ct, FILE *);
 static void print_burstrate(const char *, rateval_ct, rateval_ct, FILE *);
@@ -49,53 +64,69 @@ static const char env_api_key[] = "DNSDB_API_KEY";
 static const char env_dnsdb_base_url[] = "DNSDB_SERVER";
 
 static char *api_key = NULL;
-static char *base_url = NULL;
+static char *dnsdb_base_url = NULL;
 
-static const struct pdns_sys dnsdb = {
+static const struct pdns_system dnsdb = {
 	"dnsdb", "https://api.dnsdb.info",
 	dnsdb_url, dnsdb_request_info, dnsdb_write_info,
 	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
-	dnsdb_ready, dnsdb_destroy
+	dnsdb_setenv, dnsdb_ready, dnsdb_destroy
 };
 
 /*---------------------------------------------------------------- public
  */
 
-pdns_sys_t
+pdns_system_ct
 pdns_dnsdb(void) {
 	return &dnsdb;
 }
 
+/*---------------------------------------------------------------- private
+ */
+
+/* dnsdb_setenv() -- install configuration element
+ */
+static const char *
+dnsdb_setenv(const char *key, const char *value) {
+	if (strcmp(key, "apikey") == 0) {
+		DESTROY(api_key);
+		api_key = strdup(value);
+	} else if (strcmp(key, "server") == 0) {
+		DESTROY(dnsdb_base_url);
+		dnsdb_base_url = strdup(value);
+	} else {
+		return "dnsdb_setenv() unrecognized key";
+	}
+	return NULL;
+}
+
 /* dnsdb_ready() -- override the config file from environment variables?
  */
-void
+static void
 dnsdb_ready(void) {
-	const char *val;
+	const char *value;
 
-	val = getenv(env_api_key);
-	if (val != NULL) {
-		if (api_key != NULL)
-			DESTROY(api_key);
-		api_key = strdup(val);
+	if ((value = getenv(env_api_key)) != NULL) {
+		dnsdb_setenv("apikey", value);
 		DEBUG(1, true, "conf env api_key was set\n");
 	}
-	val = getenv(env_dnsdb_base_url);
-	if (val != NULL) {
-		if (base_url != NULL)
-			DESTROY(base_url);
-		base_url = strdup(val);
-		DEBUG(1, true, "conf env dnsdb_server = '%s'\n", base_url);
+	if ((value = getenv(env_dnsdb_base_url)) != NULL) {
+		dnsdb_setenv("server", value);
+		DEBUG(1, true, "conf env dnsdb_server = '%s'\n",
+		      dnsdb_base_url);
 	}
+	if (dnsdb_base_url == NULL)
+		dnsdb_base_url = strdup(sys->base_url);
 	if (api_key == NULL)
 		usage("no API key given");
 }
 
 /* dnsdb_destroy() -- drop heap storage
  */
-void
+static void
 dnsdb_destroy(void) {
 	DESTROY(api_key);
-	DESTROY(base_url);
+	DESTROY(dnsdb_base_url);
 }
 
 /* dnsdb_url -- create a URL corresponding to a command-path string.
@@ -112,11 +143,6 @@ dnsdb_url(const char *path, char *sep) {
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
 	char *ret;
 	int x;
-
-	/* if the config file didn't specify our server, do it here. */
-	if (dnsdb_base_url == NULL)
-		dnsdb_base_url = strdup(sys->base_url);
-	assert(dnsdb_base_url != NULL);
 
 	/* count the number of slashes in the url, 2 is the base line,
 	 * from "//".  3 or more means there's a /path after the host.
@@ -191,7 +217,7 @@ dnsdb_request_info(void) {
 	writer = writer_init(0, 0);
 
 	/* start a status fetch. */
-	launch_one(writer, dnsdb_url("rate_limit", NULL));
+	reader_launch(writer, dnsdb_url("rate_limit", NULL));
 
 	/* run all jobs to completion. */
 	io_engine(0);

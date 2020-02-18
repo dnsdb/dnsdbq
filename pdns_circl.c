@@ -1,26 +1,57 @@
 #if WANT_PDNS_CIRCL
 
+/* asprintf() does not appear on linux without this */
+#define _GNU_SOURCE
+
+#include <stdio.h>
+
+#include "defs.h"
+#include "pdns.h"
+#include "pdns_circl.h"
+#include "globals.h"
+
 static char *circl_url(const char *, char *);
 static void circl_auth(reader_t);
 static const char *circl_status(reader_t);
 static const char *circl_verb_ok(const char *);
+static void circl_ready(void);
+static const char *circl_setenv(const char *, const char *);
+static void circl_destroy(void);
 
 static char *circl_base_url = NULL;
 static char *circl_authinfo = NULL;
 
-static const struct pdns_sys circl = {
+static const struct pdns_system circl = {
 	"circl", "https://www.circl.lu/pdns/query",
 	circl_url, NULL, NULL,
 	circl_auth, circl_status, circl_verb_ok,
-	circl_ready, circl_destroy
+	circl_setenv, circl_ready, circl_destroy
 };
 
-pdns_sys_t
+pdns_system_ct
 pdns_circl(void) {
 	return &circl;
 }
 
-void
+static const char *
+circl_setenv(const char *key, const char *value) {
+	if (strcmp(key, "apikey") == 0) {
+		DESTROY(circl_authinfo);
+		circl_authinfo = strdup(value);
+	} else if (strcmp(key, "server") == 0) {
+		DESTROY(circl_base_url);
+		circl_base_url = strdup(value);
+	} else {
+		return "circl_setenv() unrecognized key";
+	}
+	return NULL;
+}
+
+static void
+circl_ready(void) {
+}
+
+static void
 circl_destroy(void) {
 	DESTROY(circl_base_url);
 	DESTROY(circl_authinfo);

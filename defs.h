@@ -1,6 +1,8 @@
 #ifndef DEFS_H_INCLUDED
 #define DEFS_H_INCLUDED 1
 
+#include <string.h>
+
 #define DEFAULT_SYS 0
 #define DEFAULT_VERB 0
 #define	MAX_JOBS 8

@@ -43,11 +43,6 @@
 #include <unistd.h>
 #include <wordexp.h>
 
-#include <arpa/inet.h>
-#include <curl/curl.h>
-#include <jansson.h>
-#include "ns_ttl.h"
-
 extern char **environ;
 
 /* Types. */
@@ -70,7 +65,6 @@ static bool parse_long(const char *, long *);
 static void server_setup(void);
 static verb_t find_verb(const char *);
 static void read_configs(void);
-static void read_environ(void);
 static void do_batch(FILE *, u_long, u_long);
 static const char *batch_parse(char *, query_t);
 static char *makepath(mode_e, const char *, const char *,
@@ -78,10 +72,8 @@ static char *makepath(mode_e, const char *, const char *,
 static void query_launcher(query_ct, writer_t);
 static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
 static void ruminate_json(int, u_long, u_long);
-static void escape(char **);
 static void validate_cmd_opts_lookup(void);
 static void validate_cmd_opts_summarize(void);
-static const char *or_else(const char *, const char *);
 
 /* Constants. */
 
@@ -104,25 +96,7 @@ const struct verb verbs[] = {
 
 static enum { batch_none, batch_original, batch_verbose } batching = batch_none;
 static bool merge = false;
-static bool complete = false;
-static bool info = false;
-static bool gravel = false;
-static bool donotverify = false;
-static bool quiet = false;
-static int debug_level = 0;
-static sort_e sorted = no_sort;
-static int curl_cleanup_needed = 0;
-static present_t pres = present_text;
-static long query_limit = -1;	/* -1 means not set on command line. */
-static long output_limit = -1;	/* -1 means not set on command line. */
-static long offset = 0;
-static long max_count = 0;
-static CURLM *multi = NULL;
-static struct timeval now;
-static writer_t writers = NULL;
-static int exit_code = 0; /* hopeful */
 static size_t ideal_buffer;
-static bool iso8601 = false;
 
 /* Public. */
 
@@ -138,7 +112,7 @@ main(int argc, char *argv[]) {
 
 	/* global dynamic initialization. */
 	ideal_buffer = 4 * (size_t) sysconf(_SC_PAGESIZE);
-	gettimeofday(&now, NULL);
+	gettimeofday(&startup_time, NULL);
 	if ((program_name = strrchr(argv[0], '/')) == NULL)
 		program_name = argv[0];
 	else
@@ -146,6 +120,8 @@ main(int argc, char *argv[]) {
 	value = getenv(env_time_fmt);
 	if (value != NULL && strcasecmp(value, "iso") == 0)
 		iso8601 = true;
+	chosen_verb = &verbs[DEFAULT_VERB];
+	sys = pdns_dnsdb();
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
@@ -750,6 +726,14 @@ my_panic(bool want_perror, const char *s) {
 	my_exit(1);
 }
 
+/* or_else -- return one pointer or else the other. */
+const char *
+or_else(const char *p, const char *or_else) {
+	if (p != NULL)
+		return p;
+	return or_else;
+}
+
 /* parse a base 10 long value.	Return true if ok, else return false.
  */
 static bool
@@ -794,14 +778,6 @@ validate_cmd_opts_summarize(void) {
 		usage("Sorting with a summarize verb makes no sense");
 }
 
-/* or_else -- return one pointer or else the other. */
-static const char *
-or_else(const char *p, const char *or_else) {
-	if (p != NULL)
-		return p;
-	return or_else;
-}
-
 /* find_verb -- locate a verb by option parameter
  */
 static verb_t
@@ -819,7 +795,7 @@ find_verb(const char *option) {
 static void
 server_setup(void) {
 	read_configs();
-	read_environ();
+	sys->ready();
 }
 
 /* read_configs -- try to find a config file in static path, then parse it.
@@ -849,11 +825,11 @@ read_configs(void) {
 
 		x = asprintf(&cmd,
 			     ". %s;"
-			     "echo apikey $APIKEY;"
-			     "echo server $DNSDB_SERVER;"
+			     "echo dnsdb apikey $APIKEY;"
+			     "echo dnsdn server $DNSDB_SERVER;"
 #if WANT_PDNS_CIRCL
-			     "echo circla $CIRCL_AUTH;"
-			     "echo circls $CIRCL_SERVER;"
+			     "echo circl apikey $CIRCL_AUTH;"
+			     "echo circl server $CIRCL_SERVER;"
 #endif
 			     "exit", cf);
 		DESTROY(cf);
@@ -872,7 +848,7 @@ read_configs(void) {
 		n = 0;
 		l = 0;
 		while (getline(&line, &n, f) > 0) {
-			char **pp, *tok1, *tok2;
+			char *tok1, *tok2, *tok3;
 			char *saveptr = NULL;
 
 			l++;
@@ -884,31 +860,20 @@ read_configs(void) {
 			}
 			tok1 = strtok_r(line, "\040\012", &saveptr);
 			tok2 = strtok_r(NULL, "\040\012", &saveptr);
-			if (tok1 == NULL) {
+			tok3 = strtok_r(NULL, "\040\012", &saveptr);
+			if (tok1 == NULL || tok2 == NULL) {
 				fprintf(stderr,
 					"%s: conf line #%d: malformed\n",
 					program_name, l);
 				my_exit(1);
 			}
-			if (tok2 == NULL)
+			if (strcmp(tok1, sys->name) != 0 ||
+			    tok3 == NULL || *tok3 == '\0')
 				continue;
 
-			DEBUG(1, true, "line #%d: sets %s\n", l, tok1);
-			pp = NULL;
-			if (strcmp(tok1, "apikey") == 0) {
-				pp = &api_key;
-			} else if (strcmp(tok1, "server") == 0) {
-				pp = &dnsdb_base_url;
-#if WANT_PDNS_CIRCL
-			} else if (strcmp(tok1, "circla") == 0) {
-				pp = &circl_authinfo;
-			} else if (strcmp(tok1, "circls") == 0) {
-				pp = &circl_base_url;
-#endif
-			} else
-				abort();
-			DESTROY(*pp);
-			*pp = strdup(tok2);
+			DEBUG(1, true, "line #%d: sets %s|%s|%s\n",
+			      l, tok1, tok2, tok3);
+			sys->setenv(tok2, tok3);
 		}
 		DESTROY(line);
 		pclose(f);
@@ -1316,23 +1281,5 @@ ruminate_json(int json_fd, u_long after, u_long before) {
 	DESTROY(buf);
 	writer_fini(writer);
 	writer = NULL;
-}
-
-/* escape -- HTML-encode a string, in place.
- */
-static void
-escape(char **src) {
-	char *escaped;
-
-	escaped = curl_escape(*src, (int)strlen(*src));
-	if (escaped == NULL) {
-		fprintf(stderr, "%s: curl_escape(%s) failed\n",
-			program_name, *src);
-		my_exit(1);
-	}
-	DESTROY(*src);
-	*src = strdup(escaped);
-	curl_free(escaped);
-	escaped = NULL;
 }
 

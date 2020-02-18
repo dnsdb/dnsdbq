@@ -1,3 +1,19 @@
+#include <sys/wait.h>
+
+#include <assert.h>
+#include <errno.h>
+#include <signal.h>
+#include <unistd.h>
+
+#include "defs.h"
+#include "netio.h"
+#include "pdns.h"
+#include "globals.h"
+
+static writer_t writers = NULL;
+static CURLM *multi = NULL;
+static int curl_cleanup_needed = 0;
+
 /* make_curl -- perform global initializations of libcurl.
  */
 void
@@ -94,7 +110,7 @@ reader_reap(reader_t reader) {
 
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
  */
-static writer_t
+writer_t
 writer_init(u_long after, u_long before) {
 	writer_t writer = NULL;
 
@@ -132,7 +148,7 @@ writer_init(u_long after, u_long before) {
 
 /* writer_status -- install a status code and description in a writer.
  */
-static void
+void
 writer_status(writer_t writer, const char *status, const char *message) {
 	assert((writer->status == NULL) == (writer->message == NULL));
 	assert(writer->status == NULL);
@@ -142,7 +158,7 @@ writer_status(writer_t writer, const char *status, const char *message) {
 
 /* writer_func -- process a block of json text, from filesys or API socket.
  */
-static size_t
+size_t
 writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	reader_t reader = (reader_t) blob;
 	size_t bytes = size * nmemb;
@@ -457,3 +473,20 @@ io_engine(int jobs) {
 	}
 }
 
+/* escape -- HTML-encode a string, in place.
+ */
+void
+escape(char **src) {
+	char *escaped;
+
+	escaped = curl_escape(*src, (int)strlen(*src));
+	if (escaped == NULL) {
+		fprintf(stderr, "%s: curl_escape(%s) failed\n",
+			program_name, *src);
+		my_exit(1);
+	}
+	DESTROY(*src);
+	*src = strdup(escaped);
+	curl_free(escaped);
+	escaped = NULL;
+}

@@ -1,7 +1,19 @@
+/* asprintf() does not appear on linux without this */
+#define _GNU_SOURCE
+
+#include <assert.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#include "defs.h"
+#include "sort.h"
+#include "globals.h"
+
 #define	MAX_KEYS 5
 
-static bool sort_byname = false;
-static bool sort_bydata = false;
 static struct sortkey keys[MAX_KEYS];
 static int nkeys = 0;
 
@@ -78,7 +90,7 @@ sort_destroy(void) {
 
 /* exec_sort -- replace this fork with a POSIX sort program
  */
-void
+__attribute__((noreturn)) void
 exec_sort(int p1[], int p2[]) {
 	char *sort_argv[3+MAX_KEYS], **sap;
 	int n;

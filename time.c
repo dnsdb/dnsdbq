@@ -1,3 +1,18 @@
+#define _GNU_SOURCE
+#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
+
+#include <sys/types.h>
+#include <inttypes.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "defs.h"
+#include "time.h"
+#include "globals.h"
+#include "ns_ttl.h"
+
 /* time_cmp -- compare two absolute timestamps, give -1, 0, or 1.
  */
 int
@@ -45,13 +60,14 @@ time_get(const char *src, u_long *dst) {
 	ll = strtoll(src, &ep, 10);
 	if (*src != '\0' && *ep == '\0') {
 		if (ll < 0)
-			*dst = (u_long)now.tv_sec - (u_long)imaxabs(ll);
+			*dst = (u_long)startup_time.tv_sec -
+				(u_long)imaxabs(ll);
 		else
 			*dst = (u_long)ll;
 		return (1);
 	}
 	if (ns_parse_ttl(src, &t) == 0) {
-		*dst = (u_long)now.tv_sec - t;
+		*dst = (u_long)startup_time.tv_sec - t;
 		return (1);
 	}
 	return (0);

@@ -41,4 +41,4 @@ dnsdbq: $(TOOL_OBJ) Makefile
 .c.o:
 	$(CC) $(CFLAGS) $(CURLINCL) $(JANSINCL) -c $<
 
-dnsdbq.o ns_ttl.o: ns_ttl.h
+time.o: ns_ttl.h
