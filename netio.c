@@ -15,6 +15,10 @@
 #include "pdns.h"
 #include "globals.h"
 
+static void reader_reap(reader_t);
+static void reader_unlink(reader_t);
+static void reader_done(reader_t reader);
+
 static writer_t writers = NULL;
 static CURLM *multi = NULL;
 static int curl_cleanup_needed = 0;
@@ -77,6 +81,7 @@ reader_launch(writer_t writer, char *url) {
 	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
 	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
+	curl_easy_setopt(reader->easy, CURLOPT_PRIVATE, reader);
 #if CURL_AT_LEAST_VERSION(7,42,0)
 	/* do not allow curl to swallow /./ and /../ in our URLs */
 	curl_easy_setopt(reader->easy, CURLOPT_PATH_AS_IS, 1L);
@@ -98,7 +103,7 @@ reader_launch(writer_t writer, char *url) {
 
 /* reader_reap -- reap one reader.
  */
-void
+static void
 reader_reap(reader_t reader) {
 	if (reader->easy != NULL) {
 		curl_multi_remove_handle(multi, reader->easy);
@@ -110,7 +115,27 @@ reader_reap(reader_t reader) {
 		reader->hdrs = NULL;
 	}
 	DESTROY(reader->url);
+	DESTROY(reader->buf);
+	DESTROY(reader->info_blob);
 	DESTROY(reader);
+}
+
+/* reader_unlink -- disconnect a reader from its writer.
+ */
+static void
+reader_unlink(reader_t reader) {
+	reader_t this, prev;
+
+	this = reader->writer->readers;
+	prev = NULL;
+	while (this != NULL && this != reader)
+		this = this->next;
+	assert(this != NULL);
+	if (prev == NULL)
+		reader->writer->readers = this->next;
+	else
+		prev->next = this->next;
+	reader->writer = NULL;
 }
 
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
@@ -166,8 +191,8 @@ writer_status(writer_t writer, const char *status, const char *message) {
 size_t
 writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	reader_t reader = (reader_t) blob;
-	size_t bytes = size * nmemb, info_len;
-	char *nl, *info_blob;
+	size_t bytes = size * nmemb;
+	char *nl;
 
 	DEBUG(3, true, "writer_func(%d, %d): %d\n",
 	      (int)size, (int)nmemb, (int)bytes);
@@ -198,7 +223,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					char *url;
 					
 					curl_easy_getinfo(reader->easy,
-							 CURLINFO_EFFECTIVE_URL,
+							CURLINFO_EFFECTIVE_URL,
 							  &url);
 					fprintf(stderr,
 						"%s: warning: "
@@ -219,10 +244,6 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	}
 
 	/* deblock. */
-	if (info) {
-		info_blob = NULL;
-		info_len = 0;
-	}
 	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
 		size_t pre_len = (size_t)(nl - reader->buf),
 			post_len = (reader->len - pre_len) - 1;
@@ -232,10 +253,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		{
 			DEBUG(9, true, "hit output limit %ld\n", output_limit);
 		} else if (info) {
-			asprintf(&info_blob, "%s%*.*s\n",
-				 or_else(info_blob, ""),
+			asprintf(&reader->info_blob, "%s%*.*s\n",
+				 or_else(reader->info_blob, ""),
 				 (int)pre_len, (int)pre_len, reader->buf);
-			info_len += pre_len + 1;
+			reader->info_len += pre_len + 1;
 		} else {
 			reader->writer->count += data_blob(reader->writer,
 							   reader->buf,
@@ -244,12 +265,17 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		memmove(reader->buf, nl + 1, post_len);
 		reader->len = post_len;
 	}
-	if (info) {
-		psys->info_blob(info_blob, info_len);
-		DESTROY(info_blob);
-	}
 
 	return (bytes);
+}
+
+/* reader_done -- do something with leftover buffer data when a job ends.
+ */
+static void
+reader_done(reader_t reader) {
+	if (info) {
+		psys->info_blob(reader->info_blob, reader->info_len);
+	}
 }
 
 /* writer_fini -- stop a writer's readers, and perhaps execute a POSIX "sort".
@@ -457,23 +483,38 @@ io_engine(int jobs) {
 	/* drain the response code reports. */
 	still = 0;
 	while ((cm = curl_multi_info_read(multi, &still)) != NULL) {
-		if (cm->msg == CURLMSG_DONE && cm->data.result != CURLE_OK) {
-			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST)
+		reader_t reader;
+		char *private;
+
+		curl_easy_getinfo(cm->easy_handle,
+				  CURLINFO_PRIVATE,
+				  &private);
+		reader = (reader_t) private;
+
+		if (cm->msg == CURLMSG_DONE) {
+			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
 				fprintf(stderr,
 					"%s: warning: libcurl failed since "
 					"could not resolve host\n",
 					program_name);
-			else if (cm->data.result == CURLE_COULDNT_CONNECT)
+				exit_code = 1;
+			} else if (cm->data.result == CURLE_COULDNT_CONNECT) {
 				fprintf(stderr,
 					"%s: warning: libcurl failed since "
 					"could not connect\n",
 					program_name);
-			else
+				exit_code = 1;
+			} else if (cm->data.result != CURLE_OK) {
 				fprintf(stderr,
 					"%s: warning: libcurl failed with "
 					"curl error %d\n",
 					program_name, cm->data.result);
-			exit_code = 1;
+				exit_code = 1;
+			} else {
+				reader_done(reader);
+			}
+			reader_unlink(reader);
+			reader_reap(reader);
 		}
 		DEBUG(4, true, "...info read (still %d)\n", still);
 	}

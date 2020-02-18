@@ -930,7 +930,8 @@ do_batch(FILE *f, u_long after, u_long before) {
 			/* start one or two curl jobs based on this search. */
 			query_launcher((query_ct)&q, writer);
 
-			/* if merging, drain some jobs; else, drain all jobs. */
+			/* if merging, drain some jobs; else, drain all jobs.
+			 */
 			if (merge) {
 				io_engine(MAX_JOBS);
 			} else {
