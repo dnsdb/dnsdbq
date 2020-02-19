@@ -67,7 +67,7 @@ static void do_batch(FILE *, u_long, u_long);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
-static void query_launcher(qdesc_ct, writer_t);
+static query_t query_launcher(qdesc_ct, writer_t);
 static void launch(query_t, u_long, u_long, u_long, u_long);
 static void ruminate_json(int, u_long, u_long);
 static void lookup_ready(void);
@@ -592,7 +592,7 @@ main(int argc, char *argv[]) {
 		server_setup();
 		make_curl();
 		writer = writer_init(qd.after, qd.before);
-		query_launcher(&qd, writer);
+		(void) query_launcher(&qd, writer);
 		io_engine(0);
 		writer_fini(writer);
 		writer = NULL;
@@ -919,7 +919,8 @@ do_batch(FILE *f, u_long after, u_long before) {
 		/* crack the batch line if possible. */
 		msg = batch_parse(command, &qd);
 		if (msg != NULL) {
-			writer_status(writer, "PARSE", msg);
+			fprintf(stderr, "%s: batch line parse error: %s\n",
+				program_name, msg);
 		} else {
 			/* manage batch-level defaults as -A and -B. */
 			if (qd.after == 0)
@@ -928,7 +929,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 				qd.before = before;
 
 			/* start one or two curl jobs based on this search. */
-			query_launcher(&qd, writer);
+			query_t query = query_launcher(&qd, writer);
 
 			/* if merging, drain some jobs; else, drain all jobs.
 			 */
@@ -936,11 +937,15 @@ do_batch(FILE *f, u_long after, u_long before) {
 				io_engine(MAX_JOBS);
 			else
 				io_engine(0);
-		}
-		if (writer->status != NULL && batching != batch_verbose) {
-			assert(writer->message != NULL);
-			fprintf(stderr, "%s: batch line status: %s (%s)\n",
-				program_name, writer->status, writer->message);
+			if (query->status != NULL &&
+			    batching != batch_verbose)
+			{
+				assert(query->message != NULL);
+				fprintf(stderr,
+					"%s: batch line status: %s (%s)\n",
+					program_name,
+					query->status, query->message);
+			}
 		}
 
 		/* think about showing the end-of-object separator. */
@@ -1128,7 +1133,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 
 /* query_launcher -- fork off some curl jobs via launch() for this query.
  */
-static void
+static query_t
 query_launcher(qdesc_ct qdp, writer_t writer) {
 	query_t query = NULL;
 
@@ -1179,6 +1184,7 @@ query_launcher(qdesc_ct qdp, writer_t writer) {
 		/* no time fencing. */
 		launch(query, 0, 0, 0, 0);
 	}
+	return query;
 }
 
 /* launch -- actually launch a query job, given a command and time fences.

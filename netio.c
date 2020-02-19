@@ -193,14 +193,14 @@ writer_init(u_long after, u_long before) {
 	return (writer);
 }
 
-/* writer_status -- install a status code and description in a writer.
+/* query_status -- install a status code and description in a query.
  */
 void
-writer_status(writer_t writer, const char *status, const char *message) {
-	assert((writer->status == NULL) == (writer->message == NULL));
-	assert(writer->status == NULL);
-	writer->status = strdup(status);
-	writer->message = strdup(message);
+query_status(query_t query, const char *status, const char *message) {
+	assert((query->status == NULL) == (query->message == NULL));
+	assert(query->status == NULL);
+	query->status = strdup(status);
+	query->message = strdup(message);
 }
 
 /* writer_func -- process a block of json text, from filesys or API socket.
@@ -233,10 +233,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				return CURL_WRITEFUNC_PAUSE;
 			}
 		}
-		if (!query->once) {
+		if (!query->h_sent) {
 			if (batching == batch_verbose)
 				printf("++ %s\n", query->command);
-			query->once = true;
+			query->h_sent = true;
 		}
 	}
 
@@ -258,10 +258,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			if (newline != NULL)
 				*newline = '\0';
 
-			if (!query->writer->once) {
-				writer_status(query->writer,
-					      psys->status(fetch),
-					      message);
+			if (!query->e_sent) {
+				query_status(query,
+					     psys->status(fetch),
+					     message);
 				if (!quiet) {
 					char *url;
 					
@@ -274,7 +274,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 						program_name, fetch->rcode,
 						url);
 				}
-				query->writer->once = true;
+				query->e_sent = true;
 			}
 			if (!quiet)
 				fprintf(stderr, "%s: warning: libcurl: [%s]\n",
@@ -336,8 +336,8 @@ query_done(query_t query) {
 			writer->active = NULL;
 		}
 		printf("-- %s (%s)\n",
-			or_else(writer->status, "NOERROR"),
-			or_else(writer->message, "no error"));
+			or_else(query->status, "NOERROR"),
+			or_else(query->message, "no error"));
 		if (npaused > 0) {
 			query_t unpause;
 			fetch_t fetch;
@@ -402,6 +402,9 @@ writer_fini(writer_t writer) {
 			fetch = NULL;
 			query->fetches = fetch_next;
 		}
+		assert((query->status != NULL) == (query->message != NULL));
+		DESTROY(query->status);
+		DESTROY(query->message);
 		DESTROY(query->command);
 		DESTROY(query);
 		writer->queries = query_next;
@@ -516,13 +519,6 @@ writer_fini(writer_t writer) {
 					program_name, (unsigned)status);
 		}
 	}
-
-	/* drop message and status strings if present. */
-	assert((writer->status != NULL) == (writer->message != NULL));
-	if (writer->status != NULL)
-		DESTROY(writer->status);
-	if (writer->message != NULL)
-		DESTROY(writer->message);
 
 	DESTROY(writer);
 }
