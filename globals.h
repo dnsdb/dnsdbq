@@ -55,7 +55,7 @@ EXTERN	long offset			INIT(0L);
 EXTERN	long max_count			INIT(0L);
 EXTERN	sort_e sorting			INIT(no_sort);
 EXTERN	batch_e batching		INIT(batch_none);
-EXTERN	present_e presentation		INIT(text);
+EXTERN	present_e presentation		INIT(pres_text);
 EXTERN	present_t presenter		INIT(NULL);
 EXTERN	struct timeval startup_time	INIT({0,0});
 EXTERN	int exit_code			INIT(0);

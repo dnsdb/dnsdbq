@@ -318,13 +318,13 @@ main(int argc, char *argv[]) {
 			break;
 		case 'p':
 			if (strcasecmp(optarg, "json") == 0)
-				presentation = json;
+				presentation = pres_json;
 			else if (strcasecmp(optarg, "csv") == 0)
-				presentation = csv;
+				presentation = pres_csv;
 			else if (strcasecmp(optarg, "text") == 0 ||
 				 strcasecmp(optarg, "dns") == 0)
 			{
-				presentation = text;
+				presentation = pres_text;
 			} else {
 				usage("-p must specify json, text, or csv");
 			}
@@ -373,7 +373,7 @@ main(int argc, char *argv[]) {
 			gravel = true;
 			break;
 		case 'j':
-			presentation = json;
+			presentation = pres_json;
 			break;
 		case 'f':
 			switch (batching) {
@@ -460,13 +460,13 @@ main(int argc, char *argv[]) {
 
 	/* select presenter. */
 	switch (presentation) {
-	case text:
+	case pres_text:
 		presenter = pverb->text;
 		break;
-	case json:
+	case pres_json:
 		presenter = pverb->json;
 		break;
-	case csv:
+	case pres_csv:
 		presenter = pverb->csv;
 		break;
 	default:
@@ -548,7 +548,7 @@ main(int argc, char *argv[]) {
 	} else if (info) {
 		if (mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -I");
-		if (presentation != text && presentation != json)
+		if (presentation != pres_text && presentation != pres_json)
 			usage("info must be presented in json or text format");
 		if (bailiwick != NULL)
 			usage("can't mix -b with -I");

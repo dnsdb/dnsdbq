@@ -345,7 +345,7 @@ print_burstrate(const char *key,
  */
 static int
 dnsdb_info_blob(const char *buf, size_t len) {
-	if (presentation == text) {
+	if (presentation == pres_text) {
 		struct rate_tuple tup;
 		const char *msg;
 
@@ -364,7 +364,7 @@ dnsdb_info_blob(const char *buf, size_t len) {
 					&tup.burst_size, &tup.burst_window,
 					stdout);
 		}
-	} else if (presentation == json) {
+	} else if (presentation == pres_json) {
 		fwrite(buf, 1, len, stdout);
 	} else {
 		abort();
