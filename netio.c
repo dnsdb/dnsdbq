@@ -15,13 +15,16 @@
 #include "pdns.h"
 #include "globals.h"
 
-static void reader_reap(reader_t);
-static void reader_unlink(reader_t);
-static void reader_done(reader_t reader);
+static void io_drain(void);
+static void fetch_reap(fetch_t);
+static void fetch_unlink(fetch_t);
+static void query_done(query_t);
 
 static writer_t writers = NULL;
 static CURLM *multi = NULL;
 static int curl_cleanup_needed = 0;
+static query_t paused[MAX_JOBS];
+static int npaused = 0;
 
 /* make_curl -- perform global initializations of libcurl.
  */
@@ -51,49 +54,49 @@ unmake_curl(void) {
 	}
 }
 
-/* reader_launch -- given a url, tell libcurl to go fetch it.
+/* fetch -- given a url, tell libcurl to go fetch it.
  */
 void
-reader_launch(writer_t writer, char *url) {
-	reader_t reader = NULL;
+fetch(query_t query, char *url) {
+	fetch_t fetch = NULL;
 	CURLMcode res;
 
-	DEBUG(2, true, "reader_launch(%s)\n", url);
-	CREATE(reader, sizeof *reader);
-	reader->writer = writer;
-	writer = NULL;
-	reader->easy = curl_easy_init();
-	if (reader->easy == NULL) {
+	DEBUG(2, true, "fetch(%s)\n", url);
+	CREATE(fetch, sizeof *fetch);
+	fetch->query = query;
+	query = NULL;
+	fetch->easy = curl_easy_init();
+	if (fetch->easy == NULL) {
 		/* an error will have been output by libcurl in this case. */
-		DESTROY(reader);
+		DESTROY(fetch);
 		DESTROY(url);
 		my_exit(1);
 	}
-	reader->url = url;
+	fetch->url = url;
 	url = NULL;
-	curl_easy_setopt(reader->easy, CURLOPT_URL, reader->url);
+	curl_easy_setopt(fetch->easy, CURLOPT_URL, fetch->url);
 	if (donotverify) {
-		curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYPEER, 0L);
-		curl_easy_setopt(reader->easy, CURLOPT_SSL_VERIFYHOST, 0L);
+		curl_easy_setopt(fetch->easy, CURLOPT_SSL_VERIFYPEER, 0L);
+		curl_easy_setopt(fetch->easy, CURLOPT_SSL_VERIFYHOST, 0L);
 	}
-	psys->auth(reader);
-	reader->hdrs = curl_slist_append(reader->hdrs, json_header);
-	curl_easy_setopt(reader->easy, CURLOPT_HTTPHEADER, reader->hdrs);
-	curl_easy_setopt(reader->easy, CURLOPT_WRITEFUNCTION, writer_func);
-	curl_easy_setopt(reader->easy, CURLOPT_WRITEDATA, reader);
-	curl_easy_setopt(reader->easy, CURLOPT_PRIVATE, reader);
+	psys->auth(fetch);
+	fetch->hdrs = curl_slist_append(fetch->hdrs, json_header);
+	curl_easy_setopt(fetch->easy, CURLOPT_HTTPHEADER, fetch->hdrs);
+	curl_easy_setopt(fetch->easy, CURLOPT_WRITEFUNCTION, writer_func);
+	curl_easy_setopt(fetch->easy, CURLOPT_WRITEDATA, fetch);
+	curl_easy_setopt(fetch->easy, CURLOPT_PRIVATE, fetch);
 #if CURL_AT_LEAST_VERSION(7,42,0)
 	/* do not allow curl to swallow /./ and /../ in our URLs */
-	curl_easy_setopt(reader->easy, CURLOPT_PATH_AS_IS, 1L);
+	curl_easy_setopt(fetch->easy, CURLOPT_PATH_AS_IS, 1L);
 #endif /* CURL_AT_LEAST_VERSION */
 	if (debug_level >= 3)
-		curl_easy_setopt(reader->easy, CURLOPT_VERBOSE, 1L);
+		curl_easy_setopt(fetch->easy, CURLOPT_VERBOSE, 1L);
 
 	/* linked-list insert. */
-	reader->next = reader->writer->readers;
-	reader->writer->readers = reader;
+	fetch->next = fetch->query->fetches;
+	fetch->query->fetches = fetch;
 
-	res = curl_multi_add_handle(multi, reader->writer->readers->easy);
+	res = curl_multi_add_handle(multi, fetch->easy);
 	if (res != CURLM_OK) {
 		fprintf(stderr, "%s: curl_multi_add_handle() failed: %s\n",
 			program_name, curl_multi_strerror(res));
@@ -101,41 +104,39 @@ reader_launch(writer_t writer, char *url) {
 	}
 }
 
-/* reader_reap -- reap one reader.
+/* fetch_reap -- reap one fetch.
  */
 static void
-reader_reap(reader_t reader) {
-	if (reader->easy != NULL) {
-		curl_multi_remove_handle(multi, reader->easy);
-		curl_easy_cleanup(reader->easy);
-		reader->easy = NULL;
+fetch_reap(fetch_t fetch) {
+	if (fetch->easy != NULL) {
+		curl_multi_remove_handle(multi, fetch->easy);
+		curl_easy_cleanup(fetch->easy);
+		fetch->easy = NULL;
 	}
-	if (reader->hdrs != NULL) {
-		curl_slist_free_all(reader->hdrs);
-		reader->hdrs = NULL;
+	if (fetch->hdrs != NULL) {
+		curl_slist_free_all(fetch->hdrs);
+		fetch->hdrs = NULL;
 	}
-	DESTROY(reader->url);
-	DESTROY(reader->buf);
-	DESTROY(reader->info_blob);
-	DESTROY(reader);
+	DESTROY(fetch->url);
+	DESTROY(fetch->buf);
+	DESTROY(fetch);
 }
 
-/* reader_unlink -- disconnect a reader from its writer.
+/* fetch_unlink -- disconnect a fetch from its writer.
  */
 static void
-reader_unlink(reader_t reader) {
-	reader_t this, prev;
+fetch_unlink(fetch_t fetch) {
+	fetch_t cur, prev;
 
-	this = reader->writer->readers;
-	prev = NULL;
-	while (this != NULL && this != reader)
-		this = this->next;
-	assert(this != NULL);
+	for (cur = fetch->query->fetches, prev = NULL;
+	     cur != NULL && cur != fetch;
+	     prev = cur, cur = cur->next) { }
+	assert(cur == fetch);
 	if (prev == NULL)
-		reader->writer->readers = this->next;
+		fetch->query->fetches = fetch->next;
 	else
-		prev->next = this->next;
-	reader->writer = NULL;
+		prev->next = fetch->next;
+	fetch->query = NULL;
 }
 
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
@@ -190,95 +191,158 @@ writer_status(writer_t writer, const char *status, const char *message) {
  */
 size_t
 writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
-	reader_t reader = (reader_t) blob;
+	fetch_t fetch = (fetch_t) blob;
+	query_t query = fetch->query;
+	writer_t writer = query->writer;
 	size_t bytes = size * nmemb;
 	char *nl;
 
 	DEBUG(3, true, "writer_func(%d, %d): %d\n",
 	      (int)size, (int)nmemb, (int)bytes);
 
-	reader->buf = realloc(reader->buf, reader->len + bytes);
-	memcpy(reader->buf + reader->len, ptr, bytes);
-	reader->len += bytes;
+	/* if we're in asynchronous batch mode, only one query can reach
+	 * the writer at a time. fetches within a query can interleave. */
+	if (batching == batch_verbose) {
+		if (multiple) {
+			if (writer->active == NULL) {
+				/* grab the token. */
+				writer->active = query;
+				DEBUG(2, true, "active (%d) %s\n",
+				      npaused, query->command);
+			} else if (writer->active != query) {
+				/* pause the query. */
+				paused[npaused++] = query;
+				DEBUG(2, true, "pause (%d) %s\n",
+				      npaused, query->command);
+				return CURL_WRITEFUNC_PAUSE;
+			}
+		}
+		if (!query->once) {
+			if (batching == batch_verbose)
+				printf("++ %s\n", query->command);
+			query->once = true;
+		}
+	}
 
-	/* when the reader is a live web result, emit
+	fetch->buf = realloc(fetch->buf, fetch->len + bytes);
+	memcpy(fetch->buf + fetch->len, ptr, bytes);
+	fetch->len += bytes;
+
+	/* when the fetch is a live web result, emit
 	 * !2xx errors and info payloads as reports.
 	 */
-	if (reader->easy != NULL) {
-		if (reader->rcode == 0)
-			curl_easy_getinfo(reader->easy,
+	if (fetch->easy != NULL) {
+		if (fetch->rcode == 0)
+			curl_easy_getinfo(fetch->easy,
 					  CURLINFO_RESPONSE_CODE,
-					  &reader->rcode);
-		if (reader->rcode != 200) {
-			char *message = strndup(reader->buf, reader->len);
+					  &fetch->rcode);
+		if (fetch->rcode != 200) {
+			char *message = strndup(fetch->buf, fetch->len);
 			char *newline = strchr(message, '\n');
 			if (newline != NULL)
 				*newline = '\0';
 
-			if (!reader->writer->once) {
-				writer_status(reader->writer,
-					      psys->status(reader),
+			if (!query->writer->once) {
+				writer_status(query->writer,
+					      psys->status(fetch),
 					      message);
 				if (!quiet) {
 					char *url;
 					
-					curl_easy_getinfo(reader->easy,
+					curl_easy_getinfo(fetch->easy,
 							CURLINFO_EFFECTIVE_URL,
 							  &url);
 					fprintf(stderr,
 						"%s: warning: "
 						"libcurl %ld [%s]\n",
-						program_name, reader->rcode,
+						program_name, fetch->rcode,
 						url);
 				}
-				reader->writer->once = true;
+				query->writer->once = true;
 			}
 			if (!quiet)
 				fprintf(stderr, "%s: warning: libcurl: [%s]\n",
 					program_name, message);
 			DESTROY(message);
-			reader->buf[0] = '\0';
-			reader->len = 0;
+			fetch->buf[0] = '\0';
+			fetch->len = 0;
 			return (bytes);
 		}
 	}
 
 	/* deblock. */
-	while ((nl = memchr(reader->buf, '\n', reader->len)) != NULL) {
-		size_t pre_len = (size_t)(nl - reader->buf),
-			post_len = (reader->len - pre_len) - 1;
+	while ((nl = memchr(fetch->buf, '\n', fetch->len)) != NULL) {
+		size_t pre_len = (size_t)(nl - fetch->buf),
+			post_len = (fetch->len - pre_len) - 1;
 
 		if (sorted == no_sort && output_limit != -1 &&
-		    reader->writer->count >= output_limit)
+		    query->writer->count >= output_limit)
 		{
 			DEBUG(9, true, "hit output limit %ld\n", output_limit);
 		} else if (info) {
-			asprintf(&reader->info_blob, "%s%*.*s\n",
-				 or_else(reader->info_blob, ""),
-				 (int)pre_len, (int)pre_len, reader->buf);
-			reader->info_len += pre_len + 1;
+			asprintf(&query->info_buf, "%s%*.*s\n",
+				 or_else(query->info_buf, ""),
+				 (int)pre_len, (int)pre_len,
+				 fetch->buf);
+			query->info_len += pre_len + 1;
 		} else {
-			reader->writer->count += data_blob(reader->writer,
-							   reader->buf,
-							   pre_len);
+			query->writer->count +=
+				data_blob(query->writer,
+					  fetch->buf,
+					  pre_len);
 		}
-		memmove(reader->buf, nl + 1, post_len);
-		reader->len = post_len;
+		memmove(fetch->buf, nl + 1, post_len);
+		fetch->len = post_len;
 	}
 
 	return (bytes);
 }
 
-/* reader_done -- do something with leftover buffer data when a job ends.
+/* query_done -- do something with leftover buffer data when a query ends.
  */
 static void
-reader_done(reader_t reader) {
+query_done(query_t query) {
+	DEBUG(2, true, "query_done(%s)\n", query->command);
+
+	/* burp out the stored info blob, if any, and destroy it. */
 	if (info) {
-		psys->info_blob(reader->info_blob, reader->info_len);
+		psys->info_blob(query->info_buf, query->info_len);
+		DESTROY(query->info_buf);
+		query->info_len = 0;
+	}
+
+	/* if this was an actively written query, unpause another. */
+	if (batching == batch_verbose) {
+		writer_t writer = query->writer;
+
+		if (multiple) {
+			assert(writer->active == query);
+			writer->active = NULL;
+		}
+		printf("-- %s (%s)\n",
+			or_else(writer->status, "NOERROR"),
+			or_else(writer->message, "no error"));
+		if (npaused > 0) {
+			query_t unpause;
+			fetch_t fetch;
+			int i;
+
+			unpause = paused[0];
+			npaused--;
+			for (i = 0; i < npaused; i++)
+				paused[i] = paused[i + 1];
+			for (fetch = unpause->fetches;
+			     fetch != NULL;
+			     fetch = fetch->next) {
+				DEBUG(2, true, "unpause (%d) %s\n",
+				      npaused, unpause->command);
+				curl_easy_pause(fetch->easy, CURLPAUSE_CONT);
+			}
+		}
 	}
 }
 
-/* writer_fini -- stop a writer's readers, and perhaps execute a POSIX "sort".
+/* writer_fini -- stop a writer's fetches, and perhaps execute a POSIX "sort".
  */
 void
 writer_fini(writer_t writer) {
@@ -299,23 +363,32 @@ writer_fini(writer_t writer) {
 		prev->next = writer->next;
 	}
 
-	/* finish and close any readers still cooking. */
-	while (writer->readers != NULL) {
-		reader_t reader = writer->readers;
+	/* finish and close any fetches still cooking. */
+	while (writer->queries != NULL) {
+		query_t query = writer->queries,
+			query_next = query->next;
 
-		/* release any buffered info. */
-		DESTROY(reader->buf);
-		if (reader->len != 0) {
-			fprintf(stderr, "%s: warning: stranding %d octets!\n",
-				program_name, (int)reader->len);
-			reader->len = 0;
+		while (query->fetches != NULL) {
+			fetch_t fetch = query->fetches,
+				fetch_next = fetch->next;
+
+			/* release any buffered info. */
+			DESTROY(fetch->buf);
+			if (fetch->len != 0) {
+				fprintf(stderr,
+					"%s: warning: stranding %d octets!\n",
+					program_name, (int)fetch->len);
+				fetch->len = 0;
+			}
+
+			/* tear down any curl infrastructure on the fetch. */
+			fetch_reap(fetch);
+			fetch = NULL;
+			query->fetches = fetch_next;
 		}
-
-		/* tear down any curl infrastructure on the reader & remove. */
-		reader_t next = reader->next;
-		reader_reap(reader);
-		reader = NULL;
-		writer->readers = next;
+		DESTROY(query->command);
+		DESTROY(query);
+		writer->queries = query_next;
 	}
 
 	/* drain the sort if there is one. */
@@ -449,7 +522,6 @@ unmake_writers(void) {
 void
 io_engine(int jobs) {
 	int still, repeats, numfds;
-	struct CURLMsg *cm;
 
 	DEBUG(2, true, "io_engine(%d)\n", jobs);
 
@@ -457,7 +529,7 @@ io_engine(int jobs) {
 	still = 0;
 	repeats = 0;
 	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs) {
-		DEBUG(4, true, "...waiting (still %d)\n", still);
+		DEBUG(3, true, "...waiting (still %d)\n", still);
 		numfds = 0;
 		if (curl_multi_wait(multi, NULL, 0, 0, &numfds) != CURLM_OK)
 			break;
@@ -478,20 +550,31 @@ io_engine(int jobs) {
 		} else {
 			repeats = 0;
 		}
+		io_drain();
 	}
+	io_drain();
+}
 
-	/* drain the response code reports. */
-	still = 0;
+/* io_drain -- drain the response code reports.
+ */
+static void
+io_drain(void) {
+	struct CURLMsg *cm;
+	int still = 0;
+
 	while ((cm = curl_multi_info_read(multi, &still)) != NULL) {
-		reader_t reader;
+		fetch_t fetch;
+		query_t query;
 		char *private;
 
 		curl_easy_getinfo(cm->easy_handle,
 				  CURLINFO_PRIVATE,
 				  &private);
-		reader = (reader_t) private;
+		fetch = (fetch_t) private;
+		query = fetch->query;
 
 		if (cm->msg == CURLMSG_DONE) {
+			DEBUG(2, true, "io_engine(%s) DONE\n", query->command);
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
 				fprintf(stderr,
 					"%s: warning: libcurl failed since "
@@ -510,13 +593,16 @@ io_engine(int jobs) {
 					"curl error %d\n",
 					program_name, cm->data.result);
 				exit_code = 1;
-			} else {
-				reader_done(reader);
+			} else if (query->fetches == fetch &&
+				   fetch->next == NULL)
+			{
+				/* this was the last fetch on some query. */
+				query_done(query);
 			}
-			reader_unlink(reader);
-			reader_reap(reader);
+			fetch_unlink(fetch);
+			fetch_reap(fetch);
 		}
-		DEBUG(4, true, "...info read (still %d)\n", still);
+		DEBUG(3, true, "...info read (still %d)\n", still);
 	}
 }
 

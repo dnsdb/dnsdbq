@@ -157,8 +157,16 @@ options are given, then each answer will also be preceded by a ++ marker
 giving the query string (as read from the batch input) in order to identify
 each answer when a very large batch input is given, and the -- marker will
 include an error/noerror indicator and a short message describing the outcome.
+With two
+.Fl f
+options and also
+.Fl m ,
+answers can appear in a different order than the batche questions.
+.Pp
 The ++ and -- markers are not valid JSON, CSV, or DNS (text) format, so
-caution is required.
+caution is required. (See
+.Fl m
+option below.)
 .It Fl g
 return graveled results.  Default is to return aggregated results (rocks,
 vs. gravel).  Gravel is a feature for providing Volume Across Time.
@@ -238,10 +246,15 @@ query_limit.
 .It Fl m
 used only with
 .Fl f ,
-this causes all output to be merged rather than serialized, and causes up
-to ten (10) API queries to execute in parallel. In this mode there will be no
-"--" marker after each parallel query completes, and the combined output of
-all queries is what will be subject to sorting, if any.
+this causes multiple (up to ten) API queries to execute in parallel.
+In this mode there will be no "--" marker, and the combined output of
+all queries is what will be subject to sorting, if any. If two
+.Fl f
+flags are specified with
+.Fl m ,
+the output will not be merged, but can appear in any order. (See
+.Fl f
+option above.)
 .It Fl N Ar HEX
 specify raw
 .Ic rdata

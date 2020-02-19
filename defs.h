@@ -14,5 +14,6 @@
 #define DEBUG(ge, ...) { if (debug_level >= (ge)) debug(__VA_ARGS__); }
 
 typedef enum { text, json, csv } present_e;
+typedef enum { batch_none, batch_original, batch_verbose } batch_e;
 
 #endif /*DEFS_H_INCLUDED*/

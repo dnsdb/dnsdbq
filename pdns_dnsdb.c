@@ -47,8 +47,8 @@ static void dnsdb_destroy(void);
 static char *dnsdb_url(const char *, char *);
 static void dnsdb_info_req(void);
 static int dnsdb_info_blob(const char *, size_t);
-static void dnsdb_auth(reader_t);
-static const char *dnsdb_status(reader_t);
+static void dnsdb_auth(fetch_t);
+static const char *dnsdb_status(fetch_t);
 static const char *dnsdb_verb_ok(const char *);
 
 static void print_rateval(const char *, rateval_ct, FILE *);
@@ -208,6 +208,7 @@ dnsdb_url(const char *path, char *sep) {
 
 void
 dnsdb_info_req(void) {
+	query_t query = NULL;
 	writer_t writer;
 
 	DEBUG(1, true, "dnsdb_info_req()\n");
@@ -215,8 +216,13 @@ dnsdb_info_req(void) {
 	/* start a writer, which might be format functions, or POSIX sort. */
 	writer = writer_init(0, 0);
 
+	/* create a rump query. */
+	CREATE(query, sizeof(struct query));
+	query->writer = writer;
+	query->command = strdup("rate_limit");
+
 	/* start a status fetch. */
-	reader_launch(writer, dnsdb_url("rate_limit", NULL));
+	fetch(query, dnsdb_url(query->command, NULL));
 
 	/* run all jobs to completion. */
 	io_engine(0);
@@ -226,21 +232,21 @@ dnsdb_info_req(void) {
 }
 
 void
-dnsdb_auth(reader_t reader) {
+dnsdb_auth(fetch_t fetch) {
 	if (api_key != NULL) {
 		char *key_header;
 
 		if (asprintf(&key_header, "X-Api-Key: %s", api_key) < 0)
 			my_panic(true, "asprintf");
-		reader->hdrs = curl_slist_append(reader->hdrs, key_header);
+		fetch->hdrs = curl_slist_append(fetch->hdrs, key_header);
 		DESTROY(key_header);
 	}
 }
 
 const char *
-dnsdb_status(reader_t reader) {
+dnsdb_status(fetch_t fetch) {
 	/* early (current) versions of DNSDB returns 404 for "no rrs found". */
-	if (reader->rcode == 404)
+	if (fetch->rcode == 404)
 		return "NOERROR";
 	return "ERROR";
 }
@@ -319,7 +325,7 @@ print_burstrate(const char *key,
 	fputc('\n', outf);
 }
 
-/* dnsdb_write_info -- assumes that reader contains the complete JSON block.
+/* dnsdb_write_info -- assumes that fetch contains the complete JSON block.
  */
 static int
 dnsdb_info_blob(const char *buf, size_t len) {

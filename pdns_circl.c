@@ -11,8 +11,8 @@
 #include "globals.h"
 
 static char *circl_url(const char *, char *);
-static void circl_auth(reader_t);
-static const char *circl_status(reader_t);
+static void circl_auth(fetch_t);
+static const char *circl_status(fetch_t);
 static const char *circl_verb_ok(const char *);
 static void circl_ready(void);
 static const char *circl_setenv(const char *, const char *);
@@ -118,17 +118,17 @@ circl_url(const char *path, char *sep) {
 }
 
 static void
-circl_auth(reader_t reader) {
-	if (reader->easy != NULL) {
-		curl_easy_setopt(reader->easy, CURLOPT_USERPWD,
+circl_auth(fetch_t fetch) {
+	if (fetch->easy != NULL) {
+		curl_easy_setopt(fetch->easy, CURLOPT_USERPWD,
 				 circl_authinfo);
-		curl_easy_setopt(reader->easy, CURLOPT_HTTPAUTH,
+		curl_easy_setopt(fetch->easy, CURLOPT_HTTPAUTH,
 				 CURLAUTH_BASIC);
 	}
 }
 
 static const char *
-circl_status(reader_t reader __attribute__((unused))) {
+circl_status(fetch_t fetch __attribute__((unused))) {
 	return "ERROR";
 }
 

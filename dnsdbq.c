@@ -64,11 +64,11 @@ static void server_setup(void);
 static verb_ct find_verb(const char *);
 static void read_configs(void);
 static void do_batch(FILE *, u_long, u_long);
-static const char *batch_parse(char *, query_t);
+static const char *batch_parse(char *, qdesc_t);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
-static void query_launcher(query_ct, writer_t);
-static void launch(const char *, writer_t, u_long, u_long, u_long, u_long);
+static void query_launcher(qdesc_ct, writer_t);
+static void launch(query_t, u_long, u_long, u_long, u_long);
 static void ruminate_json(int, u_long, u_long);
 static void lookup_ready(void);
 static void summarize_ready(void);
@@ -94,8 +94,6 @@ const struct verb verbs[] = {
 
 /* Private. */
 
-static enum { batch_none, batch_original, batch_verbose } batching = batch_none;
-static bool merge = false;
 static size_t ideal_buffer;
 
 /* Public. */
@@ -392,7 +390,7 @@ main(int argc, char *argv[]) {
 			}
 			break;
 		case 'm':
-			merge = true;
+			multiple = true;
 			break;
 		case 's':
 			sorted = normal_sort;
@@ -433,7 +431,7 @@ main(int argc, char *argv[]) {
 		escape(&bailiwick);
 	if (pfxlen != NULL)
 		escape(&pfxlen);
-	if (output_limit == -1 && query_limit != -1 && !merge)
+	if (output_limit == -1 && query_limit != -1 && !multiple)
 		output_limit = query_limit;
 
 	/* optionally dump program options as interpreted. */
@@ -456,8 +454,8 @@ main(int argc, char *argv[]) {
 			debug(true, "query_limit = %ld\n", query_limit);
 		if (output_limit != -1)
 			debug(true, "output_limit = %ld\n", output_limit);
-		debug(true, "batching=%d, merge=%d\n",
-		      batching != false, merge);
+		debug(true, "batching=%d, multiple=%d\n",
+		      batching != false, multiple);
 	}
 
 	/* select presenter. */
@@ -491,14 +489,16 @@ main(int argc, char *argv[]) {
 	}
 	if (complete && !after && !before)
 		usage("-c without -A or -B makes no sense.");
-	if (merge) {
+	if (multiple) {
 		switch (batching) {
 		case batch_none:
 			usage("using -m without -f makes no sense.");
 		case batch_original:
 			break;
 		case batch_verbose:
-			usage("using -m with more than one -f makes no sense.");
+			break;
+		default:
+			abort();
 		}
 	}
 
@@ -560,7 +560,7 @@ main(int argc, char *argv[]) {
 		unmake_curl();
 	} else {
 		writer_t writer;
-		struct query q;
+		struct qdesc qd;
 
 		if (mode == no_mode)
 			usage("must specify -r, -n, -i, or -R"
@@ -578,7 +578,7 @@ main(int argc, char *argv[]) {
 		if (mode == ip_mode && rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		q = (struct query) {
+		qd = (struct qdesc) {
 			.mode = mode,
 			.thing = thing,
 			.rrtype = rrtype,
@@ -589,8 +589,8 @@ main(int argc, char *argv[]) {
 		};
 		server_setup();
 		make_curl();
-		writer = writer_init(q.after, q.before);
-		query_launcher(&q, writer);
+		writer = writer_init(qd.after, qd.before);
+		query_launcher(&qd, writer);
 		io_engine(0);
 		writer_fini(writer);
 		writer = NULL;
@@ -634,13 +634,13 @@ help(void) {
 	     "use -c to get complete (strict) time matching for -A and -B.\n"
 	     "use -d one or more times to ramp up the diagnostic output.\n"
 	     "for -f, stdin must contain lines of the following forms:\n"
-	     "\t  rrset/name/NAME[/TYPE[/BAILIWICK]]\n"
-	     "\t  rrset/raw/HEX-PAIRS[/RRTYPE[/BAILIWICK]]\n"
-	     "\t  rdata/name/NAME[/TYPE]\n"
-	     "\t  rdata/ip/ADDR[,PFXLEN]\n"
-	     "\t  rdata/raw/HEX-PAIRS[/RRTYPE]\n"
-	     "\t  (output format will be determined by -p, "
-	     "using --\\n framing.\n"
+	     "\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
+	     "\trrset/raw/HEX-PAIRS[/RRTYPE[/BAILIWICK]]\n"
+	     "\trdata/name/NAME[/TYPE]\n"
+	     "\trdata/ip/ADDR[,PFXLEN]\n"
+	     "\trdata/raw/HEX-PAIRS[/RRTYPE]\n"
+	     "\t(output format will depend on -p or -j, framed by '--'.)\n"
+	     "\t(with -ff, framing will be '++ $cmd', '-- $stat ($code)'.\n"
 	     "use -g to get graveled results.\n"
 	     "use -h to reliably display this helpful text.\n"
 	     "use -I to see a system-specific account/key summary.\n"
@@ -648,7 +648,8 @@ help(void) {
 	     "as from -j output.\n"
 	     "use -j as a synonym for -p json.\n"
 	     "use -M # to end a summarize op when count exceeds threshold.\n"
-	     "use -m with -f to merge all answers into a single result.\n"
+	     "use -m with -f for multiple upstream queries in single result.\n"
+	     "use -m with -f -f for multiple upstream queries out of order.\n"
 	     "use -O # to skip this many results in what is returned.\n"
 	     "use -q for warning reticence.\n"
 	     "use -s to sort in ascending order, "
@@ -657,9 +658,9 @@ help(void) {
 	     "use -U to turn off SSL certificate verification.\n"
 	     "use -v to show the program version.");
 	puts("for -u, system must be one of:");
-	puts("\tdnsdb\n");
+	puts("\tdnsdb");
 #if WANT_PDNS_CIRCL
-	puts("\tcircl\n");
+	puts("\tcircl");
 #endif
 	puts("for -V, verb must be one of:");
 	for (v = verbs; v->name != NULL; v++)
@@ -758,7 +759,7 @@ parse_long(const char *in, long *out) {
 	return true;
 }
 
-/* validate_cmd_opts_lookup -- validate command line options for 'lookup'.
+/* lookup_ready -- validate command line options for 'lookup'.
  */
 static void
 lookup_ready(void) {
@@ -769,7 +770,7 @@ lookup_ready(void) {
 		usage("max_count only allowed for a summarize verb");
 }
 
-/* validate_cmd_opts_summarize -- validate commandline options for 'summarize'.
+/* summarize_ready -- validate commandline options for 'summarize'.
  */
 static void
 summarize_ready(void) {
@@ -872,7 +873,8 @@ read_configs(void) {
 				continue;
 
 			DEBUG(1, true, "line #%d: sets %s|%s|%s\n",
-			      l, tok1, tok2, tok3);
+			      l, tok1, tok2,
+			      strcmp(tok2, "apikey") == 0 ? "..." : tok3);
 			if ((msg = psys->setenv(tok2, tok3)) != NULL)
 				usage(msg);
 		}
@@ -892,13 +894,13 @@ do_batch(FILE *f, u_long after, u_long before) {
 	char *command = NULL;
 	size_t n = 0;
 
-	/* if merging, start a writer. */
-	if (merge)
+	/* if doing multiple upstreams, start a writer. */
+	if (multiple)
 		writer = writer_init(after, before);
 
 	while (getline(&command, &n, f) > 0) {
 		const char *msg;
-		struct query q;
+		struct qdesc qd;
 		char *nl;
 
 		/* the last line of the file may not have a newline. */
@@ -908,35 +910,30 @@ do_batch(FILE *f, u_long after, u_long before) {
 		
 		DEBUG(1, true, "do_batch(%s)\n", command);
 
-		/* if not merging, start a writer here instead. */
-		if (!merge) {
+		/* if not parallelizing, start a writer here instead. */
+		if (!multiple)
 			writer = writer_init(after, before);
-			/* only verbose batching shows query startups. */
-			if (batching == batch_verbose)
-				fprintf(stdout, "++ %s\n", command);
-		}
 
 		/* crack the batch line if possible. */
-		msg = batch_parse(command, &q);
+		msg = batch_parse(command, &qd);
 		if (msg != NULL) {
 			writer_status(writer, "PARSE", msg);
 		} else {
 			/* manage batch-level defaults as -A and -B. */
-			if (q.after == 0)
-				q.after = after;
-			if (q.before == 0)
-				q.before = before;
+			if (qd.after == 0)
+				qd.after = after;
+			if (qd.before == 0)
+				qd.before = before;
 
 			/* start one or two curl jobs based on this search. */
-			query_launcher((query_ct)&q, writer);
+			query_launcher(&qd, writer);
 
 			/* if merging, drain some jobs; else, drain all jobs.
 			 */
-			if (merge) {
+			if (multiple)
 				io_engine(MAX_JOBS);
-			} else {
+			else
 				io_engine(0);
-			}
 		}
 		if (writer->status != NULL && batching != batch_verbose) {
 			assert(writer->message != NULL);
@@ -945,7 +942,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 		}
 
 		/* think about showing the end-of-object separator. */
-		if (!merge) {
+		if (!multiple) {
 			switch (batching) {
 			case batch_none:
 				break;
@@ -953,9 +950,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 				fprintf(stdout, "--\n");
 				break;
 			case batch_verbose:
-				fprintf(stdout, "-- %s (%s)\n",
-					or_else(writer->status, "NOERROR"),
-					or_else(writer->message, "no error"));
+				/* query_done() will do this. */
 				break;
 			default:
 				abort();
@@ -967,8 +962,9 @@ do_batch(FILE *f, u_long after, u_long before) {
 	}
 	DESTROY(command);
 	
-	/* if merging, run remaining jobs to completion, then finish up. */
-	if (merge) {
+	/* if parallelized, run remaining jobs to completion, then finish up.
+	 */
+	if (multiple) {
 		io_engine(0);
 		writer_fini(writer);
 		writer = NULL;
@@ -978,8 +974,8 @@ do_batch(FILE *f, u_long after, u_long before) {
 /* batch_parse -- turn one line from a -f batch into a (struct query).
  */
 static const char *
-batch_parse(char *line, query_t qp) {
-	struct query q = (struct query) { };
+batch_parse(char *line, qdesc_t qdp) {
+	struct qdesc qd = (struct qdesc) { };
 	char *saveptr = NULL;
 	char *t;
 	
@@ -989,29 +985,29 @@ batch_parse(char *line, query_t qp) {
 		if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 			return "missing term after 'rrset/'";
 		if (strcmp(t, "name") == 0) {
-			q.mode = rrset_mode;
+			qd.mode = rrset_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rrset/name/'";
-			q.thing = t;
+			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
-				q.rrtype = t;
+				qd.rrtype = t;
 				if ((t = strtok_r(NULL, "/", &saveptr))
 				    != NULL)
 				{
-					q.bailiwick = t;
+					qd.bailiwick = t;
 				}
 			}
 		} else if (strcmp(t, "raw") == 0) {
-			q.mode = raw_rrset_mode;
+			qd.mode = raw_rrset_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rrset/raw/'";
-			q.thing = t;
+			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
-				q.rrtype = t;
+				qd.rrtype = t;
 				if ((t = strtok_r(NULL, "/", &saveptr))
 				    != NULL)
 				{
-					q.bailiwick = t;
+					qd.bailiwick = t;
 				}
 			}
 		} else {
@@ -1021,26 +1017,26 @@ batch_parse(char *line, query_t qp) {
 		if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 			return "missing term after 'rdata/'";
 		if (strcmp(t, "name") == 0) {
-			q.mode = name_mode;
+			qd.mode = name_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/name/'";
-			q.thing = t;
+			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
-				q.rrtype = t;
+				qd.rrtype = t;
 			}
 		} else if (strcmp(t, "raw") == 0) {
-			q.mode = raw_name_mode;
+			qd.mode = raw_name_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/raw/'";
-			q.thing = t;
+			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
-				q.rrtype = t;
+				qd.rrtype = t;
 			}
 		} else if (strcmp(t, "ip") == 0) {
-			q.mode = ip_mode;
+			qd.mode = ip_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/ip/'";
-			q.thing = t;
+			qd.thing = t;
 		} else {
 			return "unrecognized term after 'rdata/'";
 		}
@@ -1050,7 +1046,7 @@ batch_parse(char *line, query_t qp) {
 	t = strtok_r(NULL, "/", &saveptr);
 	if (t != NULL)
 		return "extra garbage";
-	*qp = q;
+	*qdp = qd;
 	return NULL;
 }
 
@@ -1131,65 +1127,69 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 /* query_launcher -- fork off some curl jobs via launch() for this query.
  */
 static void
-query_launcher(query_ct qp, writer_t writer) {
-	char *command;
-	
-	command = makepath(qp->mode, qp->thing, qp->rrtype,
-			   qp->bailiwick, qp->pfxlen);
+query_launcher(qdesc_ct qdp, writer_t writer) {
+	query_t query = NULL;
+
+	CREATE(query, sizeof(struct query));
+	query->writer = writer;
+	writer = NULL;
+	query->next = query->writer->queries;
+	query->writer->queries = query;
+	query->command = makepath(qdp->mode, qdp->thing, qdp->rrtype,
+				  qdp->bailiwick, qdp->pfxlen);
 
 	/* figure out from time fencing which job(s) we'll be starting.
 	 *
 	 * the 4-tuple is: first_after, first_before, last_after, last_before
 	 */
-	if (qp->after != 0 && qp->before != 0) {
+	if (qdp->after != 0 && qdp->before != 0) {
 		if (complete) {
 			/* each db tuple must be enveloped by time fence. */
-			launch(command, writer, qp->after, 0, 0, qp->before);
+			launch(query, qdp->after, 0, 0, qdp->before);
 		} else {
 			/* we need tuples that end after fence start... */
-			launch(command, writer, 0, 0, qp->after, 0);
+			launch(query, 0, 0, qdp->after, 0);
 			/* ...and that begin before the time fence end. */
-			launch(command, writer, 0, qp->before, 0, 0);
+			launch(query, 0, qdp->before, 0, 0);
 			/* and we will filter in reader_func() to
 			 * select only those tuples which either:
 			 * ...(start within), or (end within), or
 			 * ...(start before and end after).
 			 */
 		}
-	} else if (qp->after != 0) {
+	} else if (qdp->after != 0) {
 		if (complete) {
 			/* each db tuple must begin after the fence-start. */
-			launch(command, writer, qp->after, 0, 0, 0);
+			launch(query, qdp->after, 0, 0, 0);
 		} else {
 			/* each db tuple must end after the fence-start. */
-			launch(command, writer, 0, 0, qp->after, 0);
+			launch(query, 0, 0, qdp->after, 0);
 		}
-	} else if (qp->before != 0) {
+	} else if (qdp->before != 0) {
 		if (complete) {
 			/* each db tuple must end before the fence-end. */
-			launch(command, writer, 0, 0, 0, qp->before);
+			launch(query, 0, 0, 0, qdp->before);
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			launch(command, writer, 0, qp->before, 0, 0);
+			launch(query, 0, qdp->before, 0, 0);
 		}
 	} else {
 		/* no time fencing. */
-		launch(command, writer, 0, 0, 0, 0);
+		launch(query, 0, 0, 0, 0);
 	}
-	DESTROY(command);
 }
 
 /* launch -- actually launch a query job, given a command and time fences.
  */
 static void
-launch(const char *command, writer_t writer,
+launch(query_t query,
        u_long first_after, u_long first_before,
        u_long last_after, u_long last_before)
 {
 	char *url, *tmp, sep;
 	int x;
 
-	url = psys->url(command, &sep);
+	url = psys->url(query->command, &sep);
 	if (url == NULL)
 		my_exit(1);
 
@@ -1259,26 +1259,29 @@ launch(const char *command, writer_t writer,
 	}
 	DEBUG(1, true, "url [%s]\n", url);
 
-	reader_launch(writer, url);
+	fetch(query, url);
 }
 
 /* ruminate_json -- process a json file from the filesys rather than the API.
  */
 static void
 ruminate_json(int json_fd, u_long after, u_long before) {
-	reader_t reader = NULL;
+	fetch_t fetch = NULL;
+	query_t query = NULL;
 	void *buf = NULL;
 	writer_t writer;
 	ssize_t len;
 
 	writer = writer_init(after, before);
-	CREATE(reader, sizeof(struct reader));
-	reader->writer = writer;
-	writer->readers = reader;
-	reader = NULL;
+	CREATE(query, sizeof(struct query));
+	query->writer = writer;
+	CREATE(fetch, sizeof(struct fetch));
+	fetch->query = query;
+	query->fetches = fetch;
+	writer->queries = query;
 	CREATE(buf, ideal_buffer);
 	while ((len = read(json_fd, buf, sizeof buf)) > 0) {
-		writer_func(buf, 1, (size_t)len, writer->readers);
+		writer_func(buf, 1, (size_t)len, query->fetches);
 	}
 	DESTROY(buf);
 	writer_fini(writer);

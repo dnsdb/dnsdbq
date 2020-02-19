@@ -26,8 +26,8 @@ struct pdns_system {
 	char *		(*url)(const char *, char *);
 	void		(*info_req)(void);
 	int		(*info_blob)(const char *, size_t);
-	void		(*auth)(reader_t);
-	const char *	(*status)(reader_t);
+	void		(*auth)(fetch_t);
+	const char *	(*status)(fetch_t);
 	const char *	(*verb_ok)(const char *);
 	const char *	(*setenv)(const char *, const char *);
 	void		(*ready)(void);
@@ -48,7 +48,7 @@ typedef const struct verb *verb_ct;
 typedef enum { no_mode = 0, rrset_mode, name_mode, ip_mode,
 	       raw_rrset_mode, raw_name_mode } mode_e;
 
-struct query {
+struct qdesc {
 	mode_e	mode;
 	char	*thing;
 	char	*rrtype;
@@ -57,8 +57,8 @@ struct query {
 	u_long	after;
 	u_long	before;
 };
-typedef struct query *query_t;
-typedef const struct query *query_ct;
+typedef struct qdesc *qdesc_t;
+typedef const struct qdesc *qdesc_ct;
 
 void present_json(pdns_tuple_ct, const char *, size_t, FILE *);
 void present_text_look(pdns_tuple_ct, const char *, size_t, FILE *);

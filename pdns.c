@@ -256,7 +256,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	json_error_t error;
 
 	memset(tup, 0, sizeof *tup);
-	DEBUG(3, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
+	DEBUG(4, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
 		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
@@ -409,12 +409,12 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 	 * we have to winnow it down upon receipt. (see also -J.)
 	 */
 	whynot = NULL;
-	DEBUG(2, true, "filtering-- ");
+	DEBUG(3, true, "filtering-- ");
 	if (writer->after != 0) {
 		const int first_vs_after = time_cmp(first, writer->after),
 			last_vs_after = time_cmp(last, writer->after);
 
-		DEBUG(2, false, "FvA %d LvA %d: ",
+		DEBUG(4, false, "FvA %d LvA %d: ",
 			 first_vs_after, last_vs_after);
 
 		if (complete) {
@@ -431,7 +431,7 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 		const int first_vs_before = time_cmp(first, writer->before),
 			last_vs_before = time_cmp(last, writer->before);
 
-		DEBUG(2, false, "FvB %d LvB %d: ",
+		DEBUG(4, false, "FvB %d LvB %d: ",
 			 first_vs_before, last_vs_before);
 
 		if (complete) {
@@ -446,9 +446,9 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 	}
 
 	if (whynot == NULL) {
-		DEBUG(2, false, "selected!\n");
+		DEBUG(3, false, "selected!\n");
 	} else {
-		DEBUG(2, false, "skipped (%s).\n", whynot);
+		DEBUG(3, false, "skipped (%s).\n", whynot);
 	}
 	DEBUG(3, true, "\tF..L = %s", time_str(first, false));
 	DEBUG(3, false, " .. %s\n", time_str(last, false));
