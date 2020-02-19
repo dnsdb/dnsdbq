@@ -37,7 +37,7 @@ EXTERN	bool gravel			INIT(false);
 EXTERN	bool multiple			INIT(false);
 EXTERN	long offset			INIT(0L);
 EXTERN	long max_count			INIT(0L);
-EXTERN	sort_e sorted			INIT(no_sort);
+EXTERN	sort_e sorting			INIT(no_sort);
 EXTERN	batch_e batching		INIT(batch_none);
 EXTERN	present_e presentation		INIT(text);
 EXTERN	present_t presenter		INIT(NULL);

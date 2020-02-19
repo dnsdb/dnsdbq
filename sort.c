@@ -58,7 +58,7 @@ add_sort_key(const char *tok) {
 		return ("key must be one of first, "
 			"last, count, name, or data");
 	x = asprintf(&computed, "%s%s", key,
-		     sorted == reverse_sort ? "r" : "");
+		     sorting == reverse_sort ? "r" : "");
 	if (x < 0)
 		my_panic(true, "asprintf");
 	keys[nkeys++] = (struct sortkey){strdup(tok), computed};

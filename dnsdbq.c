@@ -343,7 +343,7 @@ main(int argc, char *argv[]) {
 			char *saveptr = NULL;
 			const char *tok;
 
-			if (sorted == no_sort)
+			if (sorting == no_sort)
 				usage("-k must be preceded by -s or -S");
 			for (tok = strtok_r(optarg, ",", &saveptr);
 			     tok != NULL;
@@ -393,10 +393,10 @@ main(int argc, char *argv[]) {
 			multiple = true;
 			break;
 		case 's':
-			sorted = normal_sort;
+			sorting = normal_sort;
 			break;
 		case 'S':
-			sorted = reverse_sort;
+			sorting = reverse_sort;
 			break;
 		case 'c':
 			complete = true;
@@ -477,18 +477,20 @@ main(int argc, char *argv[]) {
 	if (after != 0 && before != 0) {
 		if (after > 0 && before > 0 && after > before)
 			usage("-A -B requiress after <= before (for now)");
-		if (sorted == no_sort && json_fd == -1 &&
+		if (sorting == no_sort && json_fd == -1 &&
 		    !complete && !quiet)
 		{
 			fprintf(stderr,
 				"%s: warning: -A and -B w/o -c needs"
 				" sort for dedup; turning on -S here.\n",
 				program_name);
-			sorted = reverse_sort;
+			sorting = reverse_sort;
 		}
 	}
 	if (complete && !after && !before)
 		usage("-c without -A or -B makes no sense.");
+	if (sorting != no_sort && batching != batch_none)
+		usage("-s or -S, mixed with -f, makes no sense.");
 	if (multiple) {
 		switch (batching) {
 		case batch_none:
@@ -502,7 +504,7 @@ main(int argc, char *argv[]) {
 		}
 	}
 
-	if (sorted != no_sort)
+	if (sorting != no_sort)
 		sort_ready();
 	(*pverb->ready)();
 	if ((msg = psys->verb_ok(pverb->name)) != NULL)
@@ -774,7 +776,7 @@ lookup_ready(void) {
  */
 static void
 summarize_ready(void) {
-	if (sorted != no_sort)
+	if (sorting != no_sort)
 		usage("Sorting with a summarize verb makes no sense");
 }
 

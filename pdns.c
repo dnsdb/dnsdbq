@@ -457,7 +457,7 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 	if (whynot != NULL)
 		goto next;
 
-	if (sorted != no_sort) {
+	if (sorting != no_sort) {
 		/* POSIX sort is given five extra fields at the
 		 * front of each line (first,last,count,name,data)
 		 * which are accessed as -k1 .. -k5 on the

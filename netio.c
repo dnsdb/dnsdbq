@@ -147,7 +147,7 @@ writer_init(u_long after, u_long before) {
 
 	CREATE(writer, sizeof(struct writer));
 
-	if (sorted != no_sort) {
+	if (sorting != no_sort) {
 		/* sorting involves a subprocess (POSIX sort(1) command),
 		 * which will by definition not output anything until
 		 * after it receives EOF. this means we can pipe both
@@ -275,7 +275,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		size_t pre_len = (size_t)(nl - fetch->buf),
 			post_len = (fetch->len - pre_len) - 1;
 
-		if (sorted == no_sort && output_limit != -1 &&
+		if (sorting == no_sort && output_limit != -1 &&
 		    query->writer->count >= output_limit)
 		{
 			DEBUG(9, true, "hit output limit %ld\n", output_limit);
