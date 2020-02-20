@@ -602,15 +602,14 @@ io_drain(void) {
 			} else if (cm->data.result != CURLE_OK) {
 				fprintf(stderr,
 					"%s: warning: libcurl failed with "
-					"curl error %d\n",
-					program_name, cm->data.result);
+					"curl error %d (%s)\n",
+					program_name, cm->data.result,
+					curl_easy_strerror(cm->data.result));
 				exit_code = 1;
-			} else if (query->fetches == fetch &&
-				   fetch->next == NULL)
-			{
-				/* this was the last fetch on some query. */
-				query_done(query);
 			}
+			/* if this was the last fetch on some query, signal. */
+			if (query->fetches == fetch && fetch->next == NULL)
+				query_done(query);
 			fetch_unlink(fetch);
 			fetch_reap(fetch);
 		}

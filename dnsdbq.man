@@ -161,7 +161,7 @@ With two
 .Fl f
 options and also
 .Fl m ,
-answers can appear in a different order than the batche questions.
+answers can appear in a different order than the batched questions.
 .Pp
 The ++ and -- markers are not valid JSON, CSV, or DNS (text) format, so
 caution is required. (See
@@ -225,7 +225,11 @@ API server will return the maximum limit of results allowed.  If
 is not specified, then the query will not specify a limit, and the DNSDB API
 server may use its default limit.
 .It Fl L Ar output_limit
-clamps the number of responses output to
+clamps the number of objects per response (under
+.Fl [R|r|N|n|i|f] )
+or for all responses (under
+.Fl [fm|ff|ffm] )
+output to
 .Ic output_limit .
 If unset, and if batch and merge modes have not been selected with the
 .Fl f
@@ -252,7 +256,9 @@ all queries is what will be subject to sorting, if any. If two
 .Fl f
 flags are specified with
 .Fl m ,
-the output will not be merged, but can appear in any order. (See
+the output will not be merged, can appear in any order, will be sorted
+separately for each response, and will have normal '--' / '++' markers.
+(See
 .Fl f
 option above.)
 .It Fl N Ar HEX
