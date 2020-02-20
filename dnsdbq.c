@@ -489,8 +489,6 @@ main(int argc, char *argv[]) {
 	}
 	if (complete && !after && !before)
 		usage("-c without -A or -B makes no sense.");
-	if (sorting != no_sort && batching != batch_none)
-		usage("-s or -S, mixed with -f, makes no sense.");
 	if (multiple) {
 		switch (batching) {
 		case batch_none:

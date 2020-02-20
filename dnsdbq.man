@@ -303,13 +303,23 @@ sort output in ascending key order. Limits (if any) specified by
 .Fl l
 and
 .Fl L
-will be applied before and after sorting, respectively.
-.It Fl S
-sort output in descending key order. Limits (if any) specified by
-.Fl l
+will be applied before and after sorting, respectively. In batch
+mode, the
+.Fl f ,
+.Fl ff ,
 and
-.Fl L
-will be applied before and after sorting, respectively.
+.Fl ffm
+option sets will cause each batch entry's result to be sorted
+independently, whereas with
+.Fl fm ,
+all outputs will be combined before sorting. This means with
+.Fl fm
+there will be no output until after the last batch entry has
+been processed, due to store and forward by the sort process.
+.It Fl S
+sort output in descending key order. See discussion for
+.Fl s
+above.
 .It Fl t Ar rrtype
 specify the resource record type desired.  Default is ANY.
 If present, this option should precede any
