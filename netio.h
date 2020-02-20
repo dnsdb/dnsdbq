@@ -30,6 +30,7 @@ struct fetch {
 	char		*buf;
 	size_t		len;
 	long		rcode;
+	bool		stopped;
 };
 typedef struct fetch *fetch_t;
 
@@ -39,8 +40,8 @@ struct query {
 	struct fetch	*fetches;
 	struct writer	*writer;
 	char		*command;
-	char		*info_buf;
-	size_t		info_len;
+	char		*info_buf;	// accumulated...
+	size_t		info_len;	// ...info response
 	char		*status;
 	char		*message;
 	bool		h_sent;
@@ -65,7 +66,7 @@ typedef struct writer *writer_t;
 
 void make_curl(void);
 void unmake_curl(void);
-void fetch(query_t, char *);
+void create_fetch(query_t, char *);
 writer_t writer_init(u_long, u_long);
 void query_status(query_t, const char *, const char *);
 size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);

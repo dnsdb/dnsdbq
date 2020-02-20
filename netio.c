@@ -33,12 +33,13 @@
 
 static void io_drain(void);
 static void fetch_reap(fetch_t);
+static void fetch_done(fetch_t);
 static void fetch_unlink(fetch_t);
 static void query_done(query_t);
 
 static writer_t writers = NULL;
 static CURLM *multi = NULL;
-static int curl_cleanup_needed = 0;
+static bool curl_cleanup_needed = false;
 static query_t paused[MAX_JOBS];
 static int npaused = 0;
 
@@ -47,7 +48,7 @@ static int npaused = 0;
 void
 make_curl(void) {
 	curl_global_init(CURL_GLOBAL_DEFAULT);
-	curl_cleanup_needed++;
+	curl_cleanup_needed = true;
 	multi = curl_multi_init();
 	if (multi == NULL) {
 		fprintf(stderr, "%s: curl_multi_init() failed\n",
@@ -66,14 +67,14 @@ unmake_curl(void) {
 	}
 	if (curl_cleanup_needed) {
 		curl_global_cleanup();
-		curl_cleanup_needed = 0;
+		curl_cleanup_needed = false;
 	}
 }
 
 /* fetch -- given a url, tell libcurl to go fetch it.
  */
 void
-fetch(query_t query, char *url) {
+create_fetch(query_t query, char *url) {
 	fetch_t fetch = NULL;
 	CURLMcode res;
 
@@ -136,6 +137,17 @@ fetch_reap(fetch_t fetch) {
 	DESTROY(fetch->url);
 	DESTROY(fetch->buf);
 	DESTROY(fetch);
+}
+
+/* fetch_done -- deal with consequences of end-of-fetch.
+ */
+static void
+fetch_done(fetch_t fetch) {
+	query_t query = fetch->query;
+
+	/* if this was the last fetch on some query, signal. */
+	if (query->fetches == fetch && fetch->next == NULL)
+		query_done(query);
 }
 
 /* fetch_unlink -- disconnect a fetch from its writer.
@@ -295,12 +307,19 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		    query->writer->count >= output_limit)
 		{
 			DEBUG(9, true, "hit output limit %ld\n", output_limit);
+			/* cause CURLE_WRITE_ERROR for this transfer. */
+			bytes = 0;
+			/* inform io_engine() that the abort is intentional. */
+			fetch->stopped = true;
 		} else if (info) {
-			asprintf(&query->info_buf, "%s%*.*s\n",
-				 or_else(query->info_buf, ""),
-				 (int)pre_len, (int)pre_len,
-				 fetch->buf);
+			/* concatenate this fragment (with \n) to info_buf. */
+			char *old = strdup(or_else(query->info_buf, ""));
+
+			DESTROY(query->info_buf);
+			asprintf(&query->info_buf, "%s%*.*s\n", old,
+				 (int)pre_len, (int)pre_len, fetch->buf);
 			query->info_len += pre_len + 1;
+			DESTROY(old);
 		} else {
 			query->writer->count +=
 				data_blob(query->writer,
@@ -599,7 +618,9 @@ io_drain(void) {
 					"could not connect\n",
 					program_name);
 				exit_code = 1;
-			} else if (cm->data.result != CURLE_OK) {
+			} else if (cm->data.result != CURLE_OK &&
+				   !fetch->stopped)
+			{
 				fprintf(stderr,
 					"%s: warning: libcurl failed with "
 					"curl error %d (%s)\n",
@@ -607,9 +628,7 @@ io_drain(void) {
 					curl_easy_strerror(cm->data.result));
 				exit_code = 1;
 			}
-			/* if this was the last fetch on some query, signal. */
-			if (query->fetches == fetch && fetch->next == NULL)
-				query_done(query);
+			fetch_done(fetch);
 			fetch_unlink(fetch);
 			fetch_reap(fetch);
 		}

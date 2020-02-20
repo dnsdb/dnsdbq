@@ -1265,7 +1265,7 @@ launch(query_t query,
 	}
 	DEBUG(1, true, "url [%s]\n", url);
 
-	fetch(query, url);
+	create_fetch(query, url);
 }
 
 /* ruminate_json -- process a json file from the filesys rather than the API.

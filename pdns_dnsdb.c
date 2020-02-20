@@ -238,7 +238,7 @@ dnsdb_info_req(void) {
 	query->command = strdup("rate_limit");
 
 	/* start a status fetch. */
-	fetch(query, dnsdb_url(query->command, NULL));
+	create_fetch(query, dnsdb_url(query->command, NULL));
 
 	/* run all jobs to completion. */
 	io_engine(0);
