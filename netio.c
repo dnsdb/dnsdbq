@@ -313,13 +313,14 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			fetch->stopped = true;
 		} else if (info) {
 			/* concatenate this fragment (with \n) to info_buf. */
-			char *old = strdup(or_else(query->info_buf, ""));
+			char *temp = NULL;
 
-			DESTROY(query->info_buf);
-			asprintf(&query->info_buf, "%s%*.*s\n", old,
+			asprintf(&temp, "%s%*.*s\n",
+				 or_else(query->info_buf, ""),
 				 (int)pre_len, (int)pre_len, fetch->buf);
+			DESTROY(query->info_buf);
+			query->info_buf = temp;
 			query->info_len += pre_len + 1;
-			DESTROY(old);
 		} else {
 			query->writer->count +=
 				data_blob(query->writer,

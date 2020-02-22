@@ -236,6 +236,7 @@ dnsdb_info_req(void) {
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
 	query->command = strdup("rate_limit");
+	writer->queries = query;
 
 	/* start a status fetch. */
 	create_fetch(query, dnsdb_url(query->command, NULL));
@@ -363,6 +364,7 @@ dnsdb_info_blob(const char *buf, size_t len) {
 			print_burstrate("burst rate",
 					&tup.burst_size, &tup.burst_window,
 					stdout);
+			rate_tuple_unmake(&tup);
 		}
 	} else if (presentation == pres_json) {
 		fwrite(buf, 1, len, stdout);
