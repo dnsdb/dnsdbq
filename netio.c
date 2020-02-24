@@ -342,9 +342,11 @@ query_done(query_t query) {
 
 	/* burp out the stored info blob, if any, and destroy it. */
 	if (info) {
-		psys->info_blob(query->info_buf, query->info_len);
-		DESTROY(query->info_buf);
-		query->info_len = 0;
+		if (query->info_len > 0) {
+			psys->info_blob(query->info_buf, query->info_len);
+			DESTROY(query->info_buf);
+			query->info_len = 0;
+		}
 	}
 
 	/* if this was an actively written query, unpause another. */
