@@ -27,10 +27,10 @@
 
 #include <sys/wait.h>
 #include <sys/time.h>
-#include <sys/errno.h>
 
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <signal.h>
@@ -749,8 +749,13 @@ or_else(const char *p, const char *or_else) {
 static bool
 parse_long(const char *in, long *out) {
 	char *ep;
-	long result = strtol(in, &ep, 10);
+	long result;
 
+	/* "The strtol() function shall not change the setting of errno
+	 * if successful." (IEEE Std 1003.1, 2004 Edition)
+	 */
+	errno = 0;
+	result = strtol(in, &ep, 10);
 	if ((errno == ERANGE && (result == LONG_MAX || result == LONG_MIN)) ||
 	    (errno != 0 && result == 0) ||
 	    (ep == in))
