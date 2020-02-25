@@ -17,6 +17,8 @@
 #ifndef PDNS_DNSDB_H_INCLUDED
 #define PDNS_DNSDB_H_INCLUDED 1
 
+#if WANT_PDNS_DNSDB
 pdns_system_ct pdns_dnsdb(void);
+#endif
 
 #endif /*PDNS_DNSDB_H_INCLUDED*/

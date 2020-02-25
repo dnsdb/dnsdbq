@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#if WANT_PDNS_DNSDB
+
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
 
@@ -484,3 +486,4 @@ rate_tuple_unmake(rate_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
+#endif /*WANT_PDNS_DNSDB*/
