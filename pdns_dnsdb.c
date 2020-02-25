@@ -67,6 +67,7 @@ static void dnsdb_auth(fetch_t);
 static const char *dnsdb_status(fetch_t);
 static const char *dnsdb_verb_ok(const char *);
 
+static bool pprint_json(const char *, size_t, FILE *);
 static void print_rateval(const char *, rateval_ct, FILE *);
 static void print_burstrate(const char *, rateval_ct, rateval_ct, FILE *);
 static const char *rateval_make(rateval_t, const json_t *, const char *);
@@ -342,7 +343,28 @@ print_burstrate(const char *key,
 	fputc('\n', outf);
 }
 
-/* dnsdb_write_info -- assumes that fetch contains the complete JSON block.
+/* pprint_json -- pretty-print a JSON buffer after validation.
+ */
+static bool pprint_json(const char *buf, size_t len, FILE *outf) {
+	json_t	*js;
+	json_error_t error;
+
+	js = json_loadb(buf, len, 0, &error);
+	if (js == NULL) {
+		fprintf(stderr, "JSON parsing error %d:%d: %s %s\n",
+			error.line, error.column,
+			error.text, error.source);
+		return false;
+	}
+
+	json_dumpf(js, outf, JSON_INDENT(2));
+	fputc('\n', outf);
+
+	json_decref(js);
+	return true;
+}
+
+/* dnsdb_info_blob -- assumes that fetch contains the complete JSON block.
  */
 static int
 dnsdb_info_blob(const char *buf, size_t len) {
@@ -367,7 +389,8 @@ dnsdb_info_blob(const char *buf, size_t len) {
 			rate_tuple_unmake(&tup);
 		}
 	} else if (presentation == pres_json) {
-		fwrite(buf, 1, len, stdout);
+		/* Ignore any failure in pprint_json. */
+		(void) pprint_json(buf, len, stdout);
 	} else {
 		abort();
 	}
