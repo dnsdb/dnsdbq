@@ -831,7 +831,7 @@ read_configs(void) {
 		x = asprintf(&cmd,
 			     ". %s;"
 			     "echo dnsdb apikey $APIKEY;"
-			     "echo dnsdn server $DNSDB_SERVER;"
+			     "echo dnsdb server $DNSDB_SERVER;"
 #if WANT_PDNS_CIRCL
 			     "echo circl apikey $CIRCL_AUTH;"
 			     "echo circl server $CIRCL_SERVER;"
