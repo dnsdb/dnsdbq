@@ -345,7 +345,8 @@ print_burstrate(const char *key,
 
 /* pprint_json -- pretty-print a JSON buffer after validation.
  */
-static bool pprint_json(const char *buf, size_t len, FILE *outf) {
+static bool
+pprint_json(const char *buf, size_t len, FILE *outf) {
 	json_t	*js;
 	json_error_t error;
 
