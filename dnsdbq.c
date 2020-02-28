@@ -49,8 +49,12 @@
 #include "defs.h"
 #include "netio.h"
 #include "pdns.h"
+#if WANT_PDNS_DNSDB
 #include "pdns_dnsdb.h"
+#endif
+#if WANT_PDNS_CIRCL
 #include "pdns_circl.h"
+#endif
 #include "sort.h"
 #include "time.h"
 #include "globals.h"
@@ -120,8 +124,13 @@ main(int argc, char *argv[]) {
 	if (value != NULL && strcasecmp(value, "iso") == 0)
 		iso8601 = true;
 	pverb = &verbs[DEFAULT_VERB];
+#if WANT_PDNS_DNSDB
 	psys = pdns_dnsdb();
-
+#elif WANT_PDNS_CIRCL
+	psys = pdns_circl();
+#else
+#error "Must want one PDNS system"
+#endif
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
 			    "A:B:R:r:N:n:i:l:L:M:u:p:t:b:k:J:O:V:"
@@ -304,8 +313,13 @@ main(int argc, char *argv[]) {
 				usage("-O must be zero or positive");
 			break;
 		case 'u':
+#if WANT_PDNS_DNSDB
 			if (strcmp(optarg, "dnsdb") == 0)
 				psys = pdns_dnsdb();
+#else
+			if (0)
+				;
+#endif
 #if WANT_PDNS_CIRCL
 			else if (strcmp(optarg, "circl") == 0)
 				psys = pdns_circl();
