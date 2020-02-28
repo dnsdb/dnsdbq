@@ -266,9 +266,9 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					  &fetch->rcode);
 		if (fetch->rcode != 200) {
 			char *message = strndup(fetch->buf, fetch->len);
-			char *newline = strchr(message, '\n');
-			if (newline != NULL)
-				*newline = '\0';
+			char *eol = strpbrk(message, "\r\n");
+			if (eol != NULL)
+				*eol = '\0';
 
 			if (!query->e_sent) {
 				query_status(query,
