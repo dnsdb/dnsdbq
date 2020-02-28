@@ -303,7 +303,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		size_t pre_len = (size_t)(nl - fetch->buf),
 			post_len = (fetch->len - pre_len) - 1;
 
-		if (sorting == no_sort && output_limit != -1 &&
+		if (sorting == no_sort && output_limit > 0 &&
 		    query->writer->count >= output_limit)
 		{
 			DEBUG(9, true, "hit output limit %ld\n", output_limit);
@@ -451,7 +451,7 @@ writer_fini(writer_t writer) {
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
 			 */
-			if (output_limit != -1 && count >= output_limit) {
+			if (output_limit > 0 && count >= output_limit) {
 				if (!writer->sort_killed) {
 					kill(writer->sort_pid, SIGTERM);
 					writer->sort_killed = true;
