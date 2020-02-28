@@ -643,9 +643,8 @@ io_drain(void) {
  */
 void
 escape(char **src) {
-	char *escaped;
-
-	escaped = curl_escape(*src, (int)strlen(*src));
+	CURL *easy = curl_easy_init();
+	char *escaped = curl_easy_escape(easy, *src, (int)strlen(*src));
 	if (escaped == NULL) {
 		fprintf(stderr, "%s: curl_escape(%s) failed\n",
 			program_name, *src);
@@ -655,4 +654,6 @@ escape(char **src) {
 	*src = strdup(escaped);
 	curl_free(escaped);
 	escaped = NULL;
+	curl_easy_cleanup(easy);
+	easy = NULL;
 }
