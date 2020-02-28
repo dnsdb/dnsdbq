@@ -437,14 +437,18 @@ main(int argc, char *argv[]) {
 	argv = NULL;
 
 	/* recondition various options for HTML use. */
+	CURL *easy = curl_easy_init();
 	if (thing != NULL)
-		escape(&thing);
+		escape(easy, &thing);
 	if (rrtype != NULL)
-		escape(&rrtype);
+		escape(easy, &rrtype);
 	if (bailiwick != NULL)
-		escape(&bailiwick);
+		escape(easy, &bailiwick);
 	if (pfxlen != NULL)
-		escape(&pfxlen);
+		escape(easy, &pfxlen);
+	curl_easy_cleanup(easy);
+	easy = NULL;
+
 	if (output_limit == -1 && query_limit != -1 && !multiple)
 		output_limit = query_limit;
 

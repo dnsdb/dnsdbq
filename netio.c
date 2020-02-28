@@ -642,10 +642,8 @@ io_drain(void) {
 /* escape -- HTML-encode a string, in place.
  */
 void
-escape(char **src) {
-	char *escaped;
-
-	escaped = curl_escape(*src, (int)strlen(*src));
+escape(CURL *easy, char **src) {
+	char *escaped = curl_easy_escape(easy, *src, (int)strlen(*src));
 	if (escaped == NULL) {
 		fprintf(stderr, "%s: curl_escape(%s) failed\n",
 			program_name, *src);
