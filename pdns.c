@@ -396,8 +396,9 @@ tuple_unmake(pdns_tuple_t tup) {
 /* data_blob -- process one deblocked json blob as a counted string.
  */
 int
-data_blob(writer_t writer, const char *buf, size_t len) {
-	wparam_ct wp = &writer->params;
+data_blob(query_t query, const char *buf, size_t len) {
+	writer_t writer = query->writer;
+	qparam_ct qp = &query->params;
 	const char *msg, *whynot;
 	struct pdns_tuple tup;
 	u_long first, last;
@@ -427,14 +428,14 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 	 */
 	whynot = NULL;
 	DEBUG(3, true, "filtering-- ");
-	if (wp->after != 0) {
-		const int first_vs_after = time_cmp(first, wp->after),
-			last_vs_after = time_cmp(last, wp->after);
+	if (qp->after != 0) {
+		const int first_vs_after = time_cmp(first, qp->after),
+			last_vs_after = time_cmp(last, qp->after);
 
 		DEBUG(4, false, "FvA %d LvA %d: ",
 			 first_vs_after, last_vs_after);
 
-		if (wp->complete) {
+		if (qp->complete) {
 			if (first_vs_after < 0) {
 				whynot = "first is too early";
 			}
@@ -444,14 +445,14 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 			}
 		}
 	}
-	if (wp->before != 0) {
-		const int first_vs_before = time_cmp(first, wp->before),
-			last_vs_before = time_cmp(last, wp->before);
+	if (qp->before != 0) {
+		const int first_vs_before = time_cmp(first, qp->before),
+			last_vs_before = time_cmp(last, qp->before);
 
 		DEBUG(4, false, "FvB %d LvB %d: ",
 			 first_vs_before, last_vs_before);
 
-		if (wp->complete) {
+		if (qp->complete) {
 			if (last_vs_before > 0) {
 				whynot = "last is too late";
 			}
@@ -469,8 +470,8 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 	}
 	DEBUG(3, true, "\tF..L = %s", time_str(first, false));
 	DEBUG(3, false, " .. %s\n", time_str(last, false));
-	DEBUG(3, true, "\tA..B = %s", time_str(wp->after, false));
-	DEBUG(3, false, " .. %s\n", time_str(wp->before, false));
+	DEBUG(3, true, "\tA..B = %s", time_str(qp->after, false));
+	DEBUG(3, false, " .. %s\n", time_str(qp->before, false));
 	if (whynot != NULL)
 		goto next;
 

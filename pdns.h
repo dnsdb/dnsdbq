@@ -39,7 +39,7 @@ typedef const struct pdns_tuple *pdns_tuple_ct;
 struct pdns_system {
 	const char	*name;
 	const char	*base_url;
-	char *		(*url)(const char *, char *, wparam_ct);
+	char *		(*url)(const char *, char *, qparam_ct);
 	void		(*info_req)(void);
 	int		(*info_blob)(const char *, size_t);
 	void		(*auth)(fetch_t);
@@ -81,6 +81,6 @@ void present_text_summ(pdns_tuple_ct, const char *, size_t, FILE *);
 void present_csv_summ(pdns_tuple_ct, const char *, size_t, FILE *);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
-int data_blob(writer_t, const char *, size_t);
+int data_blob(query_t, const char *, size_t);
 
 #endif /*PDNS_H_INCLUDED*/

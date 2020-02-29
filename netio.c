@@ -170,10 +170,11 @@ fetch_unlink(fetch_t fetch) {
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
  */
 writer_t
-writer_init(wparam_ct wp) {
+writer_init(long output_limit) {
 	writer_t writer = NULL;
 
 	CREATE(writer, sizeof(struct writer));
+	writer->output_limit = output_limit;
 
 	if (sorting != no_sort) {
 		/* sorting involves a subprocess (POSIX sort(1) command),
@@ -198,7 +199,6 @@ writer_init(wparam_ct wp) {
 		close(p2[1]);
 	}
 
-	writer->params = *wp;
 	writer->next = writers;
 	writers = writer;
 	return (writer);
@@ -221,7 +221,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	fetch_t fetch = (fetch_t) blob;
 	query_t query = fetch->query;
 	writer_t writer = query->writer;
-	wparam_ct wp = &writer->params;
+	qparam_ct qp = &query->params;
 	size_t bytes = size * nmemb;
 	char *nl;
 
@@ -303,11 +303,11 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		size_t pre_len = (size_t)(nl - fetch->buf),
 			post_len = (fetch->len - pre_len) - 1;
 
-		if (sorting == no_sort && wp->output_limit > 0 &&
-		    query->writer->count >= wp->output_limit)
+		if (sorting == no_sort && writer->output_limit > 0 &&
+		    writer->count >= writer->output_limit)
 		{
 			DEBUG(9, true, "hit output limit %ld\n",
-			      wp->output_limit);
+			      qp->output_limit);
 			/* cause CURLE_WRITE_ERROR for this transfer. */
 			bytes = 0;
 			/* inform io_engine() that the abort is intentional. */
@@ -324,7 +324,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			query->info_len += pre_len + 1;
 		} else {
 			query->writer->count +=
-				data_blob(query->writer,
+				data_blob(query,
 					  fetch->buf,
 					  pre_len);
 		}
@@ -385,8 +385,6 @@ query_done(query_t query) {
  */
 void
 writer_fini(writer_t writer) {
-	wparam_ct wp = &writer->params;
-
 	/* unlink this writer from the global chain. */
 	if (writers == writer) {
 		writers = writer->next;
@@ -454,8 +452,8 @@ writer_fini(writer_t writer) {
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
 			 */
-			if (wp->output_limit > 0 &&
-			    count >= wp->output_limit)
+			if (writer->output_limit > 0 &&
+			    count >= writer->output_limit)
 			{
 				if (!writer->sort_killed) {
 					kill(writer->sort_pid, SIGTERM);
@@ -535,7 +533,7 @@ writer_fini(writer_t writer) {
 		DESTROY(line);
 		fclose(writer->sort_stdout);
 		DEBUG(1, true, "closed sort_stdout, read %d objs (lim %ld)\n",
-		      count, wp->query_limit);
+		      count, writer->output_limit);
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {

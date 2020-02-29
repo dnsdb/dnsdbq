@@ -62,7 +62,7 @@ typedef struct rate_tuple *rate_tuple_t;
 static const char *dnsdb_setenv(const char *, const char *);
 static void dnsdb_ready(void);
 static void dnsdb_destroy(void);
-static char *dnsdb_url(const char *, char *, wparam_ct);
+static char *dnsdb_url(const char *, char *, qparam_ct);
 static void dnsdb_info_req(void);
 static int dnsdb_info_blob(const char *, size_t);
 static void dnsdb_auth(fetch_t);
@@ -154,7 +154,7 @@ dnsdb_destroy(void) {
  * which might have the same JSON output format but a different REST syntax.
  */
 char *
-dnsdb_url(const char *path, char *sep, wparam_ct wpp) {
+dnsdb_url(const char *path, char *sep, qparam_ct wpp) {
 	char max_count_if_needed[sizeof "&max_count=##################"] = "";
 	char offset_if_needed[sizeof "&offset=##################"] = "";
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
@@ -226,14 +226,13 @@ dnsdb_url(const char *path, char *sep, wparam_ct wpp) {
 
 void
 dnsdb_info_req(void) {
-	struct wparam empty = {};
 	query_t query = NULL;
 	writer_t writer;
 
 	DEBUG(1, true, "dnsdb_info_req()\n");
 
 	/* start a writer, which might be format functions, or POSIX sort. */
-	writer = writer_init(&empty);
+	writer = writer_init(empty.output_limit);
 
 	/* create a rump query. */
 	CREATE(query, sizeof(struct query));

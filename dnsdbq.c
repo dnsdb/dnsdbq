@@ -62,20 +62,20 @@
 
 /* Forward. */
 
-static const char *wparam_ready(wparam_t);
-static const char *wparam_option(int, const char *, wparam_t);
 static void help(void);
 static bool parse_long(const char *, long *);
+static const char *qparam_ready(qparam_t);
+static const char *qparam_option(int, const char *, qparam_t);
 static void server_setup(void);
 static verb_ct find_verb(const char *);
 static void read_configs(void);
-static void do_batch(FILE *, wparam_ct);
+static void do_batch(FILE *, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
-static query_t query_launcher(qdesc_ct, writer_t);
+static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
 static void launch(query_t, u_long, u_long, u_long, u_long);
-static void ruminate_json(int, wparam_ct);
+static void ruminate_json(int, qparam_ct);
 static void lookup_ready(void);
 static void summarize_ready(void);
 
@@ -106,8 +106,8 @@ static size_t ideal_buffer;
 
 int
 main(int argc, char *argv[]) {
-	struct wparam wp = { .query_limit = -1, .output_limit = -1 };
 	struct qdesc qd = { .mode = no_mode };
+	struct qparam qp = empty;
 	bool info = false;
 	int json_fd = -1;
 	const char *msg;
@@ -143,7 +143,7 @@ main(int argc, char *argv[]) {
 		case 'A': case 'B':
 		case 'c': case 'g':
 		case 'L': case 'l':
-			if ((msg = wparam_option(ch, optarg, &wp)) != NULL)
+			if ((msg = qparam_option(ch, optarg, &qp)) != NULL)
 				usage(msg);
 			break;
 		case 'R': {
@@ -434,7 +434,7 @@ main(int argc, char *argv[]) {
 	curl_easy_cleanup(easy);
 	easy = NULL;
 
-	if ((msg = wparam_ready(&wp)) != NULL)
+	if ((msg = qparam_ready(&qp)) != NULL)
 		usage(msg);
 
 	/* optionally dump program options as interpreted. */
@@ -447,18 +447,18 @@ main(int argc, char *argv[]) {
 			debug(true, "bailiwick = '%s'\n", qd.bailiwick);
 		if (qd.pfxlen != NULL)
 			debug(true, "pfxlen = '%s'\n", qd.pfxlen);
-		if (wp.after != 0)
+		if (qp.after != 0)
 			debug(true, "after = %ld : %s\n",
-			      wp.after, time_str(wp.after, false));
-		if (wp.before != 0)
+			      qp.after, time_str(qp.after, false));
+		if (qp.before != 0)
 			debug(true, "before = %ld : ",
-			      wp.before, time_str(wp.before, false));
-		if (wp.query_limit != -1)
+			      qp.before, time_str(qp.before, false));
+		if (qp.query_limit != -1)
 			debug(true, "query_limit = %ld\n",
-			      wp.query_limit);
-		if (wp.output_limit != -1)
+			      qp.query_limit);
+		if (qp.output_limit != -1)
 			debug(true, "output_limit = %ld\n",
-			      wp.output_limit);
+			      qp.output_limit);
 		debug(true, "batching=%d, multiple=%d\n",
 		      batching != false, multiple);
 	}
@@ -481,7 +481,7 @@ main(int argc, char *argv[]) {
 	/* validate some interrelated options. */
 	if (multiple && batching == batch_none)
 		usage("using -m without -f makes no sense.");
-	if (sorting == no_sort && json_fd == -1 && wp.complete)
+	if (sorting == no_sort && json_fd == -1 && qp.complete)
 		usage("warning: -A and -B w/o -c or -J reqs -s or -S");
 
 	if (sorting != no_sort)
@@ -506,11 +506,11 @@ main(int argc, char *argv[]) {
 			usage("can't mix -V with -J");
 		if (max_count > 0)
 			usage("can't mix -M with -J");
-		if (wp.gravel)
+		if (qp.gravel)
 			usage("can't mix -g with -J");
 		if (offset != 0)
 			usage("can't mix -O with -J");
-		ruminate_json(json_fd, &wp);
+		ruminate_json(json_fd, &qp);
 		close(json_fd);
 	} else if (batching != batch_none) {
 		if (qd.mode != no_mode)
@@ -523,7 +523,7 @@ main(int argc, char *argv[]) {
 			usage("can't mix -I with -f");
 		server_setup();
 		make_curl();
-		do_batch(stdin, &wp);
+		do_batch(stdin, &qp);
 		unmake_curl();
 	} else if (info) {
 		if (qd.mode != no_mode)
@@ -561,8 +561,8 @@ main(int argc, char *argv[]) {
 
 		server_setup();
 		make_curl();
-		writer = writer_init(&wp);
-		(void) query_launcher(&qd, writer);
+		writer = writer_init(qp.output_limit);
+		(void) query_launcher(&qd, &qp, writer);
 		io_engine(0);
 		writer_fini(writer);
 		writer = NULL;
@@ -578,54 +578,6 @@ main(int argc, char *argv[]) {
 }
 
 /* Private. */
-
-/* wparam_ready -- check and possibly adjust the contents of a wparam.
- */
-static const char *
-wparam_ready(wparam_t wpp) {
-	if (wpp->output_limit == -1 && wpp->query_limit != -1 && !multiple)
-		wpp->output_limit = wpp->query_limit;
-	if (wpp->after != 0 && wpp->before != 0) {
-		if (wpp->after > wpp->before)
-			return "-A value must be before -B value (for now)";
-	}
-	if (wpp->complete && wpp->after == 0 && wpp->before == 0)
-		return "-c without -A or -B makes no sense.";
-	return NULL;
-}
-
-/* wparam_option -- process one command line option related to a wparam
- */
-static const char *
-wparam_option(int opt, const char *arg, wparam_t wpp) {
-	switch (opt) {
-	case 'A':
-		if (!time_get(arg, &wpp->after) || wpp->after == 0UL)
-			return "bad -A timestamp";
-		break;
-	case 'B':
-		if (!time_get(arg, &wpp->before) || wpp->before == 0UL)
-			return "bad -B timestamp";
-		break;
-	case 'c':
-		wpp->complete = true;
-		break;
-	case 'g':
-		wpp->gravel = true;
-		break;
-	case 'l':
-		if (!parse_long(arg, &wpp->query_limit) ||
-		    (wpp->query_limit < 0))
-			return "-l must be zero or positive";
-		break;
-	case 'L':
-		if (!parse_long(arg, &wpp->output_limit) ||
-		    (wpp->output_limit <= 0))
-			return "-L must be positive";
-		break;
-	}
-	return NULL;
-}
 
 /* help -- display a brief usage-help text; then exit.
  *
@@ -784,6 +736,54 @@ parse_long(const char *in, long *out) {
 	return true;
 }
 
+/* qparam_ready -- check and possibly adjust the contents of a wparam.
+ */
+static const char *
+qparam_ready(qparam_t qpp) {
+	if (qpp->output_limit == -1 && qpp->query_limit != -1 && !multiple)
+		qpp->output_limit = qpp->query_limit;
+	if (qpp->after != 0 && qpp->before != 0) {
+		if (qpp->after > qpp->before)
+			return "-A value must be before -B value (for now)";
+	}
+	if (qpp->complete && qpp->after == 0 && qpp->before == 0)
+		return "-c without -A or -B makes no sense.";
+	return NULL;
+}
+
+/* qparam_option -- process one command line option related to a wparam
+ */
+static const char *
+qparam_option(int opt, const char *arg, qparam_t qpp) {
+	switch (opt) {
+	case 'A':
+		if (!time_get(arg, &qpp->after) || qpp->after == 0UL)
+			return "bad -A timestamp";
+		break;
+	case 'B':
+		if (!time_get(arg, &qpp->before) || qpp->before == 0UL)
+			return "bad -B timestamp";
+		break;
+	case 'c':
+		qpp->complete = true;
+		break;
+	case 'g':
+		qpp->gravel = true;
+		break;
+	case 'l':
+		if (!parse_long(arg, &qpp->query_limit) ||
+		    (qpp->query_limit < 0))
+			return "-l must be zero or positive";
+		break;
+	case 'L':
+		if (!parse_long(arg, &qpp->output_limit) ||
+		    (qpp->output_limit <= 0))
+			return "-L must be positive";
+		break;
+	}
+	return NULL;
+}
+
 /* lookup_ready -- validate command line options for 'lookup'.
  */
 static void
@@ -914,14 +914,14 @@ read_configs(void) {
  * the 'after' and 'before' arguments are from -A and -B and are defaults.
  */
 static void
-do_batch(FILE *f, wparam_ct wp) {
+do_batch(FILE *f, qparam_ct wp) {
 	writer_t writer = NULL;
 	char *command = NULL;
 	size_t n = 0;
 
 	/* if doing multiple upstreams, start a writer. */
 	if (multiple)
-		writer = writer_init(wp);
+		writer = writer_init(wp->output_limit);
 
 	while (getline(&command, &n, f) > 0) {
 		const char *msg;
@@ -937,7 +937,7 @@ do_batch(FILE *f, wparam_ct wp) {
 
 		/* if not parallelizing, start a writer here instead. */
 		if (!multiple)
-			writer = writer_init(wp);
+			writer = writer_init(wp->output_limit);
 
 		/* crack the batch line if possible. */
 		msg = batch_parse(command, &qd);
@@ -946,7 +946,7 @@ do_batch(FILE *f, wparam_ct wp) {
 				program_name, msg);
 		} else {
 			/* start one or two curl jobs based on this search. */
-			query_t query = query_launcher(&qd, writer);
+			query_t query = query_launcher(&qd, wp, writer);
 
 			/* if merging, drain some jobs; else, drain all jobs.
 			 */
@@ -1151,8 +1151,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 /* query_launcher -- fork off some curl jobs via launch() for this query.
  */
 static query_t
-query_launcher(qdesc_ct qdp, writer_t writer) {
-	wparam_ct wpp = &writer->params;
+query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	query_t query = NULL;
 
 	CREATE(query, sizeof(struct query));
@@ -1167,36 +1166,36 @@ query_launcher(qdesc_ct qdp, writer_t writer) {
 	 *
 	 * the 4-tuple is: first_after, first_before, last_after, last_before
 	 */
-	if (wpp->after != 0 && wpp->before != 0) {
-		if (wpp->complete) {
+	if (qpp->after != 0 && qpp->before != 0) {
+		if (qpp->complete) {
 			/* each db tuple must be enveloped by time fence. */
-			launch(query, wpp->after, 0, 0, wpp->before);
+			launch(query, qpp->after, 0, 0, qpp->before);
 		} else {
 			/* we need tuples that end after fence start... */
-			launch(query, 0, 0, wpp->after, 0);
+			launch(query, 0, 0, qpp->after, 0);
 			/* ...and that begin before the time fence end. */
-			launch(query, 0, wpp->before, 0, 0);
+			launch(query, 0, qpp->before, 0, 0);
 			/* and we will filter in reader_func() to
 			 * select only those tuples which either:
 			 * ...(start within), or (end within), or
 			 * ...(start before and end after).
 			 */
 		}
-	} else if (wpp->after != 0) {
-		if (wpp->complete) {
+	} else if (qpp->after != 0) {
+		if (qpp->complete) {
 			/* each db tuple must begin after the fence-start. */
-			launch(query, wpp->after, 0, 0, 0);
+			launch(query, qpp->after, 0, 0, 0);
 		} else {
 			/* each db tuple must end after the fence-start. */
-			launch(query, 0, 0, wpp->after, 0);
+			launch(query, 0, 0, qpp->after, 0);
 		}
-	} else if (wpp->before != 0) {
-		if (wpp->complete) {
+	} else if (qpp->before != 0) {
+		if (qpp->complete) {
 			/* each db tuple must end before the fence-end. */
-			launch(query, 0, 0, 0, wpp->before);
+			launch(query, 0, 0, 0, qpp->before);
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			launch(query, 0, wpp->before, 0, 0);
+			launch(query, 0, qpp->before, 0, 0);
 		}
 	} else {
 		/* no time fencing. */
@@ -1212,17 +1211,17 @@ launch(query_t query,
        u_long first_after, u_long first_before,
        u_long last_after, u_long last_before)
 {
-	wparam_ct wpp = &query->writer->params;
+	qparam_ct qpp = &query->params;
 	char *url, *tmp, sep;
 	int x;
 
-	url = psys->url(query->command, &sep, wpp);
+	url = psys->url(query->command, &sep, qpp);
 	if (url == NULL)
 		my_exit(1);
 
-	if (wpp->query_limit != -1) {
+	if (qpp->query_limit != -1) {
 		x = asprintf(&tmp, "%s%c" "limit=%ld",
-			     url, sep, wpp->query_limit);
+			     url, sep, qpp->query_limit);
 		if (x < 0) {
 			perror("asprintf");
 			DESTROY(url);
@@ -1293,16 +1292,17 @@ launch(query_t query,
 /* ruminate_json -- process a json file from the filesys rather than the API.
  */
 static void
-ruminate_json(int json_fd, wparam_ct wp) {
+ruminate_json(int json_fd, qparam_ct wp) {
 	fetch_t fetch = NULL;
 	query_t query = NULL;
 	void *buf = NULL;
 	writer_t writer;
 	ssize_t len;
 
-	writer = writer_init(wp);
+	writer = writer_init(wp->output_limit);
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
+	query->params = *wp;
 	CREATE(fetch, sizeof(struct fetch));
 	fetch->query = query;
 	query->fetches = fetch;
