@@ -62,18 +62,20 @@
 
 /* Forward. */
 
+static const char *wparam_ready(wparam_t);
+static const char *wparam_option(int, const char *, wparam_t);
 static void help(void);
 static bool parse_long(const char *, long *);
 static void server_setup(void);
 static verb_ct find_verb(const char *);
 static void read_configs(void);
-static void do_batch(FILE *, u_long, u_long);
+static void do_batch(FILE *, wparam_ct);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
 static query_t query_launcher(qdesc_ct, writer_t);
 static void launch(query_t, u_long, u_long, u_long, u_long);
-static void ruminate_json(int, u_long, u_long);
+static void ruminate_json(int, wparam_ct);
 static void lookup_ready(void);
 static void summarize_ready(void);
 
@@ -104,10 +106,9 @@ static size_t ideal_buffer;
 
 int
 main(int argc, char *argv[]) {
-	mode_e mode = no_mode;
-	char *thing = NULL, *rrtype = NULL, *bailiwick = NULL, *pfxlen = NULL;
-	u_long after = 0;
-	u_long before = 0;
+	struct wparam wp = { .query_limit = -1, .output_limit = -1 };
+	struct qdesc qd = { .mode = no_mode };
+	bool info = false;
 	int json_fd = -1;
 	const char *msg;
 	char *value;
@@ -139,26 +140,25 @@ main(int argc, char *argv[]) {
 	       != -1)
 	{
 		switch (ch) {
-		case 'A':
-			if (!time_get(optarg, &after) || after == 0UL)
-				usage("bad -A timestamp: '%s'\n", optarg);
-			break;
-		case 'B':
-			if (!time_get(optarg, &before) || before == 0UL)
-				usage("bad -B timestamp: '%s'\n", optarg);
+		case 'A': case 'B':
+		case 'c': case 'g':
+		case 'L': case 'l':
+			if ((msg = wparam_option(ch, optarg, &wp)) != NULL)
+				usage(msg);
 			break;
 		case 'R': {
 			const char *p;
 
-			if (mode != no_mode)
+			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(thing == NULL);
-			mode = raw_rrset_mode;
+			assert(qd.thing == NULL);
+			qd.mode = raw_rrset_mode;
 
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-				if (rrtype != NULL || bailiwick != NULL)
+				if (qd.rrtype != NULL ||
+				    qd.bailiwick != NULL)
 					usage("if -b or -t are specified then "
 					      "-R cannot contain a slash");
 
@@ -166,30 +166,32 @@ main(int argc, char *argv[]) {
 
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
-					bailiwick = strdup(q + 1);
-					rrtype = strndup(p + 1,
+					qd.bailiwick = strdup(q + 1);
+					qd.rrtype = strndup(p + 1,
 							 (size_t)(q - p - 1));
 				} else {
-					rrtype = strdup(p + 1);
+					qd.rrtype = strdup(p + 1);
 				}
-				thing = strndup(optarg, (size_t)(p - optarg));
+				qd.thing = strndup(optarg,
+						      (size_t)(p - optarg));
 			} else {
-				thing = strdup(optarg);
+				qd.thing = strdup(optarg);
 			}
 			break;
 		    }
 		case 'r': {
 			const char *p;
 
-			if (mode != no_mode)
+			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(thing == NULL);
-			mode = rrset_mode;
+			assert(qd.thing == NULL);
+			qd.mode = rrset_mode;
 
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-				if (rrtype != NULL || bailiwick != NULL)
+				if (qd.rrtype != NULL ||
+				    qd.bailiwick != NULL)
 					usage("if -b or -t are specified then "
 					      "-r cannot contain a slash");
 
@@ -197,30 +199,32 @@ main(int argc, char *argv[]) {
 
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
-					bailiwick = strdup(q + 1);
-					rrtype = strndup(p + 1,
+					qd.bailiwick = strdup(q + 1);
+					qd.rrtype = strndup(p + 1,
 							 (size_t)(q - p - 1));
 				} else {
-					rrtype = strdup(p + 1);
+					qd.rrtype = strdup(p + 1);
 				}
-				thing = strndup(optarg, (size_t)(p - optarg));
+				qd.thing = strndup(optarg,
+						      (size_t)(p - optarg));
 			} else {
-				thing = strdup(optarg);
+				qd.thing = strdup(optarg);
 			}
 			break;
 		    }
 		case 'N': {
 			const char *p;
 
-			if (mode != no_mode)
+			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(thing == NULL);
-			mode = raw_name_mode;
+			assert(qd.thing == NULL);
+			qd.mode = raw_name_mode;
 
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-				if (rrtype != NULL || bailiwick != NULL)
+				if (qd.rrtype != NULL ||
+				    qd.bailiwick != NULL)
 					usage("if -b or -t are specified then "
 					      "-N cannot contain a slash");
 
@@ -228,30 +232,32 @@ main(int argc, char *argv[]) {
 
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
-					bailiwick = strdup(q + 1);
-					rrtype = strndup(p + 1,
+					qd.bailiwick = strdup(q + 1);
+					qd.rrtype = strndup(p + 1,
 							 (size_t)(q - p - 1));
 				} else {
-					rrtype = strdup(p + 1);
+					qd.rrtype = strdup(p + 1);
 				}
-				thing = strndup(optarg, (size_t)(p - optarg));
+				qd.thing = strndup(optarg,
+						      (size_t)(p - optarg));
 			} else {
-				thing = strdup(optarg);
+				qd.thing = strdup(optarg);
 			}
 			break;
 		    }
 		case 'n': {
 			const char *p;
 
-			if (mode != no_mode)
+			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(thing == NULL);
-			mode = name_mode;
+			assert(qd.thing == NULL);
+			qd.mode = name_mode;
 
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-				if (rrtype != NULL || bailiwick != NULL)
+				if (qd.rrtype != NULL ||
+				    qd.bailiwick != NULL)
 					usage("if -b or -t are specified then "
 					      "-n cannot contain a slash");
 
@@ -259,32 +265,34 @@ main(int argc, char *argv[]) {
 
 				q = strchr(p + 1, '/');
 				if (q != NULL) {
-					bailiwick = strdup(q + 1);
-					rrtype = strndup(p + 1,
+					qd.bailiwick = strdup(q + 1);
+					qd.rrtype = strndup(p + 1,
 							 (size_t)(q - p - 1));
 				} else {
-					rrtype = strdup(p + 1);
+					qd.rrtype = strdup(p + 1);
 				}
-				thing = strndup(optarg, (size_t)(p - optarg));
+				qd.thing = strndup(optarg,
+						      (size_t)(p - optarg));
 			} else {
-				thing = strdup(optarg);
+				qd.thing = strdup(optarg);
 			}
 			break;
 		    }
 		case 'i': {
 			const char *p;
 
-			if (mode != no_mode)
+			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
-			assert(thing == NULL);
-			mode = ip_mode;
+			assert(qd.thing == NULL);
+			qd.mode = ip_mode;
 			p = strchr(optarg, '/');
 			if (p != NULL) {
-				thing = strndup(optarg, (size_t)(p - optarg));
-				pfxlen = strdup(p + 1);
+				qd.thing = strndup(optarg,
+						      (size_t)(p - optarg));
+				qd.pfxlen = strdup(p + 1);
 			} else {
-				thing = strdup(optarg);
+				qd.thing = strdup(optarg);
 			}
 			break;
 		    }
@@ -294,16 +302,6 @@ main(int argc, char *argv[]) {
 				usage("Unsupported verb for -V argument");
 			break;
 		    }
-		case 'l':
-			if (!parse_long(optarg, &query_limit) ||
-			    (query_limit < 0))
-				usage("-l must be zero or positive");
-			break;
-		case 'L':
-			if (!parse_long(optarg, &output_limit) ||
-			    (output_limit <= 0))
-				usage("-L must be positive");
-			break;
 		case 'M':
 			if (!parse_long(optarg, &max_count) || (max_count <= 0))
 				usage("-M must be positive");
@@ -316,9 +314,6 @@ main(int argc, char *argv[]) {
 #if WANT_PDNS_DNSDB
 			if (strcmp(optarg, "dnsdb") == 0)
 				psys = pdns_dnsdb();
-#else
-			if (0)
-				;
 #endif
 #if WANT_PDNS_CIRCL
 			else if (strcmp(optarg, "circl") == 0)
@@ -344,14 +339,14 @@ main(int argc, char *argv[]) {
 			}
 			break;
 		case 't':
-			if (rrtype != NULL)
+			if (qd.rrtype != NULL)
 				usage("can only specify rrtype one way");
-			rrtype = strdup(optarg);
+			qd.rrtype = strdup(optarg);
 			break;
 		case 'b':
-			if (bailiwick != NULL)
+			if (qd.bailiwick != NULL)
 				usage("can only specify bailiwick one way");
-			bailiwick = strdup(optarg);
+			qd.bailiwick = strdup(optarg);
 			break;
 		case 'k': {
 			char *saveptr = NULL;
@@ -383,9 +378,6 @@ main(int argc, char *argv[]) {
 		case 'd':
 			debug_level++;
 			break;
-		case 'g':
-			gravel = true;
-			break;
 		case 'j':
 			presentation = pres_json;
 			break;
@@ -412,9 +404,6 @@ main(int argc, char *argv[]) {
 		case 'S':
 			sorting = reverse_sort;
 			break;
-		case 'c':
-			complete = true;
-			break;
 		case 'I':
 			info = true;
 			break;
@@ -438,40 +427,38 @@ main(int argc, char *argv[]) {
 
 	/* recondition various options for HTML use. */
 	CURL *easy = curl_easy_init();
-	if (thing != NULL)
-		escape(easy, &thing);
-	if (rrtype != NULL)
-		escape(easy, &rrtype);
-	if (bailiwick != NULL)
-		escape(easy, &bailiwick);
-	if (pfxlen != NULL)
-		escape(easy, &pfxlen);
+	escape(easy, &qd.thing);
+	escape(easy, &qd.rrtype);
+	escape(easy, &qd.bailiwick);
+	escape(easy, &qd.pfxlen);
 	curl_easy_cleanup(easy);
 	easy = NULL;
 
-	if (output_limit == -1 && query_limit != -1 && !multiple)
-		output_limit = query_limit;
+	if ((msg = wparam_ready(&wp)) != NULL)
+		usage(msg);
 
 	/* optionally dump program options as interpreted. */
 	if (debug_level >= 1) {
-		if (thing != NULL)
-			debug(true, "thing = '%s'\n", thing);
-		if (rrtype != NULL)
-			debug(true, "type = '%s'\n", rrtype);
-		if (bailiwick != NULL)
-			debug(true, "bailiwick = '%s'\n", bailiwick);
-		if (pfxlen != NULL)
-			debug(true, "pfxlen = '%s'\n", pfxlen);
-		if (after != 0)
+		if (qd.thing != NULL)
+			debug(true, "thing = '%s'\n", qd.thing);
+		if (qd.rrtype != NULL)
+			debug(true, "type = '%s'\n", qd.rrtype);
+		if (qd.bailiwick != NULL)
+			debug(true, "bailiwick = '%s'\n", qd.bailiwick);
+		if (qd.pfxlen != NULL)
+			debug(true, "pfxlen = '%s'\n", qd.pfxlen);
+		if (wp.after != 0)
 			debug(true, "after = %ld : %s\n",
-			      after, time_str(after, false));
-		if (before != 0)
+			      wp.after, time_str(wp.after, false));
+		if (wp.before != 0)
 			debug(true, "before = %ld : ",
-			      before, time_str(before, false));
-		if (query_limit != -1)
-			debug(true, "query_limit = %ld\n", query_limit);
-		if (output_limit != -1)
-			debug(true, "output_limit = %ld\n", output_limit);
+			      wp.before, time_str(wp.before, false));
+		if (wp.query_limit != -1)
+			debug(true, "query_limit = %ld\n",
+			      wp.query_limit);
+		if (wp.output_limit != -1)
+			debug(true, "output_limit = %ld\n",
+			      wp.output_limit);
 		debug(true, "batching=%d, multiple=%d\n",
 		      batching != false, multiple);
 	}
@@ -492,33 +479,10 @@ main(int argc, char *argv[]) {
 	}
 
 	/* validate some interrelated options. */
-	if (after != 0 && before != 0) {
-		if (after > 0 && before > 0 && after > before)
-			usage("-A -B requiress after <= before (for now)");
-		if (sorting == no_sort && json_fd == -1 &&
-		    !complete && !quiet)
-		{
-			fprintf(stderr,
-				"%s: warning: -A and -B w/o -c needs"
-				" sort for dedup; turning on -S here.\n",
-				program_name);
-			sorting = reverse_sort;
-		}
-	}
-	if (complete && !after && !before)
-		usage("-c without -A or -B makes no sense.");
-	if (multiple) {
-		switch (batching) {
-		case batch_none:
-			usage("using -m without -f makes no sense.");
-		case batch_original:
-			break;
-		case batch_verbose:
-			break;
-		default:
-			abort();
-		}
-	}
+	if (multiple && batching == batch_none)
+		usage("using -m without -f makes no sense.");
+	if (sorting == no_sort && json_fd == -1 && wp.complete)
+		usage("warning: -A and -B w/o -c or -J reqs -s or -S");
 
 	if (sorting != no_sort)
 		sort_ready();
@@ -528,47 +492,47 @@ main(int argc, char *argv[]) {
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
-		if (mode != no_mode)
+		if (qd.mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -J");
 		if (batching != batch_none)
 			usage("can't mix -f with -J");
-		if (bailiwick != NULL)
+		if (qd.bailiwick != NULL)
 			usage("can't mix -b with -J");
 		if (info)
 			usage("can't mix -I with -J");
-		if (rrtype != NULL)
+		if (qd.rrtype != NULL)
 			usage("can't mix -t with -J");
 		if (pverb != &verbs[DEFAULT_VERB])
 			usage("can't mix -V with -J");
 		if (max_count > 0)
 			usage("can't mix -M with -J");
-		if (gravel)
+		if (wp.gravel)
 			usage("can't mix -g with -J");
 		if (offset != 0)
 			usage("can't mix -O with -J");
-		ruminate_json(json_fd, after, before);
+		ruminate_json(json_fd, &wp);
 		close(json_fd);
 	} else if (batching != batch_none) {
-		if (mode != no_mode)
+		if (qd.mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -f");
-		if (bailiwick != NULL)
+		if (qd.bailiwick != NULL)
 			usage("can't mix -b with -f");
-		if (rrtype != NULL)
+		if (qd.rrtype != NULL)
 			usage("can't mix -t with -f");
 		if (info)
 			usage("can't mix -I with -f");
 		server_setup();
 		make_curl();
-		do_batch(stdin, after, before);
+		do_batch(stdin, &wp);
 		unmake_curl();
 	} else if (info) {
-		if (mode != no_mode)
+		if (qd.mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -I");
 		if (presentation != pres_text && presentation != pres_json)
 			usage("info must be presented in json or text format");
-		if (bailiwick != NULL)
+		if (qd.bailiwick != NULL)
 			usage("can't mix -b with -I");
-		if (rrtype != NULL)
+		if (qd.rrtype != NULL)
 			usage("can't mix -t with -I");
 		if (psys->info_req == NULL || psys->info_blob == NULL)
 			usage("there is no 'info' for this service");
@@ -578,36 +542,26 @@ main(int argc, char *argv[]) {
 		unmake_curl();
 	} else {
 		writer_t writer;
-		struct qdesc qd;
 
-		if (mode == no_mode)
+		if (qd.mode == no_mode)
 			usage("must specify -r, -n, -i, or -R"
 			      " unless -f or -J is used");
-		if (bailiwick != NULL) {
-			if (mode == ip_mode)
+		if (qd.bailiwick != NULL) {
+			if (qd.mode == ip_mode)
 				usage("can't mix -b with -i");
-			if (mode == raw_rrset_mode)
+			if (qd.mode == raw_rrset_mode)
 				usage("can't mix -b with -R");
-			if (mode == raw_name_mode)
+			if (qd.mode == raw_name_mode)
 				usage("can't mix -b with -N");
-			if (mode == name_mode)
+			if (qd.mode == name_mode)
 				usage("can't mix -b with -n");
 		}
-		if (mode == ip_mode && rrtype != NULL)
+		if (qd.mode == ip_mode && qd.rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		qd = (struct qdesc) {
-			.mode = mode,
-			.thing = thing,
-			.rrtype = rrtype,
-			.bailiwick = bailiwick,
-			.pfxlen = pfxlen,
-			.after = after,
-			.before = before
-		};
 		server_setup();
 		make_curl();
-		writer = writer_init(qd.after, qd.before);
+		writer = writer_init(&wp);
 		(void) query_launcher(&qd, writer);
 		io_engine(0);
 		writer_fini(writer);
@@ -616,14 +570,62 @@ main(int argc, char *argv[]) {
 	}
 
 	/* clean up and go. */
-	DESTROY(thing);
-	DESTROY(rrtype);
-	DESTROY(bailiwick);
-	DESTROY(pfxlen);
+	DESTROY(qd.thing);
+	DESTROY(qd.rrtype);
+	DESTROY(qd.bailiwick);
+	DESTROY(qd.pfxlen);
 	my_exit(exit_code);
 }
 
 /* Private. */
+
+/* wparam_ready -- check and possibly adjust the contents of a wparam.
+ */
+static const char *
+wparam_ready(wparam_t wpp) {
+	if (wpp->output_limit == -1 && wpp->query_limit != -1 && !multiple)
+		wpp->output_limit = wpp->query_limit;
+	if (wpp->after != 0 && wpp->before != 0) {
+		if (wpp->after > wpp->before)
+			return "-A value must be before -B value (for now)";
+	}
+	if (wpp->complete && wpp->after == 0 && wpp->before == 0)
+		return "-c without -A or -B makes no sense.";
+	return NULL;
+}
+
+/* wparam_option -- process one command line option related to a wparam
+ */
+static const char *
+wparam_option(int opt, const char *arg, wparam_t wpp) {
+	switch (opt) {
+	case 'A':
+		if (!time_get(arg, &wpp->after) || wpp->after == 0UL)
+			return "bad -A timestamp";
+		break;
+	case 'B':
+		if (!time_get(arg, &wpp->before) || wpp->before == 0UL)
+			return "bad -B timestamp";
+		break;
+	case 'c':
+		wpp->complete = true;
+		break;
+	case 'g':
+		wpp->gravel = true;
+		break;
+	case 'l':
+		if (!parse_long(arg, &wpp->query_limit) ||
+		    (wpp->query_limit < 0))
+			return "-l must be zero or positive";
+		break;
+	case 'L':
+		if (!parse_long(arg, &wpp->output_limit) ||
+		    (wpp->output_limit <= 0))
+			return "-L must be positive";
+		break;
+	}
+	return NULL;
+}
 
 /* help -- display a brief usage-help text; then exit.
  *
@@ -912,14 +914,14 @@ read_configs(void) {
  * the 'after' and 'before' arguments are from -A and -B and are defaults.
  */
 static void
-do_batch(FILE *f, u_long after, u_long before) {
+do_batch(FILE *f, wparam_ct wp) {
 	writer_t writer = NULL;
 	char *command = NULL;
 	size_t n = 0;
 
 	/* if doing multiple upstreams, start a writer. */
 	if (multiple)
-		writer = writer_init(after, before);
+		writer = writer_init(wp);
 
 	while (getline(&command, &n, f) > 0) {
 		const char *msg;
@@ -935,7 +937,7 @@ do_batch(FILE *f, u_long after, u_long before) {
 
 		/* if not parallelizing, start a writer here instead. */
 		if (!multiple)
-			writer = writer_init(after, before);
+			writer = writer_init(wp);
 
 		/* crack the batch line if possible. */
 		msg = batch_parse(command, &qd);
@@ -943,12 +945,6 @@ do_batch(FILE *f, u_long after, u_long before) {
 			fprintf(stderr, "%s: batch line parse error: %s\n",
 				program_name, msg);
 		} else {
-			/* manage batch-level defaults as -A and -B. */
-			if (qd.after == 0)
-				qd.after = after;
-			if (qd.before == 0)
-				qd.before = before;
-
 			/* start one or two curl jobs based on this search. */
 			query_t query = query_launcher(&qd, writer);
 
@@ -1156,6 +1152,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
  */
 static query_t
 query_launcher(qdesc_ct qdp, writer_t writer) {
+	wparam_ct wpp = &writer->params;
 	query_t query = NULL;
 
 	CREATE(query, sizeof(struct query));
@@ -1170,36 +1167,36 @@ query_launcher(qdesc_ct qdp, writer_t writer) {
 	 *
 	 * the 4-tuple is: first_after, first_before, last_after, last_before
 	 */
-	if (qdp->after != 0 && qdp->before != 0) {
-		if (complete) {
+	if (wpp->after != 0 && wpp->before != 0) {
+		if (wpp->complete) {
 			/* each db tuple must be enveloped by time fence. */
-			launch(query, qdp->after, 0, 0, qdp->before);
+			launch(query, wpp->after, 0, 0, wpp->before);
 		} else {
 			/* we need tuples that end after fence start... */
-			launch(query, 0, 0, qdp->after, 0);
+			launch(query, 0, 0, wpp->after, 0);
 			/* ...and that begin before the time fence end. */
-			launch(query, 0, qdp->before, 0, 0);
+			launch(query, 0, wpp->before, 0, 0);
 			/* and we will filter in reader_func() to
 			 * select only those tuples which either:
 			 * ...(start within), or (end within), or
 			 * ...(start before and end after).
 			 */
 		}
-	} else if (qdp->after != 0) {
-		if (complete) {
+	} else if (wpp->after != 0) {
+		if (wpp->complete) {
 			/* each db tuple must begin after the fence-start. */
-			launch(query, qdp->after, 0, 0, 0);
+			launch(query, wpp->after, 0, 0, 0);
 		} else {
 			/* each db tuple must end after the fence-start. */
-			launch(query, 0, 0, qdp->after, 0);
+			launch(query, 0, 0, wpp->after, 0);
 		}
-	} else if (qdp->before != 0) {
-		if (complete) {
+	} else if (wpp->before != 0) {
+		if (wpp->complete) {
 			/* each db tuple must end before the fence-end. */
-			launch(query, 0, 0, 0, qdp->before);
+			launch(query, 0, 0, 0, wpp->before);
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			launch(query, 0, qdp->before, 0, 0);
+			launch(query, 0, wpp->before, 0, 0);
 		}
 	} else {
 		/* no time fencing. */
@@ -1215,15 +1212,17 @@ launch(query_t query,
        u_long first_after, u_long first_before,
        u_long last_after, u_long last_before)
 {
+	wparam_ct wpp = &query->writer->params;
 	char *url, *tmp, sep;
 	int x;
 
-	url = psys->url(query->command, &sep);
+	url = psys->url(query->command, &sep, wpp);
 	if (url == NULL)
 		my_exit(1);
 
-	if (query_limit != -1) {
-		x = asprintf(&tmp, "%s%c" "limit=%ld", url, sep, query_limit);
+	if (wpp->query_limit != -1) {
+		x = asprintf(&tmp, "%s%c" "limit=%ld",
+			     url, sep, wpp->query_limit);
 		if (x < 0) {
 			perror("asprintf");
 			DESTROY(url);
@@ -1294,14 +1293,14 @@ launch(query_t query,
 /* ruminate_json -- process a json file from the filesys rather than the API.
  */
 static void
-ruminate_json(int json_fd, u_long after, u_long before) {
+ruminate_json(int json_fd, wparam_ct wp) {
 	fetch_t fetch = NULL;
 	query_t query = NULL;
 	void *buf = NULL;
 	writer_t writer;
 	ssize_t len;
 
-	writer = writer_init(after, before);
+	writer = writer_init(wp);
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
 	CREATE(fetch, sizeof(struct fetch));

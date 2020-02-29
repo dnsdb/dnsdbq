@@ -39,7 +39,7 @@ typedef const struct pdns_tuple *pdns_tuple_ct;
 struct pdns_system {
 	const char	*name;
 	const char	*base_url;
-	char *		(*url)(const char *, char *);
+	char *		(*url)(const char *, char *, wparam_ct);
 	void		(*info_req)(void);
 	int		(*info_blob)(const char *, size_t);
 	void		(*auth)(fetch_t);
@@ -70,8 +70,6 @@ struct qdesc {
 	char	*rrtype;
 	char	*bailiwick;
 	char	*pfxlen;
-	u_long	after;
-	u_long	before;
 };
 typedef struct qdesc *qdesc_t;
 typedef const struct qdesc *qdesc_ct;

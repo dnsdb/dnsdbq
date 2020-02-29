@@ -57,22 +57,18 @@ add_sort_key(const char *tok) {
 
 	if (nkeys == MAX_KEYS)
 		return ("too many sort keys given.");
-	if (strcasecmp(tok, "first") == 0) {
+	if (strcasecmp(tok, "first") == 0)
 		key = "-k1n";
-	} else if (strcasecmp(tok, "last") == 0) {
+	else if (strcasecmp(tok, "last") == 0)
 		key = "-k2n";
-	} else if (strcasecmp(tok, "count") == 0) {
+	else if (strcasecmp(tok, "count") == 0)
 		key = "-k3n";
-	} else if (strcasecmp(tok, "name") == 0) {
+	else if (strcasecmp(tok, "name") == 0)
 		key = "-k4";
-		sort_byname = true;
-	} else if (strcasecmp(tok, "data") == 0) {
+	else if (strcasecmp(tok, "data") == 0)
 		key = "-k5";
-		sort_bydata = true;
-	}
-	if (key == NULL)
-		return ("key must be one of first, "
-			"last, count, name, or data");
+	else
+		return "key must be one of first, last, count, name, or data";
 	x = asprintf(&computed, "%s%s", key,
 		     sorting == reverse_sort ? "r" : "");
 	if (x < 0)

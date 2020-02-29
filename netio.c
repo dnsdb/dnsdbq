@@ -170,7 +170,7 @@ fetch_unlink(fetch_t fetch) {
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
  */
 writer_t
-writer_init(u_long after, u_long before) {
+writer_init(wparam_ct wp) {
 	writer_t writer = NULL;
 
 	CREATE(writer, sizeof(struct writer));
@@ -198,8 +198,7 @@ writer_init(u_long after, u_long before) {
 		close(p2[1]);
 	}
 
-	writer->after = after;
-	writer->before = before;
+	writer->params = *wp;
 	writer->next = writers;
 	writers = writer;
 	return (writer);
@@ -222,6 +221,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	fetch_t fetch = (fetch_t) blob;
 	query_t query = fetch->query;
 	writer_t writer = query->writer;
+	wparam_ct wp = &writer->params;
 	size_t bytes = size * nmemb;
 	char *nl;
 
@@ -303,15 +303,16 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		size_t pre_len = (size_t)(nl - fetch->buf),
 			post_len = (fetch->len - pre_len) - 1;
 
-		if (sorting == no_sort && output_limit > 0 &&
-		    query->writer->count >= output_limit)
+		if (sorting == no_sort && wp->output_limit > 0 &&
+		    query->writer->count >= wp->output_limit)
 		{
-			DEBUG(9, true, "hit output limit %ld\n", output_limit);
+			DEBUG(9, true, "hit output limit %ld\n",
+			      wp->output_limit);
 			/* cause CURLE_WRITE_ERROR for this transfer. */
 			bytes = 0;
 			/* inform io_engine() that the abort is intentional. */
 			fetch->stopped = true;
-		} else if (info) {
+		} else if (query->info) {
 			/* concatenate this fragment (with \n) to info_buf. */
 			char *temp = NULL;
 
@@ -341,7 +342,7 @@ query_done(query_t query) {
 	DEBUG(2, true, "query_done(%s)\n", query->command);
 
 	/* burp out the stored info blob, if any, and destroy it. */
-	if (info) {
+	if (query->info) {
 		if (query->info_len > 0) {
 			psys->info_blob(query->info_buf, query->info_len);
 			DESTROY(query->info_buf);
@@ -384,6 +385,8 @@ query_done(query_t query) {
  */
 void
 writer_fini(writer_t writer) {
+	wparam_ct wp = &writer->params;
+
 	/* unlink this writer from the global chain. */
 	if (writers == writer) {
 		writers = writer->next;
@@ -451,7 +454,9 @@ writer_fini(writer_t writer) {
 			 * this is nec'y to avoid SIGPIPE from sort if we were
 			 * to close its stdout pipe without emptying it first.
 			 */
-			if (output_limit > 0 && count >= output_limit) {
+			if (wp->output_limit > 0 &&
+			    count >= wp->output_limit)
+			{
 				if (!writer->sort_killed) {
 					kill(writer->sort_pid, SIGTERM);
 					writer->sort_killed = true;
@@ -530,7 +535,7 @@ writer_fini(writer_t writer) {
 		DESTROY(line);
 		fclose(writer->sort_stdout);
 		DEBUG(1, true, "closed sort_stdout, read %d objs (lim %ld)\n",
-		      count, query_limit);
+		      count, wp->query_limit);
 		if (waitpid(writer->sort_pid, &status, 0) < 0) {
 			perror("waitpid");
 		} else {
@@ -642,15 +647,19 @@ io_drain(void) {
 /* escape -- HTML-encode a string, in place.
  */
 void
-escape(CURL *easy, char **src) {
-	char *escaped = curl_easy_escape(easy, *src, (int)strlen(*src));
+escape(CURL *easy, char **str) {
+	char *escaped;
+
+	if (*str == NULL)
+		return;
+	escaped = curl_easy_escape(easy, *str, (int)strlen(*str));
 	if (escaped == NULL) {
 		fprintf(stderr, "%s: curl_escape(%s) failed\n",
-			program_name, *src);
+			program_name, *str);
 		my_exit(1);
 	}
-	DESTROY(*src);
-	*src = strdup(escaped);
+	DESTROY(*str);
+	*str = strdup(escaped);
 	curl_free(escaped);
 	escaped = NULL;
 }

@@ -397,6 +397,7 @@ tuple_unmake(pdns_tuple_t tup) {
  */
 int
 data_blob(writer_t writer, const char *buf, size_t len) {
+	wparam_ct wp = &writer->params;
 	const char *msg, *whynot;
 	struct pdns_tuple tup;
 	u_long first, last;
@@ -426,14 +427,14 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 	 */
 	whynot = NULL;
 	DEBUG(3, true, "filtering-- ");
-	if (writer->after != 0) {
-		const int first_vs_after = time_cmp(first, writer->after),
-			last_vs_after = time_cmp(last, writer->after);
+	if (wp->after != 0) {
+		const int first_vs_after = time_cmp(first, wp->after),
+			last_vs_after = time_cmp(last, wp->after);
 
 		DEBUG(4, false, "FvA %d LvA %d: ",
 			 first_vs_after, last_vs_after);
 
-		if (complete) {
+		if (wp->complete) {
 			if (first_vs_after < 0) {
 				whynot = "first is too early";
 			}
@@ -443,14 +444,14 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 			}
 		}
 	}
-	if (writer->before != 0) {
-		const int first_vs_before = time_cmp(first, writer->before),
-			last_vs_before = time_cmp(last, writer->before);
+	if (wp->before != 0) {
+		const int first_vs_before = time_cmp(first, wp->before),
+			last_vs_before = time_cmp(last, wp->before);
 
 		DEBUG(4, false, "FvB %d LvB %d: ",
 			 first_vs_before, last_vs_before);
 
-		if (complete) {
+		if (wp->complete) {
 			if (last_vs_before > 0) {
 				whynot = "last is too late";
 			}
@@ -468,8 +469,8 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 	}
 	DEBUG(3, true, "\tF..L = %s", time_str(first, false));
 	DEBUG(3, false, " .. %s\n", time_str(last, false));
-	DEBUG(3, true, "\tA..B = %s", time_str(writer->after, false));
-	DEBUG(3, false, " .. %s\n", time_str(writer->before, false));
+	DEBUG(3, true, "\tA..B = %s", time_str(wp->after, false));
+	DEBUG(3, false, " .. %s\n", time_str(wp->before, false));
 	if (whynot != NULL)
 		goto next;
 
@@ -482,15 +483,11 @@ data_blob(writer_t writer, const char *buf, size_t len) {
 		 * for all this PDP11-era logic is to avoid
 		 * having to store the full result in memory.
 		 */
-		char *dyn_rrname = NULL, *dyn_rdata = NULL;
-		if (sort_byname) {
-			dyn_rrname = sortable_rrname(&tup);
-			DEBUG(2, true, "dyn_rrname = '%s'\n", dyn_rrname);
-		}
-		if (sort_bydata) {
-			dyn_rdata = sortable_rdata(&tup);
-			DEBUG(2, true, "dyn_rdata = '%s'\n", dyn_rdata);
-		}
+		char *dyn_rrname = sortable_rrname(&tup),
+			*dyn_rdata = sortable_rdata(&tup);
+		
+		DEBUG(3, true, "dyn_rrname = '%s'\n", dyn_rrname);
+		DEBUG(3, true, "dyn_rdata = '%s'\n", dyn_rdata);
 		fprintf(writer->sort_stdin, "%lu %lu %lu %s %s %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,

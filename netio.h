@@ -20,6 +20,18 @@
 #include <stdbool.h>
 #include <curl/curl.h>
 
+/* search parameters, generally per-writer. */
+struct wparam {
+	u_long		after;
+	u_long		before;
+	long		query_limit;
+	long		output_limit;
+	bool		complete;
+	bool		gravel;
+};
+typedef struct wparam *wparam_t;
+typedef const struct wparam *wparam_ct;
+
 /* one API fetch. */
 struct fetch {
 	struct fetch	*next;
@@ -40,8 +52,9 @@ struct query {
 	struct fetch	*fetches;
 	struct writer	*writer;
 	char		*command;
-	char		*info_buf;	// accumulated...
-	size_t		info_len;	// ...info response
+	bool		info;		// if this is set, then...
+	char		*info_buf;	// ...httpdata is accumulated...
+	size_t		info_len;	// ...into the info response
 	char		*status;
 	char		*message;
 	bool		h_sent;
@@ -54,8 +67,7 @@ struct writer {
 	struct writer	*next;
 	struct query	*queries;
 	struct query	*active;
-	u_long		after;
-	u_long		before;
+	struct wparam	params;
 	FILE		*sort_stdin;
 	FILE		*sort_stdout;
 	pid_t		sort_pid;
@@ -67,7 +79,7 @@ typedef struct writer *writer_t;
 void make_curl(void);
 void unmake_curl(void);
 void create_fetch(query_t, char *);
-writer_t writer_init(u_long, u_long);
+writer_t writer_init(wparam_ct);
 void query_status(query_t, const char *, const char *);
 size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 void writer_fini(writer_t);
