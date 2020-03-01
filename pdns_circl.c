@@ -30,7 +30,7 @@ static char *circl_url(const char *, char *, qparam_ct);
 static void circl_auth(fetch_t);
 static const char *circl_status(fetch_t);
 static const char *circl_verb_ok(const char *);
-static void circl_ready(void);
+static const char *circl_ready(void);
 static const char *circl_setenv(const char *, const char *);
 static void circl_destroy(void);
 
@@ -63,8 +63,9 @@ circl_setenv(const char *key, const char *value) {
 	return NULL;
 }
 
-static void
+static const char *
 circl_ready(void) {
+	return NULL;
 }
 
 static void

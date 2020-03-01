@@ -46,7 +46,7 @@ struct pdns_system {
 	const char *	(*status)(fetch_t);
 	const char *	(*verb_ok)(const char *);
 	const char *	(*setenv)(const char *, const char *);
-	void		(*ready)(void);
+	const char *	(*ready)(void);
 	void		(*destroy)(void);
 };
 typedef const struct pdns_system *pdns_system_ct;

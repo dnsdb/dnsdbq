@@ -60,14 +60,18 @@
 #include "globals.h"
 #undef MAIN_PROGRAM
 
+#define QPARAM_GETOPT "A:B:L:l:cg"
+
 /* Forward. */
 
-static void qparam_debug(const char *, qparam_ct);
 static void help(void);
+static pdns_system_ct pick_system(const char *);
+static void qdesc_debug(const char *, qdesc_ct);
+static void qparam_debug(const char *, qparam_ct);
+static __attribute__((noreturn)) void usage(const char *, ...);
 static bool parse_long(const char *, long *);
 static const char *qparam_ready(qparam_t);
 static const char *qparam_option(int, const char *, qparam_t);
-static void server_setup(void);
 static verb_ct find_verb(const char *);
 static void read_configs(void);
 static void do_batch(FILE *, qparam_ct);
@@ -127,18 +131,11 @@ main(int argc, char *argv[]) {
 	if (value != NULL && strcasecmp(value, "iso") == 0)
 		iso8601 = true;
 	pverb = &verbs[DEFAULT_VERB];
-#if WANT_PDNS_DNSDB
-	psys = pdns_dnsdb();
-#elif WANT_PDNS_CIRCL
-	psys = pdns_circl();
-#else
-#error "Must want one PDNS system"
-#endif
+
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "A:B:R:r:N:n:i:l:L:M:u:p:t:b:k:J:O:V:"
-			    "cdfghIjmqSsUv"))
-
+			    "R:r:N:n:i:M:u:p:t:b:k:J:O:V:"
+			    "dfhIjmqSsUv" QPARAM_GETOPT))
 	       != -1)
 	{
 		switch (ch) {
@@ -149,24 +146,20 @@ main(int argc, char *argv[]) {
 				usage(msg);
 			break;
 		case 'R': {
-			const char *p;
-
 			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
 			assert(qd.thing == NULL);
 			qd.mode = raw_rrset_mode;
 
-			p = strchr(optarg, '/');
+			const char *p = strchr(optarg, '/');
 			if (p != NULL) {
 				if (qd.rrtype != NULL ||
 				    qd.bailiwick != NULL)
 					usage("if -b or -t are specified then "
 					      "-R cannot contain a slash");
 
-				const char *q;
-
-				q = strchr(p + 1, '/');
+				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
 					qd.rrtype = strndup(p + 1,
@@ -182,24 +175,20 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'r': {
-			const char *p;
-
 			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
 			assert(qd.thing == NULL);
 			qd.mode = rrset_mode;
 
-			p = strchr(optarg, '/');
+			const char *p = strchr(optarg, '/');
 			if (p != NULL) {
 				if (qd.rrtype != NULL ||
 				    qd.bailiwick != NULL)
 					usage("if -b or -t are specified then "
 					      "-r cannot contain a slash");
 
-				const char *q;
-
-				q = strchr(p + 1, '/');
+				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
 					qd.rrtype = strndup(p + 1,
@@ -215,24 +204,20 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'N': {
-			const char *p;
-
 			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
 			assert(qd.thing == NULL);
 			qd.mode = raw_name_mode;
 
-			p = strchr(optarg, '/');
+			const char *p = strchr(optarg, '/');
 			if (p != NULL) {
 				if (qd.rrtype != NULL ||
 				    qd.bailiwick != NULL)
 					usage("if -b or -t are specified then "
 					      "-N cannot contain a slash");
 
-				const char *q;
-
-				q = strchr(p + 1, '/');
+				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
 					qd.rrtype = strndup(p + 1,
@@ -248,24 +233,20 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'n': {
-			const char *p;
-
 			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
 			assert(qd.thing == NULL);
 			qd.mode = name_mode;
 
-			p = strchr(optarg, '/');
+			const char *p = strchr(optarg, '/');
 			if (p != NULL) {
 				if (qd.rrtype != NULL ||
 				    qd.bailiwick != NULL)
 					usage("if -b or -t are specified then "
 					      "-n cannot contain a slash");
 
-				const char *q;
-
-				q = strchr(p + 1, '/');
+				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
 					qd.rrtype = strndup(p + 1,
@@ -281,14 +262,13 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'i': {
-			const char *p;
-
 			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
 				      "can only appear once");
 			assert(qd.thing == NULL);
 			qd.mode = ip_mode;
-			p = strchr(optarg, '/');
+
+			const char *p = strchr(optarg, '/');
 			if (p != NULL) {
 				qd.thing = strndup(optarg,
 						      (size_t)(p - optarg));
@@ -313,15 +293,7 @@ main(int argc, char *argv[]) {
 				usage("-O must be zero or positive");
 			break;
 		case 'u':
-#if WANT_PDNS_DNSDB
-			if (strcmp(optarg, "dnsdb") == 0)
-				psys = pdns_dnsdb();
-#endif
-#if WANT_PDNS_CIRCL
-			else if (strcmp(optarg, "circl") == 0)
-				psys = pdns_circl();
-#endif
-			else
+			if ((psys = pick_system(optarg)) == NULL)
 				usage("-u must refer to a pdns system");
 			break;
 		case 'U':
@@ -334,11 +306,9 @@ main(int argc, char *argv[]) {
 				presentation = pres_csv;
 			else if (strcasecmp(optarg, "text") == 0 ||
 				 strcasecmp(optarg, "dns") == 0)
-			{
 				presentation = pres_text;
-			} else {
+			else
 				usage("-p must specify json, text, or csv");
-			}
 			break;
 		case 't':
 			if (qd.rrtype != NULL)
@@ -351,11 +321,11 @@ main(int argc, char *argv[]) {
 			qd.bailiwick = strdup(optarg);
 			break;
 		case 'k': {
-			char *saveptr = NULL;
-			const char *tok;
-
 			if (sorting == no_sort)
 				usage("-k must be preceded by -s or -S");
+
+			char *saveptr = NULL;
+			const char *tok;
 			for (tok = strtok_r(optarg, ",", &saveptr);
 			     tok != NULL;
 			     tok = strtok_r(NULL, ",", &saveptr))
@@ -441,17 +411,10 @@ main(int argc, char *argv[]) {
 
 	/* optionally dump program options as interpreted. */
 	if (debug_level >= 1) {
-		if (qd.thing != NULL)
-			debug(true, "thing = '%s'\n", qd.thing);
-		if (qd.rrtype != NULL)
-			debug(true, "type = '%s'\n", qd.rrtype);
-		if (qd.bailiwick != NULL)
-			debug(true, "bailiwick = '%s'\n", qd.bailiwick);
-		if (qd.pfxlen != NULL)
-			debug(true, "pfxlen = '%s'\n", qd.pfxlen);
+		qdesc_debug("main", &qd);
 		qparam_debug("main", &qp);
 		debug(true, "batching=%d, multiple=%d\n",
-		      batching != false, multiple);
+		      batching != false, multiple != false);
 	}
 
 	/* select presenter. */
@@ -469,14 +432,18 @@ main(int argc, char *argv[]) {
 		abort();
 	}
 
+	/* get to final readiness; in particular, get psys set. */
+	if (sorting != no_sort)
+		sort_ready();
+	read_configs();
+	if (psys == NULL)
+		usage("neither " DNSDBQ_SYSTEM " nor -u were specified.");
+
 	/* validate some interrelated options. */
 	if (multiple && batching == batch_none)
 		usage("using -m without -f makes no sense.");
 	if (sorting == no_sort && json_fd == -1 && qp.complete)
 		usage("warning: -A and -B w/o -c or -J reqs -s or -S");
-
-	if (sorting != no_sort)
-		sort_ready();
 	if ((msg = (*pverb->ok)()) != NULL)
 		usage(msg);
 	if ((msg = psys->verb_ok(pverb->name)) != NULL)
@@ -484,6 +451,7 @@ main(int argc, char *argv[]) {
 
 	/* get some input from somewhere, and use it to drive our output. */
 	if (json_fd != -1) {
+		/* read a JSON file. */
 		if (qd.mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -J");
 		if (batching != batch_none)
@@ -505,6 +473,7 @@ main(int argc, char *argv[]) {
 		ruminate_json(json_fd, &qp);
 		close(json_fd);
 	} else if (batching != batch_none) {
+		/* drive via a batch file. */
 		if (qd.mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -f");
 		if (qd.bailiwick != NULL)
@@ -513,11 +482,13 @@ main(int argc, char *argv[]) {
 			usage("can't mix -t with -f");
 		if (info)
 			usage("can't mix -I with -f");
-		server_setup();
+		if ((msg = psys->ready()) != NULL)
+			usage(msg);
 		make_curl();
 		do_batch(stdin, &qp);
 		unmake_curl();
 	} else if (info) {
+		/* use the "info" verb. */
 		if (qd.mode != no_mode)
 			usage("can't mix -n, -r, -i, or -R with -I");
 		if (presentation != pres_text && presentation != pres_json)
@@ -528,13 +499,13 @@ main(int argc, char *argv[]) {
 			usage("can't mix -t with -I");
 		if (psys->info_req == NULL || psys->info_blob == NULL)
 			usage("there is no 'info' for this service");
-		server_setup();
+		if ((msg = psys->ready()) != NULL)
+			usage(msg);
 		make_curl();
 		psys->info_req();
 		unmake_curl();
 	} else {
-		writer_t writer;
-
+		/* do a LHS or RHS lookup of some kind. */
 		if (qd.mode == no_mode)
 			usage("must specify -r, -n, -i, or -R"
 			      " unless -f or -J is used");
@@ -551,9 +522,10 @@ main(int argc, char *argv[]) {
 		if (qd.mode == ip_mode && qd.rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		server_setup();
+		if ((msg = psys->ready()) != NULL)
+			usage(msg);
 		make_curl();
-		writer = writer_init(qp.output_limit);
+		writer_t writer = writer_init(qp.output_limit);
 		(void) query_launcher(&qd, &qp, writer);
 		io_engine(0);
 		writer_fini(writer);
@@ -561,7 +533,7 @@ main(int argc, char *argv[]) {
 		unmake_curl();
 	}
 
-	/* clean up and go. */
+	/* clean up and go home. */
 	DESTROY(qd.thing);
 	DESTROY(qd.rrtype);
 	DESTROY(qd.bailiwick);
@@ -569,40 +541,61 @@ main(int argc, char *argv[]) {
 	my_exit(exit_code);
 }
 
-/* Private. */
+/* debug -- at the moment, dump to stderr.
+ */
+void
+debug(bool want_header, const char *fmtstr, ...) {
+	va_list ap;
 
-static void
-qparam_debug(const char *where, qparam_ct qpp) {
-	debug(true, "qparam(%s)[", where);
-	const char *sep = "\040";
-	if (qpp->after != 0) {
-		debug(false, "%s-A%ld(%s)",
-		      sep, qpp->after, time_str(qpp->after, false));
-		sep = "\n\t";
-	}
-	if (qpp->before != 0) {
-		debug(false, "%s-B%ld(%s)",
-		      sep, qpp->before, time_str(qpp->before, false));
-		sep = "\n\t";
-	}
-	if (qpp->query_limit != -1) {
-		debug(false, "%s-l%ld", sep, qpp->query_limit);
-		sep = "\040";
-	}
-	if (qpp->output_limit != -1) {
-		debug(false, "%s-L%ld", sep, qpp->output_limit);
-		sep = "\040";
-	}
-	if (qpp->complete) {
-		debug(false, "%s-c", sep);
-		sep = "\040";
-	}
-	if (qpp->gravel) {
-		debug(false, "%s-g", sep);
-		sep = "\040";
-	}
-	debug(false, "\040]\n");
+	va_start(ap, fmtstr);
+	if (want_header)
+		fputs("debug: ", stderr);
+	vfprintf(stderr, fmtstr, ap);
+	va_end(ap);
 }
+
+/* my_exit -- close or destroy global objects, then exit.
+ */
+__attribute__((noreturn)) void
+my_exit(int code) {
+	/* writers and readers which are still known, must be freed. */
+	unmake_writers();
+
+	/* if curl is operating, it must be shut down. */
+	unmake_curl();
+
+	/* globals which may have been initialized, are to be freed. */
+	psys->destroy();
+
+	/* sort key specifications and computations, are to be freed. */
+	sort_destroy();
+
+	/* terminate process. */
+	DEBUG(1, true, "about to call exit(%d)\n", code);
+	exit(code);
+}
+
+/* my_panic -- display an error on diagnostic output stream, exit ungracefully
+ */
+__attribute__((noreturn)) void
+my_panic(bool want_perror, const char *s) {
+	fprintf(stderr, "%s: ", program_name);
+	if (want_perror)
+		perror(s);
+	else
+		fprintf(stderr, "%s\n", s);
+	my_exit(1);
+}
+
+/* or_else -- return one pointer or else the other. */
+const char *
+or_else(const char *p, const char *or_else) {
+	if (p != NULL)
+		return p;
+	return or_else;
+}
+
+/* Private. */
 
 /* help -- display a brief usage-help text; then exit.
  *
@@ -668,24 +661,86 @@ help(void) {
 	printf("\nTry   man %s  for full documentation.\n", program_name);
 }
 
-/* debug -- at the moment, dump to stderr.
- */
-void
-debug(bool want_header, const char *fmtstr, ...) {
-	va_list ap;
+static pdns_system_ct
+pick_system(const char *name) {
+#if WANT_PDNS_DNSDB
+	if (strcmp(name, "dnsdb") == 0)
+		return pdns_dnsdb();
+#endif
+#if WANT_PDNS_CIRCL
+	if (strcmp(name, "circl") == 0)
+		return pdns_circl();
+#endif
+	return NULL;
+}
 
-	va_start(ap, fmtstr);
-	if (want_header)
-		fputs("debug: ", stderr);
-	vfprintf(stderr, fmtstr, ap);
-	va_end(ap);
-}	
+/* qdesc_debug -- dump a qdesc.
+ */
+static void
+qdesc_debug(const char *where, qdesc_ct qdp) {
+	debug(true, "qdesc(%s)[", where);
+
+	const char *sep = "\040";
+	if (qdp->thing != NULL) {
+		debug(true, "%sth '%s'", sep, qdp->thing);
+		sep = ",\040";
+	}
+	if (qdp->rrtype != NULL) {
+		debug(true, "%srr '%s'\n", sep, qdp->rrtype);
+		sep = ",\040";
+	}
+	if (qdp->bailiwick != NULL) {
+		debug(true, "%sbw '%s'\n", sep, qdp->bailiwick);
+		sep = ",\040";
+	}
+	if (qdp->pfxlen != NULL) {
+		debug(true, "%spfx '%s'\n", sep, qdp->pfxlen);
+		sep = ",\040";
+	}
+	debug(false, " ]\n");
+}
+
+/* qparam_debug -- dump a qparam.
+ */
+static void
+qparam_debug(const char *where, qparam_ct qpp) {
+	debug(true, "qparam(%s)[", where);
+
+	const char *sep = "\040";
+	if (qpp->after != 0) {
+		debug(false, "%s-A%ld(%s)",
+		      sep, qpp->after, time_str(qpp->after, false));
+		sep = "\n\t";
+	}
+	if (qpp->before != 0) {
+		debug(false, "%s-B%ld(%s)",
+		      sep, qpp->before, time_str(qpp->before, false));
+		sep = "\n\t";
+	}
+	if (qpp->query_limit != -1) {
+		debug(false, "%s-l%ld", sep, qpp->query_limit);
+		sep = "\040";
+	}
+	if (qpp->output_limit != -1) {
+		debug(false, "%s-L%ld", sep, qpp->output_limit);
+		sep = "\040";
+	}
+	if (qpp->complete) {
+		debug(false, "%s-c", sep);
+		sep = "\040";
+	}
+	if (qpp->gravel) {
+		debug(false, "%s-g", sep);
+		sep = "\040";
+	}
+	debug(false, "\040]\n");
+}
 
 /* usage -- display a usage error message, brief usage help text; then exit.
  *
  * this goes to stderr in case stdout has been piped or redirected.
  */
-__attribute__((noreturn)) void
+static __attribute__((noreturn)) void
 usage(const char *fmtstr, ...) {
 	va_list ap;
 
@@ -698,47 +753,6 @@ usage(const char *fmtstr, ...) {
 		"try   %s -h   for a short description of program usage.\n",
 		program_name);
 	my_exit(1);
-}
-
-/* my_exit -- close or destroy global objects, then exit.
- */
-__attribute__((noreturn)) void
-my_exit(int code) {
-	/* writers and readers which are still known, must be freed. */
-	unmake_writers();
-
-	/* if curl is operating, it must be shut down. */
-	unmake_curl();
-
-	/* globals which may have been initialized, are to be freed. */
-	psys->destroy();
-
-	/* sort key specifications and computations, are to be freed. */
-	sort_destroy();
-
-	/* terminate process. */
-	DEBUG(1, true, "about to call exit(%d)\n", code);
-	exit(code);
-}
-
-/* my_panic -- display an error on diagnostic output stream, exit ungracefully
- */
-__attribute__((noreturn)) void
-my_panic(bool want_perror, const char *s) {
-	fprintf(stderr, "%s: ", program_name);
-	if (want_perror)
-		perror(s);
-	else
-		fprintf(stderr, "%s\n", s);
-	my_exit(1);
-}
-
-/* or_else -- return one pointer or else the other. */
-const char *
-or_else(const char *p, const char *or_else) {
-	if (p != NULL)
-		return p;
-	return or_else;
 }
 
 /* parse a base 10 long value.	Return true if ok, else return false.
@@ -842,14 +856,6 @@ find_verb(const char *option) {
 	return (NULL);
 }
 
-/* server_setup -- learn the server name and API key by various means.
- */
-static void
-server_setup(void) {
-	read_configs();
-	psys->ready();
-}
-
 /* read_configs -- try to find a config file in static path, then parse it.
  */
 static void
@@ -877,8 +883,11 @@ read_configs(void) {
 
 		x = asprintf(&cmd,
 			     ". %s;"
+			     "echo dnsdbq system $" DNSDBQ_SYSTEM ";"
+#if WANT_PDNS_DNSDB
 			     "echo dnsdb apikey $APIKEY;"
 			     "echo dnsdb server $DNSDB_SERVER;"
+#endif
 #if WANT_PDNS_CIRCL
 			     "echo circl apikey $CIRCL_AUTH;"
 			     "echo circl server $CIRCL_SERVER;"
@@ -920,15 +929,47 @@ read_configs(void) {
 					program_name, l);
 				my_exit(1);
 			}
-			if (strcmp(tok1, psys->name) != 0 ||
-			    tok3 == NULL || *tok3 == '\0')
+			if (tok3 == NULL || *tok3 == '\0') {
+				/* variable wasn't set, ignore the line. */
 				continue;
+			}
 
-			DEBUG(1, true, "line #%d: sets %s|%s|%s\n",
-			      l, tok1, tok2,
-			      strcmp(tok2, "apikey") == 0 ? "..." : tok3);
-			if ((msg = psys->setenv(tok2, tok3)) != NULL)
-				usage(msg);
+			/* some env/conf variables are dnsdbq-specific. */
+			if (strcmp(tok1, "dnsdbq") == 0) {
+				/* env/config psys does not override -u. */
+				if (psys == NULL &&
+				    strcmp(tok2, "system") == 0)
+				{
+					psys = pick_system(tok3);
+					if (psys == NULL) {
+						fprintf(stderr,
+							"%s: unknown %s %s\n",
+							program_name,
+							DNSDBQ_SYSTEM,
+							tok3);
+						my_exit(1);
+					}
+				}
+				continue;
+			}
+
+			/* this is the last point where psys can be null. */
+			if (psys == NULL) {
+				/* first match wins and is sticky. */
+				if ((psys = pick_system(tok1)) == NULL)
+					continue;
+				DEBUG(1, true, "picked system %s\n", tok1);
+			}
+
+			/* if this variable is for this system, consume it. */
+			if (strcmp(tok1, psys->name) == 0) {
+				DEBUG(1, true, "line #%d: sets %s|%s|%s\n",
+				      l, tok1, tok2,
+				      strcmp(tok2, "apikey") == 0
+				      	? "..." : tok3);
+				if ((msg = psys->setenv(tok2, tok3)) != NULL)
+					usage(msg);
+			}
 		}
 		DESTROY(line);
 		pclose(f);
@@ -960,7 +1001,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 		nl = strchr(command, '\n');
 		if (nl != NULL)
 			*nl = '\0';
-		
+
 		DEBUG(1, true, "do_batch(%s)\n", command);
 
 		/* if this is a $OPTIONS, parse it and change our qparams. */
@@ -1024,7 +1065,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 		}
 	}
 	DESTROY(command);
-	
+
 	/* if parallelized, run remaining jobs to completion, then finish up.
 	 */
 	if (multiple) {
@@ -1057,7 +1098,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 			continue;
 		*opt++ = tok;
 	}
-	
+
 	/* if no options were specified (e.g., $options\n), restore defaults. */
 	msg = NULL;
 	if ((opt - opts) == 1) {
@@ -1066,7 +1107,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 	} else {
 		/* use getopt() to parse the cracked array. */
 		optind = 1;
-		while ((ch = getopt((int)(opt - opts), opts, "A:B:L:l:cg-"))
+		while ((ch = getopt((int)(opt - opts), opts, QPARAM_GETOPT))
 		       != -1)
 		{
 			if ((msg = qparam_option(ch, optarg, options)) != NULL)
@@ -1094,7 +1135,7 @@ batch_parse(char *line, qdesc_t qdp) {
 	struct qdesc qd = (struct qdesc) { };
 	char *saveptr = NULL;
 	char *t;
-	
+
 	if ((t = strtok_r(line, "/", &saveptr)) == NULL)
 		return "too few terms";
 	if (strcmp(t, "rrset") == 0) {

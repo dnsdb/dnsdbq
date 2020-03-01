@@ -58,7 +58,6 @@ EXTERN	int exit_code			INIT(0);
 #undef EXTERN
 
 void debug(bool, const char *, ...);
-__attribute__((noreturn)) void usage(const char *, ...);
 __attribute__((noreturn)) void my_exit(int);
 __attribute__((noreturn)) void my_panic(bool, const char *);
 const char *or_else(const char *, const char *);

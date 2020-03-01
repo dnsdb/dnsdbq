@@ -276,7 +276,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					     message);
 				if (!quiet) {
 					char *url;
-					
+
 					curl_easy_getinfo(fetch->easy,
 							CURLINFO_EFFECTIVE_URL,
 							  &url);

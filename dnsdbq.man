@@ -469,12 +469,20 @@ $ head -1 batch-output.json | jq .
 or
 .Ic /etc/dnsdb-query.conf :
 configuration file which should contain the user's apikey and server URL.
-.Bl -tag -width ".Ev DNSDB_SERVER"
+.Bl -tag -width ".Ev DNSDB_API_KEY , APIKEY"
 .It Ev APIKEY
 contains the user's apikey (no default).
 .It Ev DNSDB_SERVER
 contains the URL of the DNSDB API server (default is https://api.dnsdb.info),
 and optionally the URI prefix for the database (default is "/lookup").
+.It Ev CIRCL_AUTH , CIRCL_SERVER
+enable access to a passive DNS system compatible with the CIRCL.LU system.
+.It Ev DNSDBQ_SYSTEM
+contains the default value for the
+.Ar u
+option described above. Can be "dnsdb" or "circl". If unset,
+.Nm dnsdbq
+will probe for any configured system.
 .El
 .Sh ENVIRONMENT
 The following environment variables affect the execution of
@@ -486,7 +494,7 @@ be used. If neither variable is present, the configuration file is consulted.
 .It Ev DNSDB_SERVER
 contains the URL of the DNSDB API server, and optionally a URI prefix to be
 used (default is "/lookup"). If not set, the configuration file is consulted.
-.It Ev DNSDB_TIME_FORMAT
+.It Ev DNSDBQ_TIME_FORMAT
 controls how human readable date times are displayed.  If "iso" then ISO8601
 (RFC3339) format is used, for example; "2018-09-06T22:48:00Z".  If "csv" then
 an Excel CSV compatible format is used; for example, "2018-09-06 22:48:00".

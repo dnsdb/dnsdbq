@@ -60,7 +60,7 @@ typedef struct rate_tuple *rate_tuple_t;
 /* forwards. */
 
 static const char *dnsdb_setenv(const char *, const char *);
-static void dnsdb_ready(void);
+static const char *dnsdb_ready(void);
 static void dnsdb_destroy(void);
 static char *dnsdb_url(const char *, char *, qparam_ct);
 static void dnsdb_info_req(void);
@@ -119,7 +119,7 @@ dnsdb_setenv(const char *key, const char *value) {
 
 /* dnsdb_ready() -- override the config file from environment variables?
  */
-static void
+static const char *
 dnsdb_ready(void) {
 	const char *value;
 
@@ -135,7 +135,8 @@ dnsdb_ready(void) {
 	if (dnsdb_base_url == NULL)
 		dnsdb_base_url = strdup(psys->base_url);
 	if (api_key == NULL)
-		usage("no API key given");
+		return "no API key given";
+	return NULL;
 }
 
 /* dnsdb_destroy() -- drop heap storage
@@ -170,9 +171,6 @@ dnsdb_url(const char *path, char *sep, qparam_ct wpp) {
 	x = 0;
 	for (p = dnsdb_base_url; *p != '\0'; p++)
 		x += (*p == '/');
-	if (x >= 3 && pverb != &verbs[DEFAULT_VERB])
-		usage("Cannot specify a verb other than 'lookup' "
-		      "if the server URL contains a path");
 	verb_path = NULL;
 	if (pverb->url_fragment != NULL)
 		verb_path = pverb->url_fragment;

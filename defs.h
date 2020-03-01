@@ -22,6 +22,7 @@
 #define DEFAULT_SYS 0
 #define DEFAULT_VERB 0
 #define	MAX_JOBS 8
+#define DNSDBQ_SYSTEM "DNSDBQ_SYSTEM"
 
 #define CREATE(p, s) if ((p) != NULL) { my_panic(false, "non-NULL ptr"); } \
 	else if (((p) = malloc(s)) == NULL) { my_panic(true, "malloc"); } \

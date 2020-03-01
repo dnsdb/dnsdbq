@@ -486,7 +486,7 @@ data_blob(query_t query, const char *buf, size_t len) {
 		 */
 		char *dyn_rrname = sortable_rrname(&tup),
 			*dyn_rdata = sortable_rdata(&tup);
-		
+
 		DEBUG(3, true, "dyn_rrname = '%s'\n", dyn_rrname);
 		DEBUG(3, true, "dyn_rdata = '%s'\n", dyn_rdata);
 		fprintf(writer->sort_stdin, "%lu %lu %lu %s %s %*.*s\n",
