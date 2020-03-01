@@ -62,6 +62,7 @@
 
 /* Forward. */
 
+static void qparam_debug(const char *, qparam_ct);
 static void help(void);
 static bool parse_long(const char *, long *);
 static const char *qparam_ready(qparam_t);
@@ -70,14 +71,15 @@ static void server_setup(void);
 static verb_ct find_verb(const char *);
 static void read_configs(void);
 static void do_batch(FILE *, qparam_ct);
+static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
 static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
 static void launch(query_t, u_long, u_long, u_long, u_long);
 static void ruminate_json(int, qparam_ct);
-static void lookup_ready(void);
-static void summarize_ready(void);
+static const char *lookup_ok(void);
+static const char *summarize_ok(void);
 
 /* Constants. */
 
@@ -91,9 +93,9 @@ static const char * const conf_files[] = {
 
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
-	{ "lookup", "/lookup", lookup_ready,
+	{ "lookup", "/lookup", lookup_ok,
 	  present_text_look, present_json, present_csv_look },
-	{ "summarize", "/summarize", summarize_ready,
+	{ "summarize", "/summarize", summarize_ok,
 	  present_text_summ, present_json, present_csv_summ },
 	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
@@ -447,18 +449,7 @@ main(int argc, char *argv[]) {
 			debug(true, "bailiwick = '%s'\n", qd.bailiwick);
 		if (qd.pfxlen != NULL)
 			debug(true, "pfxlen = '%s'\n", qd.pfxlen);
-		if (qp.after != 0)
-			debug(true, "after = %ld : %s\n",
-			      qp.after, time_str(qp.after, false));
-		if (qp.before != 0)
-			debug(true, "before = %ld : ",
-			      qp.before, time_str(qp.before, false));
-		if (qp.query_limit != -1)
-			debug(true, "query_limit = %ld\n",
-			      qp.query_limit);
-		if (qp.output_limit != -1)
-			debug(true, "output_limit = %ld\n",
-			      qp.output_limit);
+		qparam_debug("main", &qp);
 		debug(true, "batching=%d, multiple=%d\n",
 		      batching != false, multiple);
 	}
@@ -486,7 +477,8 @@ main(int argc, char *argv[]) {
 
 	if (sorting != no_sort)
 		sort_ready();
-	(*pverb->ready)();
+	if ((msg = (*pverb->ok)()) != NULL)
+		usage(msg);
 	if ((msg = psys->verb_ok(pverb->name)) != NULL)
 		usage(msg);
 
@@ -578,6 +570,39 @@ main(int argc, char *argv[]) {
 }
 
 /* Private. */
+
+static void
+qparam_debug(const char *where, qparam_ct qpp) {
+	debug(true, "qparam(%s)[", where);
+	const char *sep = "\040";
+	if (qpp->after != 0) {
+		debug(false, "%s-A%ld(%s)",
+		      sep, qpp->after, time_str(qpp->after, false));
+		sep = "\n\t";
+	}
+	if (qpp->before != 0) {
+		debug(false, "%s-B%ld(%s)",
+		      sep, qpp->before, time_str(qpp->before, false));
+		sep = "\n\t";
+	}
+	if (qpp->query_limit != -1) {
+		debug(false, "%s-l%ld", sep, qpp->query_limit);
+		sep = "\040";
+	}
+	if (qpp->output_limit != -1) {
+		debug(false, "%s-L%ld", sep, qpp->output_limit);
+		sep = "\040";
+	}
+	if (qpp->complete) {
+		debug(false, "%s-c", sep);
+		sep = "\040";
+	}
+	if (qpp->gravel) {
+		debug(false, "%s-g", sep);
+		sep = "\040";
+	}
+	debug(false, "\040]\n");
+}
 
 /* help -- display a brief usage-help text; then exit.
  *
@@ -736,7 +761,7 @@ parse_long(const char *in, long *out) {
 	return true;
 }
 
-/* qparam_ready -- check and possibly adjust the contents of a wparam.
+/* qparam_ready -- check and possibly adjust the contents of a qparam.
  */
 static const char *
 qparam_ready(qparam_t qpp) {
@@ -751,7 +776,7 @@ qparam_ready(qparam_t qpp) {
 	return NULL;
 }
 
-/* qparam_option -- process one command line option related to a wparam
+/* qparam_option -- process one command line option related to a qparam
  */
 static const char *
 qparam_option(int opt, const char *arg, qparam_t qpp) {
@@ -784,23 +809,25 @@ qparam_option(int opt, const char *arg, qparam_t qpp) {
 	return NULL;
 }
 
-/* lookup_ready -- validate command line options for 'lookup'.
+/* lookup_ok -- validate command line options for 'lookup'.
  */
-static void
-lookup_ready(void) {
+static const char *
+lookup_ok(void) {
 	/* TODO too many local variables would need to be global to check
 	 * more here.
 	 */
 	if (max_count > 0)
-		usage("max_count only allowed for a summarize verb");
+		return "max_count only allowed for a summarize verb";
+	return NULL;
 }
 
-/* summarize_ready -- validate commandline options for 'summarize'.
+/* summarize_ok -- validate commandline options for 'summarize'.
  */
-static void
-summarize_ready(void) {
+static const char *
+summarize_ok(void) {
 	if (sorting != no_sort)
-		usage("Sorting with a summarize verb makes no sense");
+		return "Sorting with a summarize verb makes no sense";
+	return NULL;
 }
 
 /* find_verb -- locate a verb by option parameter
@@ -914,14 +941,15 @@ read_configs(void) {
  * the 'after' and 'before' arguments are from -A and -B and are defaults.
  */
 static void
-do_batch(FILE *f, qparam_ct wp) {
+do_batch(FILE *f, qparam_ct qpp) {
+	struct qparam qp = *qpp;
 	writer_t writer = NULL;
 	char *command = NULL;
 	size_t n = 0;
 
 	/* if doing multiple upstreams, start a writer. */
 	if (multiple)
-		writer = writer_init(wp->output_limit);
+		writer = writer_init(qp.output_limit);
 
 	while (getline(&command, &n, f) > 0) {
 		const char *msg;
@@ -935,18 +963,29 @@ do_batch(FILE *f, qparam_ct wp) {
 		
 		DEBUG(1, true, "do_batch(%s)\n", command);
 
+		/* if this is a $OPTIONS, parse it and change our qparams. */
+		if (strncasecmp(command, "$options",
+				(sizeof "$options") - 1) == 0)
+		{
+			if ((msg = batch_options(command, &qp, qpp)) != NULL)
+				fprintf(stderr, "%s: warning: "
+					"batch option parse error: %s\n",
+					program_name, msg);
+			continue;
+		}
+
 		/* if not parallelizing, start a writer here instead. */
 		if (!multiple)
-			writer = writer_init(wp->output_limit);
+			writer = writer_init(qp.output_limit);
 
 		/* crack the batch line if possible. */
 		msg = batch_parse(command, &qd);
 		if (msg != NULL) {
-			fprintf(stderr, "%s: batch line parse error: %s\n",
+			fprintf(stderr, "%s: batch entry parse error: %s\n",
 				program_name, msg);
 		} else {
 			/* start one or two curl jobs based on this search. */
-			query_t query = query_launcher(&qd, wp, writer);
+			query_t query = query_launcher(&qd, &qp, writer);
 
 			/* if merging, drain some jobs; else, drain all jobs.
 			 */
@@ -993,6 +1032,59 @@ do_batch(FILE *f, qparam_ct wp) {
 		writer_fini(writer);
 		writer = NULL;
 	}
+}
+
+/* batch_options -- parse a $OPTIONS line out of a batch file.
+ */
+static const char *
+batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
+	char **opts = calloc(strlen(optstr) + 1, sizeof(char *));
+	struct qparam save = *options;
+	char **opt = opts;
+	const char *msg;
+	char *tok;
+	int ch;
+
+	char *temp = strdup(optstr);
+	char *saveptr = NULL;
+	/* crack the option string based on space or tab delimiters. */
+	for (tok = strtok_r(temp, "\040\t", &saveptr);
+	     tok != NULL;
+	     tok = strtok_r(NULL, "\040\t", &saveptr))
+	{
+		/* dispense with extra spaces and tabs (empty fields). */
+		if (*tok == '\0')
+			continue;
+		*opt++ = tok;
+	}
+	
+	/* if no options were specified (e.g., $options\n), restore defaults. */
+	msg = NULL;
+	if ((opt - opts) == 1) {
+		DEBUG(2, true, "default options restored\n");
+		*options = *dflt;
+	} else {
+		/* use getopt() to parse the cracked array. */
+		optind = 1;
+		while ((ch = getopt((int)(opt - opts), opts, "A:B:L:l:cg-"))
+		       != -1)
+		{
+			if ((msg = qparam_option(ch, optarg, options)) != NULL)
+				break;
+		}
+	}
+	/* if an error occured, reset options to saved values. */
+	if (msg != NULL) {
+		*options = save;
+	} else {
+		/* otherwise consider reporting the new options. */
+		if (debug_level >= 1)
+			qparam_debug("batch", options);
+	}
+	/* done. */
+	DESTROY(opts);
+	DESTROY(temp);
+	return msg;
 }
 
 /* batch_parse -- turn one line from a -f batch into a (struct query).
@@ -1292,17 +1384,17 @@ launch(query_t query,
 /* ruminate_json -- process a json file from the filesys rather than the API.
  */
 static void
-ruminate_json(int json_fd, qparam_ct wp) {
+ruminate_json(int json_fd, qparam_ct qpp) {
 	fetch_t fetch = NULL;
 	query_t query = NULL;
 	void *buf = NULL;
 	writer_t writer;
 	ssize_t len;
 
-	writer = writer_init(wp->output_limit);
+	writer = writer_init(qpp->output_limit);
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
-	query->params = *wp;
+	query->params = *qpp;
 	CREATE(fetch, sizeof(struct fetch));
 	fetch->query = query;
 	query->fetches = fetch;

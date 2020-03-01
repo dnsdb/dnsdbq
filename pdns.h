@@ -56,7 +56,7 @@ typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
 struct verb {
 	const char	*name;
 	const char	*url_fragment;
-	void		(*ready)(void);
+	const char *	(*ok)(void);
 	present_t	text, json, csv;
 };
 typedef const struct verb *verb_ct;

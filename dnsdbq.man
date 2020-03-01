@@ -131,7 +131,13 @@ Rdata (IP address) query:
 .It
 Rdata (raw) query:
 .Ic rdata/raw/HEX[/RRTYPE]
+.It
+.Ic $OPTIONS [-A ts] [-B ts] [-l max] [-L max] [-c] [-g]
 .El
+.Pp
+The $OPTIONS allows several command line options to be changed mid-batch.
+If no options are given, the query parameters will be reset to those given
+on the command line, if any.
 .Pp
 For raw queries, the HEX value is an even number of hexadecimal digits
 specifying a raw octet string.  The "raw" wire-format encodings are
