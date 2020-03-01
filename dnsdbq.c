@@ -1106,7 +1106,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 		*options = *dflt;
 	} else {
 		/* use getopt() to parse the cracked array. */
-		optind = 1;
+		optind = 0;
 		while ((ch = getopt((int)(opt - opts), opts, QPARAM_GETOPT))
 		       != -1)
 		{
