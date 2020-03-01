@@ -230,7 +230,7 @@ dnsdb_info_req(void) {
 	DEBUG(1, true, "dnsdb_info_req()\n");
 
 	/* start a writer, which might be format functions, or POSIX sort. */
-	writer = writer_init(empty.output_limit);
+	writer = writer_init(qparam_empty.output_limit);
 
 	/* create a rump query. */
 	CREATE(query, sizeof(struct query));
@@ -240,7 +240,7 @@ dnsdb_info_req(void) {
 	writer->queries = query;
 
 	/* start a status fetch. */
-	create_fetch(query, dnsdb_url(query->command, NULL, &empty));
+	create_fetch(query, dnsdb_url(query->command, NULL, &qparam_empty));
 
 	/* run all jobs to completion. */
 	io_engine(0);
