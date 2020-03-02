@@ -113,7 +113,7 @@ static size_t ideal_buffer;
 int
 main(int argc, char *argv[]) {
 	struct qdesc qd = { .mode = no_mode };
-	struct qparam qp = empty;
+	struct qparam qp = qparam_empty;
 	bool info = false;
 	int json_fd = -1;
 	const char *msg;
@@ -565,7 +565,8 @@ my_exit(int code) {
 	unmake_curl();
 
 	/* globals which may have been initialized, are to be freed. */
-	psys->destroy();
+	if (psys != NULL)
+		psys->destroy();
 
 	/* sort key specifications and computations, are to be freed. */
 	sort_destroy();
@@ -1294,6 +1295,7 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
+	query->params = *qpp;
 	writer = NULL;
 	query->next = query->writer->queries;
 	query->writer->queries = query;
