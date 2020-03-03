@@ -31,7 +31,7 @@ static void circl_auth(fetch_t);
 static const char *circl_status(fetch_t);
 static const char *circl_verb_ok(const char *);
 static const char *circl_ready(void);
-static const char *circl_setenv(const char *, const char *);
+static const char *circl_setval(const char *, const char *);
 static void circl_destroy(void);
 
 static char *circl_base_url = NULL;
@@ -41,7 +41,7 @@ static const struct pdns_system circl = {
 	"circl", "https://www.circl.lu/pdns/query",
 	circl_url, NULL, NULL,
 	circl_auth, circl_status, circl_verb_ok,
-	circl_setenv, circl_ready, circl_destroy
+	circl_setval, circl_ready, circl_destroy
 };
 
 pdns_system_ct
@@ -50,7 +50,7 @@ pdns_circl(void) {
 }
 
 static const char *
-circl_setenv(const char *key, const char *value) {
+circl_setval(const char *key, const char *value) {
 	if (strcmp(key, "apikey") == 0) {
 		DESTROY(circl_authinfo);
 		circl_authinfo = strdup(value);
@@ -58,7 +58,7 @@ circl_setenv(const char *key, const char *value) {
 		DESTROY(circl_base_url);
 		circl_base_url = strdup(value);
 	} else {
-		return "circl_setenv() unrecognized key";
+		return "circl_setval() unrecognized key";
 	}
 	return NULL;
 }

@@ -37,16 +37,43 @@ typedef struct pdns_tuple *pdns_tuple_t;
 typedef const struct pdns_tuple *pdns_tuple_ct;
 
 struct pdns_system {
+	/* name of this pdns system, as specifiable by the user. */
 	const char	*name;
+	/* default URL to reach this pdns API endpoint.	 May be overridden. */
 	const char	*base_url;
+	/* start creating a URL corresponding to a command-path string.
+	 * first argument is the input URL path.
+	 * second is an output parameter pointing to the separator character
+	 * (? or &) that the caller should use between any further URL
+	 * parameters.	May be NULL if the caller doesn't care.
+	 * the third argument is search parameters.
+	 */
 	char *		(*url)(const char *, char *, qparam_ct);
+	/* send a request for info, such as quota information.
+	 * may be NULL if not supported.
+	 */
 	void		(*info_req)(void);
-	int		(*info_blob)(const char *, size_t);
+	/* display info from the JSON block we read from the API.
+	 * may be NULL if not supported.
+	 */
+	void		(*info_blob)(const char *, size_t);
+	/* add authentication information to the fetch request being created. */
 	void		(*auth)(fetch_t);
+	/* map a return code from a fetch into a static error message. */
 	const char *	(*status)(fetch_t);
+	/* verify that the specified verb is supported by this pdns system.
+	 * Returns NULL if supported; otherwise returns a static error message.
+	 */
 	const char *	(*verb_ok)(const char *);
-	const char *	(*setenv)(const char *, const char *);
+	/* set a configuration key-value pair.	Returns NULL if ok;
+	 * otherwise returns a static error message.
+	 */
+	const char *	(*setval)(const char *, const char *);
+	/* check if ready with enough config settings to try API queries.
+	 * Returns NULL if ready; otherwise returns a static error message.
+	 */
 	const char *	(*ready)(void);
+	/* drop heap storage. */
 	void		(*destroy)(void);
 };
 typedef const struct pdns_system *pdns_system_ct;
@@ -56,14 +83,19 @@ typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
 struct verb {
 	const char	*name;
 	const char	*url_fragment;
+	/* review the command line options for constraints being met.
+	 * Returns NULL if ok; otherwise returns a static error message.
+	 */
 	const char *	(*ok)(void);
 	present_t	text, json, csv;
 };
 typedef const struct verb *verb_ct;
 
+/* a query mode.  Not all pdns systems support all of these. */
 typedef enum { no_mode = 0, rrset_mode, name_mode, ip_mode,
 	       raw_rrset_mode, raw_name_mode } mode_e;
 
+/* query parameters descriptor. */
 struct qdesc {
 	mode_e	mode;
 	char	*thing;

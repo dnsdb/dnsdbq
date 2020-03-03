@@ -35,11 +35,14 @@ extern char **environ;
 static struct sortkey keys[MAX_KEYS];
 static int nkeys = 0;
 
-/* sort_ready -- finish initializing the sort related metadata
+/* sort_ready -- finish initializing the sort related metadata.
+ *
+ * If sorting, all keys must be specified, to enable -u.
+ * This adds every possible sort key, ignoring any errors from adding
+ * a key in case the key was already added as specified by the user.
  */
 void
 sort_ready(void) {
-	/* if sorting, all keys must be specified, to enable -u. */
 	(void) add_sort_key("first");
 	(void) add_sort_key("last");
 	(void) add_sort_key("count");
@@ -48,24 +51,26 @@ sort_ready(void) {
 }
 
 /* add_sort_key -- add a key for use by POSIX sort.
+ *
+ * Returns NULL if no error, otherwise a static error message.
  */
 const char *
-add_sort_key(const char *tok) {
+add_sort_key(const char *keyName) {
 	const char *key = NULL;
 	char *computed;
 	int x;
 
 	if (nkeys == MAX_KEYS)
 		return ("too many sort keys given.");
-	if (strcasecmp(tok, "first") == 0)
+	if (strcasecmp(keyName, "first") == 0)
 		key = "-k1n";
-	else if (strcasecmp(tok, "last") == 0)
+	else if (strcasecmp(keyName, "last") == 0)
 		key = "-k2n";
-	else if (strcasecmp(tok, "count") == 0)
+	else if (strcasecmp(keyName, "count") == 0)
 		key = "-k3n";
-	else if (strcasecmp(tok, "name") == 0)
+	else if (strcasecmp(keyName, "name") == 0)
 		key = "-k4";
-	else if (strcasecmp(tok, "data") == 0)
+	else if (strcasecmp(keyName, "data") == 0)
 		key = "-k5";
 	else
 		return "key must be one of first, last, count, name, or data";
@@ -73,18 +78,18 @@ add_sort_key(const char *tok) {
 		     sorting == reverse_sort ? "r" : "");
 	if (x < 0)
 		my_panic(true, "asprintf");
-	keys[nkeys++] = (struct sortkey){strdup(tok), computed};
+	keys[nkeys++] = (struct sortkey){strdup(keyName), computed};
 	return (NULL);
 }
 
 /* find_sort_key -- return pointer to a sort key, or NULL if it's not specified
  */
 sortkey_ct
-find_sort_key(const char *tok) {
+find_sort_key(const char *keyName) {
 	int n;
 
 	for (n = 0; n < nkeys; n++) {
-		if (strcmp(keys[n].specified, tok) == 0)
+		if (strcmp(keys[n].specified, keyName) == 0)
 			return (&keys[n]);
 	}
 	return (NULL);
@@ -218,6 +223,8 @@ sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
 	}
 }
 
+/* sortable_hexify -- convert src into hex string in buffer
+ */
 void
 sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
 	size_t i;

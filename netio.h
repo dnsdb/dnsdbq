@@ -56,10 +56,11 @@ struct query {
 	bool		info;		// if this is set, then...
 	char		*info_buf;	// ...httpdata is accumulated...
 	size_t		info_len;	// ...into the info response
+	/* invariant: (status == NULL) == (writer == NULL) */
 	char		*status;
 	char		*message;
-	bool		h_sent;
-	bool		e_sent;
+	bool		hdr_sent;
+	bool		set_query_status;
 };
 typedef struct query *query_t;
 

@@ -968,7 +968,8 @@ read_configs(void) {
 				      l, tok1, tok2,
 				      strcmp(tok2, "apikey") == 0
 				      	? "..." : tok3);
-				if ((msg = psys->setenv(tok2, tok3)) != NULL)
+				msg = psys->setval(tok2, tok3);
+				if (msg != NULL)
 					usage(msg);
 			}
 		}
@@ -1455,4 +1456,3 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	writer_fini(writer);
 	writer = NULL;
 }
-

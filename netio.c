@@ -215,6 +215,12 @@ query_status(query_t query, const char *status, const char *message) {
 }
 
 /* writer_func -- process a block of json text, from filesys or API socket.
+ *
+ * This function's signature must conform to write_callback() in
+ * CURLOPT_WRITEFUNCTION.
+ * Returns the number of bytes actually taken care of or returns
+ * CURL_WRITEFUNC_PAUSE to pause this query's connection until
+ * curl_easy_pause(..., CURLPAUSE_CONT) is called.
  */
 size_t
 writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
@@ -245,10 +251,9 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				return CURL_WRITEFUNC_PAUSE;
 			}
 		}
-		if (!query->h_sent) {
-			if (batching == batch_verbose)
-				printf("++ %s\n", query->command);
-			query->h_sent = true;
+		if (!query->hdr_sent) {
+			printf("++ %s\n", query->command);
+			query->hdr_sent = true;
 		}
 	}
 
@@ -266,11 +271,12 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					  &fetch->rcode);
 		if (fetch->rcode != 200) {
 			char *message = strndup(fetch->buf, fetch->len);
+			/* only report the first line of data */
 			char *eol = strpbrk(message, "\r\n");
 			if (eol != NULL)
 				*eol = '\0';
 
-			if (!query->e_sent) {
+			if (!query->set_query_status) {
 				query_status(query,
 					     psys->status(fetch),
 					     message);
@@ -286,7 +292,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 						program_name, fetch->rcode,
 						url);
 				}
-				query->e_sent = true;
+				query->set_query_status = true;
 			}
 			if (!quiet)
 				fprintf(stderr, "%s: warning: libcurl: [%s]\n",

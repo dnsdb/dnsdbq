@@ -59,12 +59,12 @@ typedef struct rate_tuple *rate_tuple_t;
 
 /* forwards. */
 
-static const char *dnsdb_setenv(const char *, const char *);
+static const char *dnsdb_setval(const char *, const char *);
 static const char *dnsdb_ready(void);
 static void dnsdb_destroy(void);
 static char *dnsdb_url(const char *, char *, qparam_ct);
 static void dnsdb_info_req(void);
-static int dnsdb_info_blob(const char *, size_t);
+static void dnsdb_info_blob(const char *, size_t);
 static void dnsdb_auth(fetch_t);
 static const char *dnsdb_status(fetch_t);
 static const char *dnsdb_verb_ok(const char *);
@@ -87,7 +87,7 @@ static const struct pdns_system dnsdb = {
 	"dnsdb", "https://api.dnsdb.info",
 	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
 	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
-	dnsdb_setenv, dnsdb_ready, dnsdb_destroy
+	dnsdb_setval, dnsdb_ready, dnsdb_destroy
 };
 
 /*---------------------------------------------------------------- public
@@ -101,10 +101,10 @@ pdns_dnsdb(void) {
 /*---------------------------------------------------------------- private
  */
 
-/* dnsdb_setenv() -- install configuration element
+/* dnsdb_setval() -- install configuration element
  */
 static const char *
-dnsdb_setenv(const char *key, const char *value) {
+dnsdb_setval(const char *key, const char *value) {
 	if (strcmp(key, "apikey") == 0) {
 		DESTROY(api_key);
 		api_key = strdup(value);
@@ -112,7 +112,7 @@ dnsdb_setenv(const char *key, const char *value) {
 		DESTROY(dnsdb_base_url);
 		dnsdb_base_url = strdup(value);
 	} else {
-		return "dnsdb_setenv() unrecognized key";
+		return "dnsdb_setval() unrecognized key";
 	}
 	return NULL;
 }
@@ -124,11 +124,11 @@ dnsdb_ready(void) {
 	const char *value;
 
 	if ((value = getenv(env_api_key)) != NULL) {
-		dnsdb_setenv("apikey", value);
+		dnsdb_setval("apikey", value);
 		DEBUG(1, true, "conf env api_key was set\n");
 	}
 	if ((value = getenv(env_dnsdb_base_url)) != NULL) {
-		dnsdb_setenv("server", value);
+		dnsdb_setval("server", value);
 		DEBUG(1, true, "conf env dnsdb_server = '%s'\n",
 		      dnsdb_base_url);
 	}
@@ -345,7 +345,7 @@ print_burstrate(const char *key,
 
 /* dnsdb_write_info -- assumes that fetch contains the complete JSON block.
  */
-static int
+static void
 dnsdb_info_blob(const char *buf, size_t len) {
 	if (presentation == pres_text) {
 		struct rate_tuple tup;
@@ -372,7 +372,6 @@ dnsdb_info_blob(const char *buf, size_t len) {
 	} else {
 		abort();
 	}
-	return 1;
 }
 
 /* rateval_make: make an optional key value from the json object.
