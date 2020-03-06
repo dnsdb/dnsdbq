@@ -139,6 +139,9 @@ The $OPTIONS allows several command line options to be changed mid-batch.
 If no options are given, the query parameters will be reset to those given
 on the command line, if any.
 .Pp
+Any internal slash (/) or comma (,) characters within the search names
+of a batch entry must be URL-encoded (for example, %2F or %2C).
+.Pp
 For raw queries, the HEX value is an even number of hexadecimal digits
 specifying a raw octet string.  The "raw" wire-format encodings are
 standardized. The embedding of these in dnstable is documented in the
