@@ -276,7 +276,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			if (eol != NULL)
 				*eol = '\0';
 
-			if (!query->set_query_status) {
+			if (!query->status_set) {
 				query_status(query,
 					     psys->status(fetch),
 					     message);
@@ -292,7 +292,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 						program_name, fetch->rcode,
 						url);
 				}
-				query->set_query_status = true;
+				query->status_set = true;
 			}
 			if (!quiet)
 				fprintf(stderr, "%s: warning: libcurl: [%s]\n",

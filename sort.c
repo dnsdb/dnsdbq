@@ -55,22 +55,22 @@ sort_ready(void) {
  * Returns NULL if no error, otherwise a static error message.
  */
 const char *
-add_sort_key(const char *keyName) {
+add_sort_key(const char *key_name) {
 	const char *key = NULL;
 	char *computed;
 	int x;
 
 	if (nkeys == MAX_KEYS)
 		return ("too many sort keys given.");
-	if (strcasecmp(keyName, "first") == 0)
+	if (strcasecmp(key_name, "first") == 0)
 		key = "-k1n";
-	else if (strcasecmp(keyName, "last") == 0)
+	else if (strcasecmp(key_name, "last") == 0)
 		key = "-k2n";
-	else if (strcasecmp(keyName, "count") == 0)
+	else if (strcasecmp(key_name, "count") == 0)
 		key = "-k3n";
-	else if (strcasecmp(keyName, "name") == 0)
+	else if (strcasecmp(key_name, "name") == 0)
 		key = "-k4";
-	else if (strcasecmp(keyName, "data") == 0)
+	else if (strcasecmp(key_name, "data") == 0)
 		key = "-k5";
 	else
 		return "key must be one of first, last, count, name, or data";
@@ -78,18 +78,18 @@ add_sort_key(const char *keyName) {
 		     sorting == reverse_sort ? "r" : "");
 	if (x < 0)
 		my_panic(true, "asprintf");
-	keys[nkeys++] = (struct sortkey){strdup(keyName), computed};
+	keys[nkeys++] = (struct sortkey){strdup(key_name), computed};
 	return (NULL);
 }
 
 /* find_sort_key -- return pointer to a sort key, or NULL if it's not specified
  */
 sortkey_ct
-find_sort_key(const char *keyName) {
+find_sort_key(const char *key_name) {
 	int n;
 
 	for (n = 0; n < nkeys; n++) {
-		if (strcmp(keys[n].specified, keyName) == 0)
+		if (strcmp(keys[n].specified, key_name) == 0)
 			return (&keys[n]);
 	}
 	return (NULL);

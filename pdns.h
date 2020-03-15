@@ -39,8 +39,10 @@ typedef const struct pdns_tuple *pdns_tuple_ct;
 struct pdns_system {
 	/* name of this pdns system, as specifiable by the user. */
 	const char	*name;
+
 	/* default URL to reach this pdns API endpoint.	 May be overridden. */
 	const char	*base_url;
+
 	/* start creating a URL corresponding to a command-path string.
 	 * first argument is the input URL path.
 	 * second is an output parameter pointing to the separator character
@@ -49,30 +51,39 @@ struct pdns_system {
 	 * the third argument is search parameters.
 	 */
 	char *		(*url)(const char *, char *, qparam_ct);
+
 	/* send a request for info, such as quota information.
 	 * may be NULL if not supported.
 	 */
 	void		(*info_req)(void);
+
 	/* display info from the JSON block we read from the API.
 	 * may be NULL if not supported.
 	 */
 	void		(*info_blob)(const char *, size_t);
+
 	/* add authentication information to the fetch request being created. */
 	void		(*auth)(fetch_t);
+
 	/* map a return code from a fetch into a static error message. */
 	const char *	(*status)(fetch_t);
+
 	/* verify that the specified verb is supported by this pdns system.
 	 * Returns NULL if supported; otherwise returns a static error message.
 	 */
 	const char *	(*verb_ok)(const char *);
+
 	/* set a configuration key-value pair.	Returns NULL if ok;
 	 * otherwise returns a static error message.
 	 */
+
 	const char *	(*setval)(const char *, const char *);
+
 	/* check if ready with enough config settings to try API queries.
 	 * Returns NULL if ready; otherwise returns a static error message.
 	 */
 	const char *	(*ready)(void);
+
 	/* drop heap storage. */
 	void		(*destroy)(void);
 };
@@ -91,7 +102,7 @@ struct verb {
 };
 typedef const struct verb *verb_ct;
 
-/* a query mode.  Not all pdns systems support all of these. */
+/* a query mode. not all pdns systems support all of these. */
 typedef enum { no_mode = 0, rrset_mode, name_mode, ip_mode,
 	       raw_rrset_mode, raw_name_mode } mode_e;
 
