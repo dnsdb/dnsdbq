@@ -80,7 +80,7 @@ static const char *batch_parse(char *, qdesc_t);
 static char *makepath(mode_e, const char *, const char *,
 		      const char *, const char *);
 static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
-static void launch(query_t, u_long, u_long, u_long, u_long);
+static void launch(query_t, pdns_fence_ct);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
@@ -1318,12 +1318,16 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	if (qpp->after != 0 && qpp->before != 0) {
 		if (qpp->complete) {
 			/* each db tuple must be enveloped by time fence. */
-			launch(query, qpp->after, 0, 0, qpp->before);
+			launch(query, &(struct pdns_fence){
+				.first_after = qpp->after,
+				.last_before = qpp->before});
 		} else {
 			/* we need tuples that end after fence start... */
-			launch(query, 0, 0, qpp->after, 0);
+			launch(query, &(struct pdns_fence){
+				.last_after = qpp->after});
 			/* ...and that begin before the time fence end. */
-			launch(query, 0, qpp->before, 0, 0);
+			launch(query, &(struct pdns_fence){
+				.first_before = qpp->before});
 			/* and we will filter in reader_func() to
 			 * select only those tuples which either:
 			 * ...(start within), or (end within), or
@@ -1333,22 +1337,26 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	} else if (qpp->after != 0) {
 		if (qpp->complete) {
 			/* each db tuple must begin after the fence-start. */
-			launch(query, qpp->after, 0, 0, 0);
+			launch(query, &(struct pdns_fence){
+				.first_after = qpp->after});
 		} else {
 			/* each db tuple must end after the fence-start. */
-			launch(query, 0, 0, qpp->after, 0);
+			launch(query, &(struct pdns_fence){
+				.last_after = qpp->after});
 		}
 	} else if (qpp->before != 0) {
 		if (qpp->complete) {
 			/* each db tuple must end before the fence-end. */
-			launch(query, 0, 0, 0, qpp->before);
+			launch(query, &(struct pdns_fence){
+				.last_before = qpp->before});
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			launch(query, 0, qpp->before, 0, 0);
+			launch(query, &(struct pdns_fence){
+				.first_before = qpp->before});
 		}
 	} else {
 		/* no time fencing. */
-		launch(query, 0, 0, 0, 0);
+		launch(query, &(pdns_fence_t){});
 	}
 	return query;
 }
@@ -1356,83 +1364,14 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 /* launch -- actually launch a query job, given a command and time fences.
  */
 static void
-launch(query_t query,
-       u_long first_after, u_long first_before,
-       u_long last_after, u_long last_before)
-{
+launch(query_t query, pdns_fence_ct fp) {
 	qparam_ct qpp = &query->params;
-	char *url, *tmp, sep;
-	int x;
+	char *url, sep;
 
-	url = psys->url(query->command, &sep, qpp);
+	url = psys->url(query->command, &sep, qpp, fp);
 	if (url == NULL)
 		my_exit(1);
 
-	if (qpp->query_limit != -1) {
-		x = asprintf(&tmp, "%s%c" "limit=%ld",
-			     url, sep, qpp->query_limit);
-		if (x < 0) {
-			perror("asprintf");
-			DESTROY(url);
-			my_exit(1);
-		}
-		DESTROY(url);
-		url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (first_after != 0) {
-		x = asprintf(&tmp, "%s%c" "time_first_after=%lu",
-			     url, sep, (u_long)first_after);
-		if (x < 0) {
-			perror("asprintf");
-			DESTROY(url);
-			my_exit(1);
-		}
-		DESTROY(url);
-		url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (first_before != 0) {
-		x = asprintf(&tmp, "%s%c" "time_first_before=%lu",
-			     url, sep, (u_long)first_before);
-		if (x < 0) {
-			perror("asprintf");
-			DESTROY(url);
-			my_exit(1);
-		}
-		DESTROY(url);
-		url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (last_after != 0) {
-		x = asprintf(&tmp, "%s%c" "time_last_after=%lu",
-			     url, sep, (u_long)last_after);
-		if (x < 0) {
-			perror("asprintf");
-			DESTROY(url);
-			my_exit(1);
-		}
-		DESTROY(url);
-		url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
-	if (last_before != 0) {
-		x = asprintf(&tmp, "%s%c" "time_last_before=%lu",
-			     url, sep, (u_long)last_before);
-		if (x < 0) {
-			perror("asprintf");
-			DESTROY(url);
-			my_exit(1);
-		}
-		DESTROY(url);
-		url = tmp;
-		tmp = NULL;
-		sep = '&';
-	}
 	DEBUG(1, true, "url [%s]\n", url);
 
 	create_fetch(query, url);

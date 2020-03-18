@@ -62,7 +62,7 @@ typedef struct rate_tuple *rate_tuple_t;
 static const char *dnsdb_setval(const char *, const char *);
 static const char *dnsdb_ready(void);
 static void dnsdb_destroy(void);
-static char *dnsdb_url(const char *, char *, qparam_ct);
+static char *dnsdb_url(const char *, char *, qparam_ct, pdns_fence_ct);
 static void dnsdb_info_req(void);
 static void dnsdb_info_blob(const char *, size_t);
 static void dnsdb_auth(fetch_t);
@@ -155,11 +155,12 @@ dnsdb_destroy(void) {
  * which might have the same JSON output format but a different REST syntax.
  */
 char *
-dnsdb_url(const char *path, char *sep, qparam_ct wpp) {
-	char max_count_if_needed[sizeof "&max_count=##################"] = "";
-	char offset_if_needed[sizeof "&offset=##################"] = "";
+dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
-	char *ret;
+	char *ret = NULL, *max_count_str = NULL, *offset_str = NULL,
+		*first_after_str = NULL, *first_before_str = NULL,
+		*last_after_str = NULL, *last_before_str = NULL,
+		*query_limit_str = NULL;
 	int x;
 
 	/* count the number of slashes in the url, 2 is the base line,
@@ -182,35 +183,81 @@ dnsdb_url(const char *path, char *sep, qparam_ct wpp) {
 	if (strstr(dnsdb_base_url, "://") == NULL)
 		scheme_if_needed = "https://";
 
+	/* handle gravel vs. rocks. */
 	aggr_if_needed = "";
-	if (wpp->gravel)
+	if (qpp->gravel)
 		aggr_if_needed = "&aggr=f";
 
 	if (offset > 0) {
-		x = snprintf(offset_if_needed, sizeof offset_if_needed,
-			     "&offset=%ld", offset);
+		x = asprintf(&offset_str, "&offset=%ld", offset);
 		if (x < 0) {
-			perror("snprintf");
-			ret = NULL;
+			perror("asprintf");
+			goto done;
 		}
 	}
 
 	if (max_count > 0) {
-		x = snprintf(max_count_if_needed, sizeof max_count_if_needed,
-			     "&max_count=%ld", max_count);
+		x = asprintf(&max_count_str, "&max_count=%ld", max_count);
 		if (x < 0) {
-			perror("snprintf");
-			ret = NULL;
+			perror("asprintf");
+			goto done;
 		}
 	}
 
-	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s%s",
+	if (qpp->query_limit != -1) {
+		x = asprintf(&query_limit_str, "&limit=%ld", qpp->query_limit);
+		if (x < 0) {
+			perror("asprintf");
+			goto done;
+		}
+	}
+
+	if (fp->first_after != 0) {
+		x = asprintf(&first_after_str, "&time_first_after=%lu",
+			     fp->first_after);
+		if (x < 0) {
+			perror("asprintf");
+			goto done;
+		}
+	}
+	if (fp->first_before != 0) {
+		x = asprintf(&first_before_str, "&time_first_before=%lu",
+			     fp->first_before);
+		if (x < 0) {
+			perror("asprintf");
+			goto done;
+		}
+	}
+	if (fp->last_after != 0) {
+		x = asprintf(&last_after_str, "&time_last_after=%lu",
+			     fp->last_after);
+		if (x < 0) {
+			perror("asprintf");
+			goto done;
+		}
+	}
+	if (fp->last_before != 0) {
+		x = asprintf(&last_before_str, "&time_last_before=%lu",
+			     fp->last_before);
+		if (x < 0) {
+			perror("asprintf");
+			goto done;
+		}
+	}
+
+	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s%s%s%s%s%s%s",
 		     scheme_if_needed, dnsdb_base_url, verb_path, path,
 		     id_swclient, id_version, aggr_if_needed,
-		     offset_if_needed, max_count_if_needed);
+		     or_else(offset_str, ""),
+		     or_else(max_count_str, ""),
+		     or_else(query_limit_str, ""),
+		     or_else(first_after_str, ""),
+		     or_else(first_before_str, ""),
+		     or_else(last_after_str, ""),
+		     or_else(last_before_str, ""));
 	if (x < 0) {
 		perror("asprintf");
-		ret = NULL;
+		goto done;
 	}
 
 	/* because we append query parameters, tell the caller to use & for
@@ -219,6 +266,14 @@ dnsdb_url(const char *path, char *sep, qparam_ct wpp) {
 	if (sep != NULL)
 		*sep = '&';
 
+ done:
+	DESTROY(offset_str);
+	DESTROY(max_count_str);
+	DESTROY(query_limit_str);
+	DESTROY(first_after_str);
+	DESTROY(first_before_str);
+	DESTROY(last_after_str);
+	DESTROY(last_before_str);
 	return (ret);
 }
 
@@ -240,7 +295,8 @@ dnsdb_info_req(void) {
 	writer->queries = query;
 
 	/* start a status fetch. */
-	create_fetch(query, dnsdb_url(query->command, NULL, &qparam_empty));
+	create_fetch(query, dnsdb_url(query->command, NULL, &qparam_empty,
+				      &(struct pdns_fence){}));
 
 	/* run all jobs to completion. */
 	io_engine(0);

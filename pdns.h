@@ -36,6 +36,12 @@ struct pdns_tuple {
 typedef struct pdns_tuple *pdns_tuple_t;
 typedef const struct pdns_tuple *pdns_tuple_ct;
 
+struct pdns_fence {
+	u_long	first_after, first_before, last_after, last_before;
+};
+typedef struct pdns_fence pdns_fence_t;
+typedef const struct pdns_fence *pdns_fence_ct;
+
 struct pdns_system {
 	/* name of this pdns system, as specifiable by the user. */
 	const char	*name;
@@ -50,7 +56,7 @@ struct pdns_system {
 	 * parameters.	May be NULL if the caller doesn't care.
 	 * the third argument is search parameters.
 	 */
-	char *		(*url)(const char *, char *, qparam_ct);
+	char *		(*url)(const char *, char *, qparam_ct, pdns_fence_ct);
 
 	/* send a request for info, such as quota information.
 	 * may be NULL if not supported.

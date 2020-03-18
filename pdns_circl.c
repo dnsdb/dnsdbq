@@ -26,7 +26,7 @@
 #include "pdns_circl.h"
 #include "globals.h"
 
-static char *circl_url(const char *, char *, qparam_ct);
+static char *circl_url(const char *, char *, qparam_ct, pdns_fence_ct);
 static void circl_auth(fetch_t);
 static const char *circl_status(fetch_t);
 static const char *circl_verb_ok(const char *);
@@ -90,7 +90,10 @@ circl_destroy(void) {
  * 3. Rdata (IP address) query: rdata/ip/ADDR[/PFXLEN]
  */
 static char *
-circl_url(const char *path, char *sep, qparam_ct qp __attribute__((unused))) {
+circl_url(const char *path, char *sep,
+	  qparam_ct qp __attribute__((unused)),
+	  pdns_fence_ct fp __attribute__((unused)))
+{
 	const char *val = NULL;
 	char *ret;
 	int x, pi;
