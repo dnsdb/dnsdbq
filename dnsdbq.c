@@ -606,7 +606,8 @@ static void
 help(void) {
 	verb_ct v;
 
-	printf("usage: %s [-cdfghIjmqSsUv] [-p dns|json|csv]\n", program_name);
+	printf("usage: %s [-cdfgGhIjmqSsUv] [-p dns|json|csv]\n",
+	       program_name);
 	puts("\t[-k (first|last|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
 	     "\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
@@ -632,7 +633,7 @@ help(void) {
 	     "\trdata/raw/HEX-PAIRS[/RRTYPE]\n"
 	     "\t(output format will depend on -p or -j, framed by '--'.)\n"
 	     "\t(with -ff, framing will be '++ $cmd', '-- $stat ($code)'.\n"
-	     "use -g to get graveled results.\n"
+	     "use -g to get graveled results (default is -G, rocks).\n"
 	     "use -h to reliably display this helpful text.\n"
 	     "use -I to see a system-specific account/key summary.\n"
 	     "for -J, input format is newline-separated JSON, "
