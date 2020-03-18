@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl cdfghIjmqSsUv
+.Op Fl cdfgGhIjmqSsUv
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -132,7 +132,7 @@ Rdata (IP address) query:
 Rdata (raw) query:
 .Ic rdata/raw/HEX[/RRTYPE]
 .It
-.Ic $OPTIONS [-A ts] [-B ts] [-l max] [-L max] [-c] [-g]
+.Ic $OPTIONS [-A ts] [-B ts] [-c] [-l max] [-L max] [-g] [-G]
 .El
 .Pp
 The $OPTIONS allows several command line options to be changed mid-batch.
@@ -177,8 +177,12 @@ caution is required. (See
 .Fl m
 option below.)
 .It Fl g
-return graveled results.  Default is to return aggregated results (rocks,
-vs. gravel).  Gravel is a feature for providing Volume Across Time.
+return graveled results. Default is to return aggregated results (rocks,
+vs. gravel). Gravel is a feature for providing Volume Across Time.
+.It Fl G
+undo the effect of
+.Fl g ,
+this returning rocks rather than gravel. (Used in $OPTIONS in batch files.)
 .It Fl h
 emit usage and quit.
 .It Fl I

@@ -60,7 +60,7 @@
 #include "globals.h"
 #undef MAIN_PROGRAM
 
-#define QPARAM_GETOPT "A:B:L:l:cg"
+#define QPARAM_GETOPT "A:B:L:l:cgG"
 
 /* Forward. */
 
@@ -139,9 +139,9 @@ main(int argc, char *argv[]) {
 	       != -1)
 	{
 		switch (ch) {
-		case 'A': case 'B':
-		case 'c': case 'g':
-		case 'L': case 'l':
+		case 'A': case 'B': case 'c':
+		case 'g': case 'G':
+		case 'l': case 'L':
 			if ((msg = qparam_option(ch, optarg, &qp)) != NULL)
 				usage(msg);
 			break;
@@ -809,6 +809,9 @@ qparam_option(int opt, const char *arg, qparam_t qpp) {
 		break;
 	case 'g':
 		qpp->gravel = true;
+		break;
+	case 'G':
+		qpp->gravel = false;
 		break;
 	case 'l':
 		if (!parse_long(arg, &qpp->query_limit) ||
