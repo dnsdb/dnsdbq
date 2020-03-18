@@ -18,3 +18,4 @@
 *.app
 dnsdbq
 valgrind.suppress
+dnsdbq.core
