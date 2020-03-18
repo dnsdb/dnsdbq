@@ -46,16 +46,13 @@ struct fetch {
 };
 typedef struct fetch *fetch_t;
 
-/* one query; one per run or per batch line, unless batch + parallel. */
+/* one query; one per invocation (or per batch line if parallel.) */
 struct query {
 	struct query	*next;
 	struct fetch	*fetches;
 	struct writer	*writer;
 	struct qparam	params;
 	char		*command;
-	bool		info;		// if this is set, then...
-	char		*info_buf;	// ...httpdata is accumulated...
-	size_t		info_len;	// ...into the info response
 	/* invariant: (status == NULL) == (writer == NULL) */
 	char		*status;
 	char		*message;
@@ -74,6 +71,9 @@ struct writer {
 	pid_t		sort_pid;
 	bool		sort_killed;
 	bool		csv_headerp;
+	bool		info;		// indicates -I (almost its own verb)
+	char		*ps_buf;	// postscript, from -I (info) or...
+	size_t		ps_len;		// ...the "--" marker if batching
 	long		output_limit;
 	int		count;
 };

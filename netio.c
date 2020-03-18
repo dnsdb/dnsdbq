@@ -318,16 +318,16 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			bytes = 0;
 			/* inform io_engine() that the abort is intentional. */
 			fetch->stopped = true;
-		} else if (query->info) {
+		} else if (writer->info) {
 			/* concatenate this fragment (with \n) to info_buf. */
 			char *temp = NULL;
 
 			asprintf(&temp, "%s%*.*s\n",
-				 or_else(query->info_buf, ""),
+				 or_else(writer->ps_buf, ""),
 				 (int)pre_len, (int)pre_len, fetch->buf);
-			DESTROY(query->info_buf);
-			query->info_buf = temp;
-			query->info_len += pre_len + 1;
+			DESTROY(writer->ps_buf);
+			writer->ps_buf = temp;
+			writer->ps_len += pre_len + 1;
 		} else {
 			query->writer->count +=
 				data_blob(query,
@@ -347,15 +347,6 @@ static void
 query_done(query_t query) {
 	DEBUG(2, true, "query_done(%s)\n", query->command);
 
-	/* burp out the stored info blob, if any, and destroy it. */
-	if (query->info) {
-		if (query->info_len > 0) {
-			psys->info_blob(query->info_buf, query->info_len);
-			DESTROY(query->info_buf);
-			query->info_len = 0;
-		}
-	}
-
 	/* if this was an actively written query, unpause another. */
 	if (batching == batch_verbose) {
 		writer_t writer = query->writer;
@@ -363,10 +354,13 @@ query_done(query_t query) {
 		if (multiple) {
 			assert(writer->active == query);
 			writer->active = NULL;
+		} else {
+			assert(writer->ps_buf == NULL && writer->ps_len == 0);
+			writer->ps_len = (size_t)
+				asprintf(&writer->ps_buf, "-- %s (%s)\n",
+					 or_else(query->status, "NOERROR"),
+					 or_else(query->message, "no error"));
 		}
-		printf("-- %s (%s)\n",
-			or_else(query->status, "NOERROR"),
-			or_else(query->message, "no error"));
 		if (npaused > 0) {
 			query_t unpause;
 			fetch_t fetch;
@@ -549,6 +543,16 @@ writer_fini(writer_t writer) {
 					"exit status is %u\n",
 					program_name, (unsigned)status);
 		}
+	}
+
+	/* burp out the stored postscript, if any, and destroy it. */
+	if (writer->ps_len > 0) {
+		if (writer->info)
+			psys->info_blob(writer->ps_buf, writer->ps_len);
+		else
+			fwrite(writer->ps_buf, 1, writer->ps_len, stdout);
+		DESTROY(writer->ps_buf);
+		writer->ps_len = 0;
 	}
 
 	DESTROY(writer);

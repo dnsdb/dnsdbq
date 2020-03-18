@@ -236,7 +236,7 @@ dnsdb_info_req(void) {
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
 	query->command = strdup("rate_limit");
-	query->info = true;
+	writer->info = true;
 	writer->queries = query;
 
 	/* start a status fetch. */
@@ -355,7 +355,7 @@ dnsdb_info_blob(const char *buf, size_t len) {
 		if (msg != NULL) { /* there was an error */
 			puts(msg);
 		} else {
-			fprintf(stdout, "rate:\n");
+			puts("rate:");
 			print_rateval("reset", &tup.reset, stdout);
 			print_rateval("expires", &tup.expires, stdout);
 			print_rateval("limit", &tup.limit, stdout);

@@ -1056,7 +1056,10 @@ do_batch(FILE *f, qparam_ct qpp) {
 			case batch_none:
 				break;
 			case batch_original:
-				fprintf(stdout, "--\n");
+				assert(writer->ps_buf == NULL &&
+				       writer->ps_len == 0);
+				writer->ps_buf = strdup("--\n");
+				writer->ps_len = strlen(writer->ps_buf);
 				break;
 			case batch_verbose:
 				/* query_done() will do this. */
@@ -1064,9 +1067,9 @@ do_batch(FILE *f, qparam_ct qpp) {
 			default:
 				abort();
 			}
-			fflush(stdout);
 			writer_fini(writer);
 			writer = NULL;
+			fflush(stdout);
 		}
 	}
 	DESTROY(command);
