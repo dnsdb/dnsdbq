@@ -354,18 +354,24 @@ query_done(query_t query) {
 		if (multiple) {
 			assert(writer->active == query);
 			writer->active = NULL;
-		} else {
-			assert(writer->ps_buf == NULL && writer->ps_len == 0);
-			writer->ps_len = (size_t)
-				asprintf(&writer->ps_buf, "-- %s (%s)\n",
-					 or_else(query->status, "NOERROR"),
-					 or_else(query->message, "no error"));
+		}
+		assert(writer->ps_buf == NULL && writer->ps_len == 0);
+		writer->ps_len = (size_t)
+			asprintf(&writer->ps_buf, "-- %s (%s)\n",
+				 or_else(query->status, "NOERROR"),
+				 or_else(query->message, "no error"));
+		if (multiple) {
+			/* push out the postscript immediately. */
+			fwrite(writer->ps_buf, 1, writer->ps_len, stdout);
+			DESTROY(writer->ps_buf);
+			writer->ps_len = 0;
 		}
 		if (npaused > 0) {
 			query_t unpause;
 			fetch_t fetch;
 			int i;
 
+			/* unpause the next query's fetches. */
 			unpause = paused[0];
 			npaused--;
 			for (i = 0; i < npaused; i++)
