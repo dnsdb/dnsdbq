@@ -532,7 +532,7 @@ writer_fini(writer_t writer) {
 					program_name, msg);
 				continue;
 			}
-			(*presenter)(&tup, linep, len, stdout);
+			(*presenter)(&tup, linep, len, writer);
 			tuple_unmake(&tup);
 			count++;
 		}

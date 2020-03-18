@@ -22,15 +22,15 @@
 #include "time.h"
 #include "globals.h"
 
-static void present_csv_line(pdns_tuple_ct, const char *, FILE *);
+static void present_csv_line(pdns_tuple_ct, const char *);
 
 /* present_text_look -- render one pdns tuple in "dig" style ascii text.
  */
 void
-present_text_look(pdns_tuple_ct tup,
-		  const char *jsonbuf __attribute__ ((unused)),
-		  size_t jsonlen __attribute__ ((unused)),
-		  FILE *outf)
+present_text_lookup(pdns_tuple_ct tup,
+		    const char *jsonbuf __attribute__ ((unused)),
+		    size_t jsonlen __attribute__ ((unused)),
+		    writer_t writer __attribute__ ((unused)))
 {
 	bool pflag, ppflag;
 	const char *prefix;
@@ -39,16 +39,16 @@ present_text_look(pdns_tuple_ct tup,
 
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
-		fprintf(outf, ";; record times: %s",
+		printf(";; record times: %s",
 			time_str(tup->time_first, iso8601));
-		fprintf(outf, " .. %s\n",
+		printf(" .. %s\n",
 			time_str(tup->time_last, iso8601));
 		ppflag = true;
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
-		fprintf(outf, ";;   zone times: %s",
+		printf(";;   zone times: %s",
 			time_str(tup->zone_first, iso8601));
-		fprintf(outf, " .. %s\n",
+		printf(" .. %s\n",
 			time_str(tup->zone_last, iso8601));
 		ppflag = true;
 	}
@@ -57,19 +57,19 @@ present_text_look(pdns_tuple_ct tup,
 	prefix = ";;";
 	pflag = false;
 	if (tup->obj.count != NULL) {
-		fprintf(outf, "%s count: %lld", prefix, (long long)tup->count);
+		printf("%s count: %lld", prefix, (long long)tup->count);
 		prefix = ";";
 		pflag = true;
 		ppflag = true;
 	}
 	if (tup->obj.bailiwick != NULL) {
-		fprintf(outf, "%s bailiwick: %s", prefix, tup->bailiwick);
+		printf("%s bailiwick: %s", prefix, tup->bailiwick);
 		prefix = NULL;
 		pflag = true;
 		ppflag = true;
 	}
 	if (pflag)
-		putc('\n', outf);
+		putchar('\n');
 
 	/* Records. */
 	if (json_is_array(tup->obj.rdata)) {
@@ -84,60 +84,60 @@ present_text_look(pdns_tuple_ct tup,
 				rdata = json_string_value(rr);
 			else
 				rdata = "[bad value]";
-			fprintf(outf, "%s  %s  %s\n",
+			printf("%s  %s  %s\n",
 				tup->rrname, tup->rrtype, rdata);
 			ppflag = true;
 		}
 	} else {
-		fprintf(outf, "%s  %s  %s\n",
+		printf("%s  %s  %s\n",
 			tup->rrname, tup->rrtype, tup->rdata);
 		ppflag = true;
 	}
 
 	/* Cleanup. */
 	if (ppflag)
-		putc('\n', outf);
+		putchar('\n');
 }
 
 /* present_text_summ -- render summarize object in "dig" style ascii text.
  */
 void
-present_text_summ(pdns_tuple_ct tup,
-		  const char *jsonbuf __attribute__ ((unused)),
-		  size_t jsonlen __attribute__ ((unused)),
-		  FILE *outf)
+present_text_summarize(pdns_tuple_ct tup,
+		       const char *jsonbuf __attribute__ ((unused)),
+		       size_t jsonlen __attribute__ ((unused)),
+		       writer_t writer __attribute__ ((unused)))
 {
 	const char *prefix;
 
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
-		fprintf(outf, ";; record times: %s",
-			time_str(tup->time_first, iso8601));
-		fprintf(outf, " .. %s\n",
-			time_str(tup->time_last, iso8601));
+		printf(";; record times: %s",
+		       time_str(tup->time_first, iso8601));
+		printf(" .. %s\n",
+		       time_str(tup->time_last, iso8601));
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
-		fprintf(outf, ";;   zone times: %s",
-			time_str(tup->zone_first, iso8601));
-		fprintf(outf, " .. %s\n",
-			time_str(tup->zone_last, iso8601));
-		putc('\n', outf);
+		printf(";;   zone times: %s",
+		       time_str(tup->zone_first, iso8601));
+		printf(" .. %s\n",
+		       time_str(tup->zone_last, iso8601));
+		putchar('\n');
 	}
 
 	/* Count and Num_Results. */
 	prefix = ";;";
 	if (tup->obj.count != NULL) {
-		fprintf(outf, "%s count: %lld",
-			prefix, (long long)tup->count);
+		printf("%s count: %lld",
+		       prefix, (long long)tup->count);
 		prefix = ";";
 	}
 	if (tup->obj.num_results != NULL) {
-		fprintf(outf, "%s num_results: %lld",
-			prefix, (long long)tup->num_results);
+		printf("%s num_results: %lld",
+		       prefix, (long long)tup->num_results);
 		prefix = NULL;
 	}
 
-	putc('\n', outf);
+	putchar('\n');
 }
 
 /* present_json -- render one DNSDB tuple as newline-separated JSON.
@@ -148,28 +148,25 @@ void
 present_json(pdns_tuple_ct tup __attribute__ ((unused)),
 	     const char *jsonbuf,
 	     size_t jsonlen,
-	     FILE *outf)
+	     writer_t writer __attribute__ ((unused)))
 {
-	fwrite(jsonbuf, 1, jsonlen, outf);
-	putc('\n', outf);
+	fwrite(jsonbuf, 1, jsonlen, stdout);
+	putchar('\n');
 }
 
 /* present_csv_look -- render one DNSDB tuple as comma-separated values (CSV).
  */
 void
-present_csv_look(pdns_tuple_ct tup,
-		 const char *jsonbuf __attribute__ ((unused)),
-		 size_t jsonlen __attribute__ ((unused)),
-		 FILE *outf)
+present_csv_lookup(pdns_tuple_ct tup,
+		   const char *jsonbuf __attribute__ ((unused)),
+		   size_t jsonlen __attribute__ ((unused)),
+		   writer_t writer)
 {
-	static bool csv_headerp = false;
-
-	if (!csv_headerp) {
-		fprintf(outf,
-			"time_first,time_last,zone_first,zone_last,"
-			"count,bailiwick,"
-			"rrname,rrtype,rdata\n");
-		csv_headerp = true;
+	if (!writer->csv_headerp) {
+		printf("time_first,time_last,zone_first,zone_last,"
+		       "count,bailiwick,"
+		       "rrname,rrtype,rdata\n");
+		writer->csv_headerp = true;
 	}
 
 	if (json_is_array(tup->obj.rdata)) {
@@ -184,84 +181,83 @@ present_csv_look(pdns_tuple_ct tup,
 				rdata = json_string_value(rr);
 			else
 				rdata = "[bad value]";
-			present_csv_line(tup, rdata, outf);
+			present_csv_line(tup, rdata);
 		}
 	} else {
-		present_csv_line(tup, tup->rdata, outf);
+		present_csv_line(tup, tup->rdata);
 	}
 }
 
 /* present_csv_line -- display a CSV for one rdatum out of an rrset.
  */
 static void
-present_csv_line(pdns_tuple_ct tup, const char *rdata, FILE *outf) {
+present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso8601));
-	putc(',', outf);
+		printf("\"%s\"", time_str(tup->time_first, iso8601));
+	putchar(',');
 	if (tup->obj.time_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso8601));
-	putc(',', outf);
+		printf("\"%s\"", time_str(tup->time_last, iso8601));
+	putchar(',');
 	if (tup->obj.zone_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso8601));
-	putc(',', outf);
+		printf("\"%s\"", time_str(tup->zone_first, iso8601));
+	putchar(',');
 	if (tup->obj.zone_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso8601));
-	putc(',', outf);
+		printf("\"%s\"", time_str(tup->zone_last, iso8601));
+	putchar(',');
 
 	/* Count and bailiwick. */
 	if (tup->obj.count != NULL)
-		fprintf(outf, "%lld", (long long) tup->count);
-	putc(',', outf);
+		printf("%lld", (long long) tup->count);
+	putchar(',');
 	if (tup->obj.bailiwick != NULL)
-		fprintf(outf, "\"%s\"", tup->bailiwick);
-	putc(',', outf);
+		printf("\"%s\"", tup->bailiwick);
+	putchar(',');
 
 	/* Records. */
 	if (tup->obj.rrname != NULL)
-		fprintf(outf, "\"%s\"", tup->rrname);
-	putc(',', outf);
+		printf("\"%s\"", tup->rrname);
+	putchar(',');
 	if (tup->obj.rrtype != NULL)
-		fprintf(outf, "\"%s\"", tup->rrtype);
-	putc(',', outf);
+		printf("\"%s\"", tup->rrtype);
+	putchar(',');
 	if (tup->obj.rdata != NULL)
-		fprintf(outf, "\"%s\"", rdata);
-	putc('\n', outf);
+		printf("\"%s\"", rdata);
+	putchar('\n');
 }
 
 /* present_csv_summ -- render a summarize result as CSV.
  */
 void
-present_csv_summ(pdns_tuple_ct tup,
-		 const char *jsonbuf __attribute__ ((unused)),
-		 size_t jsonlen __attribute__ ((unused)),
-		 FILE *outf)
+present_csv_summarize(pdns_tuple_ct tup,
+		      const char *jsonbuf __attribute__ ((unused)),
+		      size_t jsonlen __attribute__ ((unused)),
+		      writer_t writer __attribute__ ((unused)))
 {
-	fprintf(outf,
-		"time_first,time_last,zone_first,zone_last,"
-		"count,num_results\n");
+	printf("time_first,time_last,zone_first,zone_last,"
+	       "count,num_results\n");
 
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_first, iso8601));
-	putc(',', outf);
+		printf("\"%s\"", time_str(tup->time_first, iso8601));
+	putchar(',');
 	if (tup->obj.time_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->time_last, iso8601));
-	putc(',', outf);
+		printf("\"%s\"", time_str(tup->time_last, iso8601));
+	putchar(',');
 	if (tup->obj.zone_first != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_first, iso8601));
-	putc(',', outf);
+		printf("\"%s\"", time_str(tup->zone_first, iso8601));
+	putchar(',');
 	if (tup->obj.zone_last != NULL)
-		fprintf(outf, "\"%s\"", time_str(tup->zone_last, iso8601));
-	putc(',', outf);
+		printf("\"%s\"", time_str(tup->zone_last, iso8601));
+	putchar(',');
 
 	/* Count and num_results. */
 	if (tup->obj.count != NULL)
-		fprintf(outf, "%lld", (long long) tup->count);
-	putc(',', outf);
+		printf("%lld", (long long) tup->count);
+	putchar(',');
 	if (tup->obj.num_results != NULL)
-		fprintf(outf, "%lld", tup->num_results);
-	putc('\n', outf);
+		printf("%lld", tup->num_results);
+	putchar('\n');
 }
 
 /* tuple_make -- create one DNSDB tuple object out of a JSON object.
@@ -506,7 +502,7 @@ data_blob(query_t query, const char *buf, size_t len) {
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {
-		(*presenter)(&tup, buf, len, stdout);
+		(*presenter)(&tup, buf, len, writer);
 	}
 	ret = 1;
  next:

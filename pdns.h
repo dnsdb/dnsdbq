@@ -89,7 +89,7 @@ struct pdns_system {
 };
 typedef const struct pdns_system *pdns_system_ct;
 
-typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, FILE *);
+typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, writer_t);
 
 struct verb {
 	const char	*name;
@@ -117,11 +117,11 @@ struct qdesc {
 typedef struct qdesc *qdesc_t;
 typedef const struct qdesc *qdesc_ct;
 
-void present_json(pdns_tuple_ct, const char *, size_t, FILE *);
-void present_text_look(pdns_tuple_ct, const char *, size_t, FILE *);
-void present_csv_look(pdns_tuple_ct, const char *, size_t, FILE *);
-void present_text_summ(pdns_tuple_ct, const char *, size_t, FILE *);
-void present_csv_summ(pdns_tuple_ct, const char *, size_t, FILE *);
+void present_json(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_text_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_csv_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_text_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 int data_blob(query_t, const char *, size_t);

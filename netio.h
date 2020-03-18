@@ -32,7 +32,7 @@ struct qparam {
 typedef struct qparam *qparam_t;
 typedef const struct qparam *qparam_ct;
 
-/* one API fetch. */
+/* one API fetch; several may be needed for some kinds of time fencing. */
 struct fetch {
 	struct fetch	*next;
 	struct query	*query;
@@ -46,7 +46,7 @@ struct fetch {
 };
 typedef struct fetch *fetch_t;
 
-/* one query, having one or more API fetches. */
+/* one query; one per run or per batch line, unless batch + parallel. */
 struct query {
 	struct query	*next;
 	struct fetch	*fetches;
@@ -73,6 +73,7 @@ struct writer {
 	FILE		*sort_stdout;
 	pid_t		sort_pid;
 	bool		sort_killed;
+	bool		csv_headerp;
 	long		output_limit;
 	int		count;
 };

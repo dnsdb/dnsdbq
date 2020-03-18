@@ -98,9 +98,9 @@ static const char * const conf_files[] = {
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
 	{ "lookup", "/lookup", lookup_ok,
-	  present_text_look, present_json, present_csv_look },
+	  present_text_lookup, present_json, present_csv_lookup },
 	{ "summarize", "/summarize", summarize_ok,
-	  present_text_summ, present_json, present_csv_summ },
+	  present_text_summarize, present_json, present_csv_summarize },
 	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
