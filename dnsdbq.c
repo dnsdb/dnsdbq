@@ -994,8 +994,9 @@ do_batch(FILE *f, qparam_ct qpp) {
 	char *command = NULL;
 	size_t n = 0;
 
-	/* if doing multiple upstreams, start a writer. */
-	if (multiple)
+	/* if doing multiple parallel upstreams, start a writer. */
+	bool one_writer = multiple && batching != batch_verbose;
+	if (one_writer)
 		writer = writer_init(qp.output_limit);
 
 	while (getline(&command, &n, f) > 0) {
@@ -1022,7 +1023,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 		}
 
 		/* if not parallelizing, start a writer here instead. */
-		if (!multiple)
+		if (!one_writer)
 			writer = writer_init(qp.output_limit);
 
 		/* crack the batch line if possible. */
@@ -1036,7 +1037,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 
 			/* if merging, drain some jobs; else, drain all jobs.
 			 */
-			if (multiple)
+			if (one_writer)
 				io_engine(MAX_JOBS);
 			else
 				io_engine(0);
@@ -1052,7 +1053,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 		}
 
 		/* think about showing the end-of-object separator. */
-		if (!multiple) {
+		if (!one_writer) {
 			switch (batching) {
 			case batch_none:
 				break;
@@ -1077,7 +1078,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 
 	/* if parallelized, run remaining jobs to completion, then finish up.
 	 */
-	if (multiple) {
+	if (one_writer) {
 		io_engine(0);
 		writer_fini(writer);
 		writer = NULL;

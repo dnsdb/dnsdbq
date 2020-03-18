@@ -360,12 +360,6 @@ query_done(query_t query) {
 			asprintf(&writer->ps_buf, "-- %s (%s)\n",
 				 or_else(query->status, "NOERROR"),
 				 or_else(query->message, "no error"));
-		if (multiple) {
-			/* push out the postscript immediately. */
-			fwrite(writer->ps_buf, 1, writer->ps_len, stdout);
-			DESTROY(writer->ps_buf);
-			writer->ps_len = 0;
-		}
 		if (npaused > 0) {
 			query_t unpause;
 			fetch_t fetch;
