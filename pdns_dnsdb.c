@@ -397,7 +397,8 @@ rateval_make(rateval_t tp, const json_t *obj, const char *key) {
 					rvalue.rk = rk_na;
 					ok = true;
 				} else if (strcasecmp(strvalue,
-						      "unlimited") == 0) {
+						      "unlimited") == 0)
+				{
 					rvalue.rk = rk_unlimited;
 					ok = true;
 				}
