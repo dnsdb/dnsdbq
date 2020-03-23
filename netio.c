@@ -96,7 +96,8 @@ create_fetch(query_t query, char *url) {
 		curl_easy_setopt(fetch->easy, CURLOPT_SSL_VERIFYPEER, 0L);
 		curl_easy_setopt(fetch->easy, CURLOPT_SSL_VERIFYHOST, 0L);
 	}
-	psys->auth(fetch);
+	if (psys->auth != NULL)
+	    psys->auth(fetch);
 	fetch->hdrs = curl_slist_append(fetch->hdrs, json_header);
 	curl_easy_setopt(fetch->easy, CURLOPT_HTTPHEADER, fetch->hdrs);
 	curl_easy_setopt(fetch->easy, CURLOPT_WRITEFUNCTION, writer_func);
@@ -621,7 +622,7 @@ io_drain(void) {
 		query = fetch->query;
 
 		if (cm->msg == CURLMSG_DONE) {
-			DEBUG(2, true, "io_engine(%s) DONE\n", query->command);
+			DEBUG(2, true, "io_drain(%s) DONE\n", query->command);
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
 				fprintf(stderr,
 					"%s: warning: libcurl failed since "

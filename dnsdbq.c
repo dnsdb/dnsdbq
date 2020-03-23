@@ -439,6 +439,14 @@ main(int argc, char *argv[]) {
 	if (psys == NULL)
 		usage("neither " DNSDBQ_SYSTEM " nor -u were specified.");
 
+	/* verify that some of the fields in our psys are set. */
+	assert(psys->base_url != NULL);
+	assert(psys->url != NULL);
+	assert(psys->status != NULL);
+	assert(psys->verb_ok != NULL);
+	assert(psys->ready != NULL);
+	assert(psys->destroy != NULL);
+
 	/* validate some interrelated options. */
 	if (multiple && batching == batch_none)
 		usage("using -m without -f makes no sense.");
@@ -886,6 +894,10 @@ read_configs(void) {
 		int x, l;
 		FILE *f;
 
+		/* in the "echo dnsdb server..." lines, the
+		 * first parameter is the pdns system to which to dispatch
+		 * the key and value (i.e. second the third parameters).
+		 */
 		x = asprintf(&cmd,
 			     ". %s;"
 			     "echo dnsdbq system $" DNSDBQ_SYSTEM ";"
@@ -971,7 +983,7 @@ read_configs(void) {
 				DEBUG(1, true, "line #%d: sets %s|%s|%s\n",
 				      l, tok1, tok2,
 				      strcmp(tok2, "apikey") == 0
-				      	? "..." : tok3);
+					? "..." : tok3);
 				msg = psys->setval(tok2, tok3);
 				if (msg != NULL)
 					usage(msg);
@@ -984,8 +996,6 @@ read_configs(void) {
 
 
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
- *
- * the 'after' and 'before' arguments are from -A and -B and are defaults.
  */
 static void
 do_batch(FILE *f, qparam_ct qpp) {
@@ -1041,8 +1051,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 				io_engine(MAX_JOBS);
 			else
 				io_engine(0);
-			if (query->status != NULL &&
-			    batching != batch_verbose)
+			if (query->status != NULL && batching != batch_verbose)
 			{
 				assert(query->message != NULL);
 				fprintf(stderr,
@@ -1052,8 +1061,11 @@ do_batch(FILE *f, qparam_ct qpp) {
 			}
 		}
 
-		/* think about showing the end-of-object separator. */
 		if (!one_writer) {
+			/* think about showing the end-of-object separator.
+			 * We reach here after all the queries from
+			 * this batch line have finished.
+			 */
 			switch (batching) {
 			case batch_none:
 				break;
@@ -1223,6 +1235,8 @@ batch_parse(char *line, qdesc_t qdp) {
 }
 
 /* makepath -- make a RESTful URI that describes these search parameters.
+ *
+ * Returns a string that must be free()d.
  */
 static char *
 makepath(mode_e mode, const char *name, const char *rrtype,
