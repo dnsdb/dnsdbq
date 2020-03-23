@@ -53,19 +53,20 @@ struct pdns_system {
 	char *		(*url)(const char *, char *, qparam_ct);
 
 	/* send a request for info, such as quota information.
-	 * may be NULL if not supported.
+	 * may be NULL if info requests are not supported by this pDNS system.
 	 */
 	void		(*info_req)(void);
 
 	/* display info from the JSON block we read from the API.
-	 * may be NULL if not supported.
 	 */
 	void		(*info_blob)(const char *, size_t);
 
-	/* add authentication information to the fetch request being created. */
+	/* add authentication information to the fetch request being created.
+	 * may be NULL if auth is not needed by this pDNS system.
+	 */
 	void		(*auth)(fetch_t);
 
-	/* map a return code from a fetch into a static error message. */
+	/* map an HTTP return code from a fetch into a static error message. */
 	const char *	(*status)(fetch_t);
 
 	/* verify that the specified verb is supported by this pdns system.
@@ -91,6 +92,10 @@ typedef const struct pdns_system *pdns_system_ct;
 
 typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, writer_t);
 
+/* a verb is a specific type of request.  See struct pdns_system
+ * verb_ok() for that function that verifies if the verb and the options
+ * provided is supported by that pDNS system.
+ */
 struct verb {
 	const char	*name;
 	const char	*url_fragment;
@@ -98,6 +103,8 @@ struct verb {
 	 * Returns NULL if ok; otherwise returns a static error message.
 	 */
 	const char *	(*ok)(void);
+
+	/* formatter function for each presentation format */
 	present_t	text, json, csv;
 };
 typedef const struct verb *verb_ct;

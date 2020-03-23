@@ -153,8 +153,9 @@ dnsdb_destroy(void) {
  * this function has the opportunity to crack this into pieces, and re-form
  * those pieces into the URL format needed by some other DNSDB-like system
  * which might have the same JSON output format but a different REST syntax.
+ * returns a string that must be freed.
  */
-char *
+static char *
 dnsdb_url(const char *path, char *sep, qparam_ct wpp) {
 	char max_count_if_needed[sizeof "&max_count=##################"] = "";
 	char offset_if_needed[sizeof "&offset=##################"] = "";
@@ -222,7 +223,7 @@ dnsdb_url(const char *path, char *sep, qparam_ct wpp) {
 	return (ret);
 }
 
-void
+static void
 dnsdb_info_req(void) {
 	query_t query = NULL;
 	writer_t writer;
@@ -249,7 +250,7 @@ dnsdb_info_req(void) {
 	writer_fini(writer);
 }
 
-void
+static void
 dnsdb_auth(fetch_t fetch) {
 	if (api_key != NULL) {
 		char *key_header;
@@ -261,7 +262,7 @@ dnsdb_auth(fetch_t fetch) {
 	}
 }
 
-const char *
+static const char *
 dnsdb_status(fetch_t fetch) {
 	/* early (current) versions of DNSDB returns 404 for "no rrs found". */
 	if (fetch->rcode == 404)
@@ -269,7 +270,7 @@ dnsdb_status(fetch_t fetch) {
 	return "ERROR";
 }
 
-const char *
+static const char *
 dnsdb_verb_ok(const char *verb_name) {
 	/* -O (offset) cannot be used except for verb "lookup". */
 	if (strcasecmp(verb_name, "lookup") != 0 && offset != 0)
@@ -396,8 +397,7 @@ rateval_make(rateval_t tp, const json_t *obj, const char *key) {
 					rvalue.rk = rk_na;
 					ok = true;
 				} else if (strcasecmp(strvalue,
-						      "unlimited") == 0)
-				{
+						      "unlimited") == 0) {
 					rvalue.rk = rk_unlimited;
 					ok = true;
 				}
