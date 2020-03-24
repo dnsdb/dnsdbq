@@ -84,7 +84,7 @@ static void launch(query_t, u_long, u_long, u_long, u_long);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
-static void check_7bit_clean(const char *);
+static const char *check_7bit(const char *);
 
 /* Constants. */
 
@@ -108,7 +108,7 @@ const struct verb verbs[] = {
 /* Private. */
 
 static size_t ideal_buffer;
-static bool allow_non_7bit = false;
+static bool allow_8bit = false;
 
 /* Public. */
 
@@ -391,7 +391,7 @@ main(int argc, char *argv[]) {
 			help();
 			my_exit(0);
 		case '8':
-			allow_non_7bit = true;
+			allow_8bit = true;
 			break;
 		default:
 			usage("unrecognized option");
@@ -402,9 +402,13 @@ main(int argc, char *argv[]) {
 		usage("there are no non-option arguments to this program");
 	argv = NULL;
 
-	if (!allow_non_7bit && batching == batch_none &&
+	if (allow_8bit == false && batching == batch_none &&
 	    (qd.mode == name_mode || qd.mode == rrset_mode))
-		check_7bit_clean(qd.thing);
+	{
+		msg = check_7bit(qd.thing);
+		if (msg != NULL)
+			usage(msg);
+	}
 
 	/* recondition various options for HTML use. */
 	CURL *easy = curl_easy_init();
@@ -1172,6 +1176,7 @@ static const char *
 batch_parse(char *line, qdesc_t qdp) {
 	struct qdesc qd = (struct qdesc) { };
 	char *saveptr = NULL;
+	const char *msg;
 	char *t;
 
 	if ((t = strtok_r(line, "/", &saveptr)) == NULL)
@@ -1183,6 +1188,9 @@ batch_parse(char *line, qdesc_t qdp) {
 			qd.mode = rrset_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rrset/name/'";
+			if (allow_8bit == false &&
+			    ((msg = check_7bit(t)) != NULL))
+				return msg;
 			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				qd.rrtype = t;
@@ -1215,6 +1223,9 @@ batch_parse(char *line, qdesc_t qdp) {
 			qd.mode = name_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/name/'";
+			if (allow_8bit == false &&
+			    ((msg = check_7bit(t)) != NULL))
+				return t;
 			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				qd.rrtype = t;
@@ -1242,9 +1253,6 @@ batch_parse(char *line, qdesc_t qdp) {
 	if (t != NULL)
 		return "extra garbage";
 	*qdp = qd;
-
-	if (!allow_non_7bit && (qd.mode == name_mode || qd.mode == rrset_mode))
-		check_7bit_clean(qd.thing);
 
 	return NULL;
 }
@@ -1333,11 +1341,10 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
-	query->params = *qpp;
 	writer = NULL;
+	query->params = *qpp;
 	query->next = query->writer->queries;
 	query->writer->queries = query;
-
 	query->command = makepath(qdp->mode, qdp->thing, qdp->rrtype,
 				  qdp->bailiwick, qdp->pfxlen);
 
@@ -1495,11 +1502,16 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	writer = NULL;
 }
 
-/* check if its argument is 7 bit clean ASCII. Dies if not.
+/* check if its argument is 7 bit clean ASCII.
+ *
+ * returns NULL on success, else an error message.
  */
-static void
-check_7bit_clean(const char *arg) {
-	for (; *arg != '\0'; arg++)
-		if (*arg & 0x80)
-			usage("search argument is not 7-bit clean");
+static const char *
+check_7bit(const char *name) {
+	int ch;
+
+	while ((ch = *name++) != '\0')
+		if ((ch & 0x80) != 0)
+			return "search argument is not 7-bit clean";
+	return NULL;
 }
