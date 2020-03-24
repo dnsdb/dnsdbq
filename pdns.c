@@ -376,7 +376,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	assert(msg == NULL);
 	return (NULL);
 
-ouch:
+ ouch:
 	assert(msg != NULL);
 	tuple_unmake(tup);
 	return (msg);
