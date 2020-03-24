@@ -84,6 +84,7 @@ static void launch(query_t, u_long, u_long, u_long, u_long);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
+static const char *check_7bit(const char *);
 
 /* Constants. */
 
@@ -107,6 +108,7 @@ const struct verb verbs[] = {
 /* Private. */
 
 static size_t ideal_buffer;
+static bool allow_8bit = false;
 
 /* Public. */
 
@@ -135,7 +137,7 @@ main(int argc, char *argv[]) {
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
 			    "R:r:N:n:i:M:u:p:t:b:k:J:O:V:"
-			    "dfhIjmqSsUv" QPARAM_GETOPT))
+			    "dfhIjmqSsUv8" QPARAM_GETOPT))
 	       != -1)
 	{
 		switch (ch) {
@@ -388,6 +390,9 @@ main(int argc, char *argv[]) {
 		case 'h':
 			help();
 			my_exit(0);
+		case '8':
+			allow_8bit = true;
+			break;
 		default:
 			usage("unrecognized option");
 		}
@@ -396,6 +401,14 @@ main(int argc, char *argv[]) {
 	if (argc != 0)
 		usage("there are no non-option arguments to this program");
 	argv = NULL;
+
+	if (allow_8bit == false && batching == batch_none &&
+	    (qd.mode == name_mode || qd.mode == rrset_mode))
+	{
+		msg = check_7bit(qd.thing);
+		if (msg != NULL)
+			usage(msg);
+	}
 
 	/* recondition various options for HTML use. */
 	CURL *easy = curl_easy_init();
@@ -614,7 +627,7 @@ static void
 help(void) {
 	verb_ct v;
 
-	printf("usage: %s [-cdfgGhIjmqSsUv] [-p dns|json|csv]\n",
+	printf("usage: %s [-cdfgGhIjmqSsUv8] [-p dns|json|csv]\n",
 	       program_name);
 	puts("\t[-k (first|last|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
@@ -656,7 +669,9 @@ help(void) {
 	     "or -S for descending order.\n"
 	     "\t-s/-S can be repeated before several -k arguments.\n"
 	     "use -U to turn off SSL certificate verification.\n"
-	     "use -v to show the program version.");
+	     "use -v to show the program version.\n"
+	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments");
+
 	puts("for -u, system must be one of:");
 	puts("\tdnsdb");
 #if WANT_PDNS_CIRCL
@@ -1161,6 +1176,7 @@ static const char *
 batch_parse(char *line, qdesc_t qdp) {
 	struct qdesc qd = (struct qdesc) { };
 	char *saveptr = NULL;
+	const char *msg;
 	char *t;
 
 	if ((t = strtok_r(line, "/", &saveptr)) == NULL)
@@ -1172,6 +1188,9 @@ batch_parse(char *line, qdesc_t qdp) {
 			qd.mode = rrset_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rrset/name/'";
+			if (allow_8bit == false &&
+			    ((msg = check_7bit(t)) != NULL))
+				return msg;
 			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				qd.rrtype = t;
@@ -1204,6 +1223,9 @@ batch_parse(char *line, qdesc_t qdp) {
 			qd.mode = name_mode;
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/name/'";
+			if (allow_8bit == false &&
+			    ((msg = check_7bit(t)) != NULL))
+				return t;
 			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				qd.rrtype = t;
@@ -1231,6 +1253,7 @@ batch_parse(char *line, qdesc_t qdp) {
 	if (t != NULL)
 		return "extra garbage";
 	*qdp = qd;
+
 	return NULL;
 }
 
@@ -1318,8 +1341,8 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
-	query->params = *qpp;
 	writer = NULL;
+	query->params = *qpp;
 	query->next = query->writer->queries;
 	query->writer->queries = query;
 	query->command = makepath(qdp->mode, qdp->thing, qdp->rrtype,
@@ -1477,4 +1500,18 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	DESTROY(buf);
 	writer_fini(writer);
 	writer = NULL;
+}
+
+/* check if its argument is 7 bit clean ASCII.
+ *
+ * returns NULL on success, else an error message.
+ */
+static const char *
+check_7bit(const char *name) {
+	int ch;
+
+	while ((ch = *name++) != '\0')
+		if ((ch & 0x80) != 0)
+			return "search argument is not 7-bit clean";
+	return NULL;
 }
