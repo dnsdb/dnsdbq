@@ -99,10 +99,10 @@ static const char * const conf_files[] = {
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
 	{ "lookup", "/lookup", lookup_ok,
-	  present_text_lookup, present_json, present_csv_lookup },
+	  present_text_lookup, present_json, present_csv_lookup, false },
 	{ "summarize", "/summarize", summarize_ok,
-	  present_text_summarize, present_json, present_csv_summarize },
-	{ NULL, NULL, NULL, NULL, NULL, NULL }
+	  present_text_summarize, present_json, present_csv_summarize, true },
+	{ NULL, NULL, NULL, NULL, NULL, NULL, false }
 };
 
 /* Private. */
@@ -859,7 +859,7 @@ lookup_ok(void) {
 	 * more here.
 	 */
 	if (max_count > 0)
-		return "max_count only allowed for a summarize verb";
+		return "max_count is not allowed for the lookup verb";
 	return NULL;
 }
 
@@ -1353,7 +1353,7 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	 * the 4-tuple is: first_after, first_before, last_after, last_before
 	 */
 	if (qpp->after != 0 && qpp->before != 0) {
-		if (qpp->complete) {
+		if (qpp->complete || pverb->force_complete) {
 			/* each db tuple must be enveloped by time fence. */
 			launch(query, &(struct pdns_fence){
 				.first_after = qpp->after,
