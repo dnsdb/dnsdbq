@@ -112,6 +112,9 @@ struct verb {
 
 	/* formatter function for each presentation format */
 	present_t	text, json, csv;
+
+	/* some verbs (summarize) should make single query always. */
+	bool		force_complete;
 };
 typedef const struct verb *verb_ct;
 
