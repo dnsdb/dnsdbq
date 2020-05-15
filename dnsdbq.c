@@ -449,8 +449,13 @@ main(int argc, char *argv[]) {
 	if (sorting != no_sort)
 		sort_ready();
 	read_configs();
-	if (psys == NULL)
-		usage("neither " DNSDBQ_SYSTEM " nor -u were specified.");
+	if (psys == NULL) {
+		psys = pick_system(DEFAULT_SYS);
+		if (psys == NULL)
+			usage("neither " DNSDBQ_SYSTEM
+			      " nor -u were specified,"
+			      " and there is no default.");
+	}
 
 	/* verify that some of the fields in our psys are set. */
 	assert(psys->base_url != NULL);
@@ -463,8 +468,12 @@ main(int argc, char *argv[]) {
 	/* validate some interrelated options. */
 	if (multiple && batching == batch_none)
 		usage("using -m without -f makes no sense.");
-	if (sorting == no_sort && json_fd == -1 && qp.complete)
-		usage("warning: -A and -B w/o -c or -J reqs -s or -S");
+	if (sorting == no_sort && json_fd == -1 && qp.complete) {
+		fprintf(stderr,
+			"warning: -c w/o -J requires -s or -S for dedup;"
+			" defaulting to -S\n");
+		sorting = reverse_sort;
+	}
 	if ((msg = (*pverb->ok)()) != NULL)
 		usage(msg);
 	if ((msg = psys->verb_ok(pverb->name)) != NULL)

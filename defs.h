@@ -19,7 +19,7 @@
 
 #include <string.h>
 
-#define DEFAULT_SYS 0
+#define DEFAULT_SYS "dnsdb"
 #define DEFAULT_VERB 0
 #define	MAX_JOBS 8
 #define DNSDBQ_SYSTEM "DNSDBQ_SYSTEM"
