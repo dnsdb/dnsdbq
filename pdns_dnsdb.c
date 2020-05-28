@@ -67,7 +67,7 @@ static void dnsdb_info_req(void);
 static void dnsdb_info_blob(const char *, size_t);
 static void dnsdb_auth(fetch_t);
 static const char *dnsdb_status(fetch_t);
-static const char *dnsdb_verb_ok(const char *);
+static const char *dnsdb_verb_ok(const char *, qparam_ct);
 
 static void print_rateval(const char *, rateval_ct, FILE *);
 static void print_burstrate(const char *, rateval_ct, rateval_ct, FILE *);
@@ -189,8 +189,8 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 	if (qpp->gravel)
 		aggr_if_needed = "&aggr=f";
 
-	if (offset > 0) {
-		x = asprintf(&offset_str, "&offset=%ld", offset);
+	if (qpp->offset > 0) {
+		x = asprintf(&offset_str, "&offset=%ld", qpp->offset);
 		if (x < 0) {
 			perror("asprintf");
 			goto done;
@@ -327,9 +327,9 @@ dnsdb_status(fetch_t fetch) {
 }
 
 static const char *
-dnsdb_verb_ok(const char *verb_name) {
+dnsdb_verb_ok(const char *verb_name, qparam_ct qpp __attribute__((unused))) {
 	/* -O (offset) cannot be used except for verb "lookup". */
-	if (strcasecmp(verb_name, "lookup") != 0 && offset != 0)
+	if (strcasecmp(verb_name, "lookup") != 0 && qpp->offset != 0)
 		return "only 'lookup' understands offsets";
 	return (NULL);
 }

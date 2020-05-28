@@ -26,6 +26,7 @@ struct qparam {
 	u_long		before;
 	long		query_limit;
 	long		output_limit;
+	long		offset;
 	bool		complete;
 	bool		gravel;
 };

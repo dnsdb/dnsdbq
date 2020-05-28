@@ -45,7 +45,6 @@ EXTERN	bool donotverify		INIT(false);
 EXTERN	bool quiet			INIT(false);
 EXTERN	bool iso8601			INIT(false);
 EXTERN	bool multiple			INIT(false);
-EXTERN	long offset			INIT(0L);
 EXTERN	long max_count			INIT(0L);
 EXTERN	sort_e sorting			INIT(no_sort);
 EXTERN	batch_e batching		INIT(batch_none);

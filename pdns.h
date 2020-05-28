@@ -78,7 +78,7 @@ struct pdns_system {
 	/* verify that the specified verb is supported by this pdns system.
 	 * Returns NULL if supported; otherwise returns a static error message.
 	 */
-	const char *	(*verb_ok)(const char *);
+	const char *	(*verb_ok)(const char *, qparam_ct);
 
 	/* set a configuration key-value pair.	Returns NULL if ok;
 	 * otherwise returns a static error message.
