@@ -322,8 +322,8 @@ static const char *
 dnsdb_status(fetch_t fetch) {
 	/* early (current) versions of DNSDB returns 404 for "no rrs found". */
 	if (fetch->rcode == 404)
-		return "NOERROR";
-	return "ERROR";
+		return status_noerror;
+	return status_error;
 }
 
 static const char *

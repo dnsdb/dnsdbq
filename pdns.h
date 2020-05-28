@@ -72,7 +72,7 @@ struct pdns_system {
 	 */
 	void		(*auth)(fetch_t);
 
-	/* map an HTTP return code from a fetch into a static error message. */
+	/* map a non-200 HTTP rcode from a fetch to a static error indicator. */
 	const char *	(*status)(fetch_t);
 
 	/* verify that the specified verb is supported by this pdns system.

@@ -272,12 +272,14 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 					  &fetch->rcode);
 		if (fetch->rcode != 200) {
 			char *message = strndup(fetch->buf, fetch->len);
+
 			/* only report the first line of data */
 			char *eol = strpbrk(message, "\r\n");
 			if (eol != NULL)
 				*eol = '\0';
 
-			if (!query->status_set) {
+			/* only report the first response status (vs. -m). */
+			if (query->status == NULL) {
 				query_status(query,
 					     psys->status(fetch),
 					     message);
@@ -293,7 +295,6 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 						program_name, fetch->rcode,
 						url);
 				}
-				query->status_set = true;
 			}
 			if (!quiet)
 				fprintf(stderr, "%s: warning: libcurl: [%s]\n",
@@ -359,7 +360,7 @@ query_done(query_t query) {
 		assert(writer->ps_buf == NULL && writer->ps_len == 0);
 		writer->ps_len = (size_t)
 			asprintf(&writer->ps_buf, "-- %s (%s)\n",
-				 or_else(query->status, "NOERROR"),
+				 or_else(query->status, status_noerror),
 				 or_else(query->message, "no error"));
 		if (npaused > 0) {
 			query_t unpause;

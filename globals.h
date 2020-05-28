@@ -37,6 +37,8 @@ EXTERN	const char *program_name	INIT(NULL);
 EXTERN	const char path_sort[]		INIT("/usr/bin/sort");
 EXTERN	const char json_header[]	INIT("Accept: application/json");
 EXTERN	const char env_time_fmt[]	INIT("DNSDBQ_TIME_FORMAT");
+EXTERN	const char status_noerror[]	INIT("NOERROR");
+EXTERN	const char status_error[]	INIT("ERROR");
 EXTERN	struct qparam qparam_empty INIT({ .query_limit = -1L, .output_limit = -1L });
 EXTERN	verb_ct pverb			INIT(NULL);
 EXTERN	pdns_system_ct psys		INIT(NULL);
