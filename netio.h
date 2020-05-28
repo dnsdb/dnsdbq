@@ -58,7 +58,6 @@ struct query {
 	char		*status;
 	char		*message;
 	bool		hdr_sent;
-	bool		status_set;
 };
 typedef struct query *query_t;
 

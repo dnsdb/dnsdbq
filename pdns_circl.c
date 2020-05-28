@@ -149,7 +149,7 @@ circl_auth(fetch_t fetch) {
 
 static const char *
 circl_status(fetch_t fetch __attribute__((unused))) {
-	return "ERROR";
+	return status_error;
 }
 
 static const char *
