@@ -132,7 +132,8 @@ Rdata (IP address) query:
 Rdata (raw) query:
 .Ic rdata/raw/HEX[/RRTYPE]
 .It
-.Ic $OPTIONS [-A ts] [-B ts] [-c] [-l max] [-L max] [-g] [-G]
+.Ic $OPTIONS [-A\ timestamp] [-B\ timestamp] [-c] [-g] [-G]
+[-l\ query_limit] [-L\ output_limit] [-O\ offset]
 .El
 .Pp
 The $OPTIONS allows several command line options to be changed mid-batch.
