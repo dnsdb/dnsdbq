@@ -60,7 +60,7 @@
 #include "globals.h"
 #undef MAIN_PROGRAM
 
-#define QPARAM_GETOPT "A:B:L:l:cgG"
+#define QPARAM_GETOPT "A:B:L:l:O:cgG"
 
 /* Forward. */
 
