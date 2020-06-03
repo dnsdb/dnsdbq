@@ -29,7 +29,7 @@
 static char *circl_url(const char *, char *, qparam_ct, pdns_fence_ct);
 static void circl_auth(fetch_t);
 static const char *circl_status(fetch_t);
-static const char *circl_verb_ok(const char *);
+static const char *circl_verb_ok(const char *, qparam_ct);
 static const char *circl_ready(void);
 static const char *circl_setval(const char *, const char *);
 static void circl_destroy(void);
@@ -153,7 +153,7 @@ circl_status(fetch_t fetch __attribute__((unused))) {
 }
 
 static const char *
-circl_verb_ok(const char *verb_name) {
+circl_verb_ok(const char *verb_name, qparam_ct qpp __attribute__((unused))) {
 	/* Only "lookup" is valid */
 	if (strcasecmp(verb_name, "lookup") != 0)
 		return ("the CIRCL system only understands 'lookup'");

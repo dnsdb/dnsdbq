@@ -60,7 +60,7 @@
 #include "globals.h"
 #undef MAIN_PROGRAM
 
-#define QPARAM_GETOPT "A:B:L:l:cgG"
+#define QPARAM_GETOPT "A:B:L:l:O:cgG"
 
 /* Forward. */
 
@@ -144,6 +144,7 @@ main(int argc, char *argv[]) {
 		case 'A': case 'B': case 'c':
 		case 'g': case 'G':
 		case 'l': case 'L':
+		case 'O':
 			if ((msg = qparam_option(ch, optarg, &qp)) != NULL)
 				usage(msg);
 			break;
@@ -289,10 +290,6 @@ main(int argc, char *argv[]) {
 		case 'M':
 			if (!parse_long(optarg, &max_count) || (max_count <= 0))
 				usage("-M must be positive");
-			break;
-		case 'O':
-			if (!parse_long(optarg, &offset) || (offset < 0))
-				usage("-O must be zero or positive");
 			break;
 		case 'u':
 			if ((psys = pick_system(optarg)) == NULL)
@@ -476,7 +473,7 @@ main(int argc, char *argv[]) {
 	}
 	if ((msg = (*pverb->ok)()) != NULL)
 		usage(msg);
-	if ((msg = psys->verb_ok(pverb->name)) != NULL)
+	if ((msg = psys->verb_ok(pverb->name, &qp)) != NULL)
 		usage(msg);
 
 	/* get some input from somewhere, and use it to drive our output. */
@@ -498,7 +495,7 @@ main(int argc, char *argv[]) {
 			usage("can't mix -M with -J");
 		if (qp.gravel)
 			usage("can't mix -g with -J");
-		if (offset != 0)
+		if (qp.offset != 0)
 			usage("can't mix -O with -J");
 		ruminate_json(json_fd, &qp);
 		close(json_fd);
@@ -855,6 +852,11 @@ qparam_option(int opt, const char *arg, qparam_t qpp) {
 		if (!parse_long(arg, &qpp->output_limit) ||
 		    (qpp->output_limit <= 0))
 			return "-L must be positive";
+		break;
+	case 'O':
+		if (!parse_long(optarg, &qpp->offset) ||
+		    (qpp->offset < 0))
+			return "-O must be zero or positive";
 		break;
 	}
 	return NULL;
