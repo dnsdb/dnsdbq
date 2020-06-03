@@ -164,20 +164,26 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 		*query_limit_str = NULL;
 	int x;
 
-	/* count the number of slashes in the url, 2 is the base line,
-	 * from "//".  3 or more means there's a /path after the host.
+	/* count the number of slashes in the base url, after the ://
+	 * if present.  1 or more means there's a /path after the host.
 	 * In that case, don't add /[verb] here, and also don't allow
 	 * selecting a verb that's not "lookup" since the /path could
 	 * include its own verb. (this is from an old python-era rule.)
 	 */
-	x = 0;
-	for (p = dnsdb_base_url; *p != '\0'; p++)
-		x += (*p == '/');
-	verb_path = NULL;
-	if (pverb->url_fragment != NULL)
-		verb_path = pverb->url_fragment;
+	if ((p = strstr(dnsdb_base_url, "://")) != NULL)
+		p += sizeof "://";
 	else
-		verb_path = "/lookup";
+		p = dnsdb_base_url;
+	x = 0;
+	for (; *p != '\0'; p++)
+		x += (*p == '/');
+	verb_path = "";
+	if (x == 0) {
+		if (pverb->url_fragment != NULL)
+			verb_path = pverb->url_fragment;
+		else
+			verb_path = "/lookup";
+	}
 
 	/* supply a scheme if the server string did not. */
 	scheme_if_needed = "";
