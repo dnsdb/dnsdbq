@@ -171,7 +171,7 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 	 * include its own verb. (this is from an old python-era rule.)
 	 */
 	if ((p = strstr(dnsdb_base_url, "://")) != NULL)
-		p += sizeof "://";
+		p += sizeof "://" - sizeof "";
 	else
 		p = dnsdb_base_url;
 	x = 0;
