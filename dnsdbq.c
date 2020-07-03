@@ -1155,18 +1155,18 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 	} else {
 		/* use getopt() to parse the cracked array. */
 #if defined __GLIBC__
-        	/* glibc needs to have optind set to 0 instead of the "traditional 
-           	 * value" of 1.
+		/* glibc needs to have optind set to 0 instead of the "traditional
+		 * value" of 1.
 		 */
 		optind = 0;
 #else
-        	/* 1 is the value that optind should be initialized to according to
-           	 * IEEE Std 1003.1.
+		/* 1 is the value that optind should be initialized to according to
+		 * IEEE Std 1003.1.
 		 */
 		optind = 1;
 #if defined __FreeBSD__ || defined __OpenBSD__ || defined __NetBSD__ || \
 	defined __APPLE__ || defined __DragonFly__
-        	/* BSD-like libc also needs to have optreset set to 1 */
+		/* BSD-like libc also needs to have optreset set to 1 */
 		optreset = 1;
 #endif /*BSD*/
 #endif
