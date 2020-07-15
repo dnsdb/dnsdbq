@@ -288,7 +288,8 @@ main(int argc, char *argv[]) {
 			break;
 		    }
 		case 'M':
-			if (!parse_long(optarg, &max_count) || (max_count <= 0))
+			if (!parse_long(optarg, &max_count) ||
+			    (max_count <= 0))
 				usage("-M must be positive");
 			break;
 		case 'u':
@@ -615,7 +616,8 @@ my_panic(bool want_perror, const char *s) {
 	my_exit(1);
 }
 
-/* or_else -- return one pointer or else the other. */
+/* or_else -- return one pointer or else the other.
+ */
 const char *
 or_else(const char *p, const char *or_else) {
 	if (p != NULL)
@@ -692,6 +694,8 @@ help(void) {
 	printf("\nTry   man %s  for full documentation.\n", program_name);
 }
 
+/* pick_system -- return a named system descriptor, or NULL.
+ */
 static pdns_system_ct
 pick_system(const char *name) {
 #if WANT_PDNS_DNSDB
@@ -786,7 +790,9 @@ usage(const char *fmtstr, ...) {
 	my_exit(1);
 }
 
-/* parse a base 10 long value.	Return true if ok, else return false.
+/* parse_long -- parse a base 10 long value.
+ *
+ * Return true if ok, else return false.
  */
 static bool
 parse_long(const char *in, long *out) {
@@ -1147,7 +1153,8 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 		*opt++ = tok;
 	}
 
-	/* if no options were specified (e.g., $options\n), restore defaults. */
+	/* if no options were specified (e.g., $options\n), restore defaults.
+	 */
 	msg = NULL;
 	if ((opt - opts) == 1) {
 		DEBUG(2, true, "default options restored\n");
@@ -1155,18 +1162,18 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 	} else {
 		/* use getopt() to parse the cracked array. */
 #if defined __GLIBC__
-		/* glibc needs to have optind set to 0 instead of the "traditional
-		 * value" of 1.
+		/* glibc needs to have optind set to 0 instead of the
+		 * "traditional value" of 1.
 		 */
 		optind = 0;
 #else
-		/* 1 is the value that optind should be initialized to according to
-		 * IEEE Std 1003.1.
+		/* 1 is the value that optind should be initialized to,
+		 * accorinng to IEEE Std 1003.1.
 		 */
 		optind = 1;
 #if defined __FreeBSD__ || defined __OpenBSD__ || defined __NetBSD__ || \
 	defined __APPLE__ || defined __DragonFly__
-		/* BSD-like libc also needs to have optreset set to 1 */
+		/* BSD-like libc also needs to have optreset set to 1. */
 		optreset = 1;
 #endif /*BSD*/
 #endif
@@ -1462,7 +1469,7 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	writer = NULL;
 }
 
-/* check if its argument is 7 bit clean ASCII.
+/* check_7bit -- check if its argument is 7 bit clean ASCII.
  *
  * returns NULL on success, else an error message.
  */
