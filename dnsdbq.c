@@ -136,7 +136,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "R:r:N:n:i:M:u:p:t:b:k:J:O:V:"
+			    "R:r:N:n:i:M:u:p:t:b:k:J:V:"
 			    "dfhIjmqSsUv8" QPARAM_GETOPT))
 	       != -1)
 	{
