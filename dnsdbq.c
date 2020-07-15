@@ -141,6 +141,7 @@ main(int argc, char *argv[]) {
 	       != -1)
 	{
 		switch (ch) {
+		/* keep these in-sync with QPARAM_GETOPT. */
 		case 'A': case 'B': case 'c':
 		case 'g': case 'G':
 		case 'l': case 'L':
@@ -1133,12 +1134,12 @@ do_batch(FILE *f, qparam_ct qpp) {
  */
 static const char *
 batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
-	char **opts = calloc(strlen(optstr) + 1, sizeof(char *));
+	char **optv = calloc(strlen(optstr) + 1, sizeof(char *));
 	struct qparam save = *options;
-	char **opt = opts;
+	char **opt = optv;
 	const char *msg;
+	int optc, ch;
 	char *tok;
-	int ch;
 
 	char *temp = strdup(optstr);
 	char *saveptr = NULL;
@@ -1156,7 +1157,8 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 	/* if no options were specified (e.g., $options\n), restore defaults.
 	 */
 	msg = NULL;
-	if ((opt - opts) == 1) {
+	optc = (int) (opt - optv);
+	if (optc == 1) {
 		DEBUG(2, true, "default options restored\n");
 		*options = *dflt;
 	} else {
@@ -1177,12 +1179,13 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 		optreset = 1;
 #endif /*BSD*/
 #endif
-		while ((ch = getopt((int)(opt - opts), opts, QPARAM_GETOPT))
-		       != -1)
-		{
+		while ((ch = getopt(optc, optv, QPARAM_GETOPT)) != -1) {
 			if ((msg = qparam_option(ch, optarg, options)) != NULL)
 				break;
 		}
+		optc -= optind;
+		if (msg == NULL && optc != 0)
+			msg = "superfluous non-arguments in $OPTIONS";
 	}
 	/* if an error occured, reset options to saved values. */
 	if (msg != NULL) {
@@ -1193,7 +1196,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 			qparam_debug("batch", options);
 	}
 	/* done. */
-	DESTROY(opts);
+	DESTROY(optv);
 	DESTROY(temp);
 	return msg;
 }
