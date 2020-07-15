@@ -1201,7 +1201,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 	return msg;
 }
 
-/* batch_parse -- turn one line from a -f batch into a (struct query).
+/* batch_parse -- turn one line from a -f batch into a qdesc_t.
  */
 static const char *
 batch_parse(char *line, qdesc_t qdp) {
@@ -1256,7 +1256,7 @@ batch_parse(char *line, qdesc_t qdp) {
 				return "missing term after 'rdata/name/'";
 			if (allow_8bit == false &&
 			    ((msg = check_7bit(t)) != NULL))
-				return t;
+				return msg;
 			qd.thing = t;
 			if ((t = strtok_r(NULL, "/", &saveptr)) != NULL) {
 				qd.rrtype = t;

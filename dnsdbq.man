@@ -132,13 +132,21 @@ Rdata (IP address) query:
 Rdata (raw) query:
 .Ic rdata/raw/HEX[/RRTYPE]
 .It
-.Ic $OPTIONS [-A\ timestamp] [-B\ timestamp] [-c] [-g] [-G]
-[-l\ query_limit] [-L\ output_limit] [-O\ offset]
+Change query options:
+.Ic $OPTIONS {options}
 .El
 .Pp
-The $OPTIONS allows several command line options to be changed mid-batch.
+Where
+.Ic options
+:==
+.Bd -literal -offset 4n
+[-A\ timestamp] [-B\ timestamp] [-c] [-g] [-G]
+[-l\ query_limit] [-L\ output_limit] [-O\ offset]
+.Ed
+.Pp
+$OPTIONS alone on a line allows command line options to be changed mid-batch.
 If no options are given, the query parameters will be reset to those given
-on the command line, if any.
+on the command line, if any, or else to defaults.
 .Pp
 Any internal slash (/) or comma (,) characters within the search names
 of a batch entry must be URL-encoded (for example, %2F or %2C).
