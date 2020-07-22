@@ -516,6 +516,13 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr,
+					"%s: warning: no sixth SP in '%s'\n",
+					program_name, line);
+				continue;
+			}
+			linep += strspn(linep, " ");
 			DEBUG(2, true, "sort2: '%*.*s'\n",
 				 (int)(nl - linep),
 				 (int)(nl - linep),

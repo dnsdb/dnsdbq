@@ -26,7 +26,58 @@
 #include <string.h>
 #include "ns_ttl.h"
 
+/* Forward. */
+
+static int fmt1(u_long t, char s, char **buf, size_t *buflen);
+
+/* Macros. */
+
+#define T(x) {if ((x) < 0) return (-1); else (void)NULL;}
+#define A(c) {if (dstlen < 2) return (-1); else *dst++ = c, *dst = '\0';}
+
 /* Public. */
+
+int
+ns_format_ttl(u_long src, char *dst, size_t dstlen) {
+	u_long secs, mins, hours, days, years;
+	char *odst = dst;
+
+	secs = src % 60;   src /= 60;
+	mins = src % 60;   src /= 60;
+	hours = src % 24;  src /= 24;
+	days = src % 365;  src /= 365;
+	years = src;       src = 0;
+
+	if (years != 0) {
+		A('~');
+		T(fmt1(years, 'y', &dst, &dstlen));
+	}
+	if (days != 0) {
+		if (dst != odst)
+			A('\040');
+		A('~');
+		T(fmt1(days, 'd', &dst, &dstlen));
+	}
+	if (years == 0 && hours != 0) {
+		if (dst != odst)
+			A('\040');
+		T(fmt1(hours, 'h', &dst, &dstlen));
+	}
+	if (years == 0 && mins != 0) {
+		if (dst != odst)
+			A('\040');
+		T(fmt1(mins, 'm', &dst, &dstlen));
+	}
+	if ((years == 0 && days == 0 && secs != 0) ||
+	    (years == 0 && days == 0 && hours == 0 && mins == 0))
+	{
+		if (dst != odst)
+			A('\040');
+		T(fmt1(secs, 's', &dst, &dstlen));
+	}
+
+	return (int)(dst - odst);
+}
 
 int
 ns_parse_ttl(const char *src, u_long *dst) {
@@ -80,4 +131,20 @@ ns_parse_ttl(const char *src, u_long *dst) {
  einval:
 	errno = EINVAL;
 	return (-1);
+}
+
+/* Private. */
+
+static int
+fmt1(u_long t, char s, char **buf, size_t *buflen) {
+	char tmp[50];
+	size_t len;
+
+	len = (size_t) sprintf(tmp, "%lu%c", t, s);
+	if (len + 1 > *buflen)
+		return (-1);
+	strcpy(*buf, tmp);
+	*buf += len;
+	*buflen -= len;
+	return (0);
 }

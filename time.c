@@ -40,7 +40,7 @@ time_cmp(u_long a, u_long b) {
 	return (0);
 }
 
-/* time_str -- format one (possibly relative) timestamp (returns static string)
+/* time_str -- format one (possibly zero) timestamp (returns static string)
  */
 const char *
 time_str(u_long x, bool iso8601fmt) {

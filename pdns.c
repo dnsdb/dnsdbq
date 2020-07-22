@@ -18,6 +18,7 @@
 
 #include "defs.h"
 #include "netio.h"
+#include "ns_ttl.h"
 #include "pdns.h"
 #include "time.h"
 #include "globals.h"
@@ -39,17 +40,29 @@ present_text_lookup(pdns_tuple_ct tup,
 
 	/* Timestamps. */
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
+		char duration[50];
+
+		if (ns_format_ttl(tup->time_last - tup->time_first + 1,
+				  duration, sizeof duration) < 0)
+			strcpy(duration, "?");
 		printf(";; record times: %s",
 			time_str(tup->time_first, iso8601));
-		printf(" .. %s\n",
-			time_str(tup->time_last, iso8601));
+		printf(" .. %s (%s)\n",
+			time_str(tup->time_last, iso8601),
+		        duration);
 		ppflag = true;
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
+		char duration[50];
+
+		if (ns_format_ttl(tup->zone_last - tup->zone_first + 1,
+				  duration, sizeof duration) < 0)
+			strcpy(duration, "?");
 		printf(";;   zone times: %s",
 			time_str(tup->zone_first, iso8601));
-		printf(" .. %s\n",
-			time_str(tup->zone_last, iso8601));
+		printf(" .. %s (%s)\n",
+			time_str(tup->zone_last, iso8601),
+		        duration);
 		ppflag = true;
 	}
 
@@ -418,9 +431,9 @@ data_blob(query_t query, const char *buf, size_t len) {
 	}
 
 	if (sorting != no_sort) {
-		/* POSIX sort(1) is given five extra fields at the
-		 * front of each line (first,last,count,name,data)
-		 * which are accessed as -k1 .. -k5 on the
+		/* POSIX sort(1) is given six extra fields at the front
+		 * of each line (first,last,duration,count,name,data)
+		 * which are accessed as -k1 .. -k6 on the
 		 * sort command line. we strip them off later
 		 * when reading the result back. the reason
 		 * for all this PDP11-era logic is to avoid
@@ -431,16 +444,18 @@ data_blob(query_t query, const char *buf, size_t len) {
 
 		DEBUG(3, true, "dyn_rrname = '%s'\n", dyn_rrname);
 		DEBUG(3, true, "dyn_rdata = '%s'\n", dyn_rdata);
-		fprintf(writer->sort_stdin, "%lu %lu %lu %s %s %*.*s\n",
+		fprintf(writer->sort_stdin, "%lu %lu %lu %lu %s %s %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,
+			(unsigned long)(last - first),
 			(unsigned long)tup.count,
 			or_else(dyn_rrname, "n/a"),
 			or_else(dyn_rdata, "n/a"),
 			(int)len, (int)len, buf);
-		DEBUG(2, true, "sort0: '%lu %lu %lu %s %s %*.*s'\n",
+		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %*.*s'\n",
 			 (unsigned long)first,
 			 (unsigned long)last,
+			 (unsigned long)(last - first),
 			 (unsigned long)tup.count,
 			 or_else(dyn_rrname, "n/a"),
 			 or_else(dyn_rdata, "n/a"),

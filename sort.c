@@ -45,6 +45,7 @@ void
 sort_ready(void) {
 	(void) add_sort_key("first");
 	(void) add_sort_key("last");
+	(void) add_sort_key("duration");
 	(void) add_sort_key("count");
 	(void) add_sort_key("name");
 	(void) add_sort_key("data");
@@ -66,14 +67,16 @@ add_sort_key(const char *key_name) {
 		key = "-k1n";
 	else if (strcasecmp(key_name, "last") == 0)
 		key = "-k2n";
-	else if (strcasecmp(key_name, "count") == 0)
+	else if (strcasecmp(key_name, "duration") == 0)
 		key = "-k3n";
+	else if (strcasecmp(key_name, "count") == 0)
+		key = "-k4n";
 	else if (strcasecmp(key_name, "name") == 0)
-		key = "-k4";
-	else if (strcasecmp(key_name, "data") == 0)
 		key = "-k5";
+	else if (strcasecmp(key_name, "data") == 0)
+		key = "-k6";
 	else
-		return "key must be one of first, last, count, name, or data";
+		return "key must be in first|last|duration|count|name|data";
 	x = asprintf(&computed, "%s%s", key,
 		     sorting == reverse_sort ? "r" : "");
 	if (x < 0)
