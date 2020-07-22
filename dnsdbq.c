@@ -632,7 +632,7 @@ help(void) {
 
 	printf("usage: %s [-cdfgGhIjmqSsUv8] [-p dns|json|csv]\n",
 	       program_name);
-	puts("\t[-k (first|last|count|name|data)[,...]]\n"
+	puts("\t[-k (first|last|duration|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
 	     "\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
 	     "\t\t-f |\n"
