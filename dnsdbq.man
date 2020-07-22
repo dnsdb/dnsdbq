@@ -390,7 +390,8 @@ negative unsigned integer : negative offset in seconds from now.
 YYYY-MM-DD [HH:MM:SS] : in absolute form, in UTC time, as DNSDB does its
 fencing using UTC time.
 .It
-%dw%dd%dh%dm%ds : the relative form with explicit labels.  Calculates offset
+%uw%ud%uh%um%us : the relative form with explicit labels (w=weeks, d=days,
+h=hours, m=minutes, s=seconds).  Calculates offset
 from UTC time, as DNSDB does its fencing using UTC time.
 .Pp
 .El
