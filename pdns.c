@@ -394,10 +394,9 @@ tuple_unmake(pdns_tuple_t tup) {
 int
 data_blob(query_t query, const char *buf, size_t len) {
 	writer_t writer = query->writer;
-	qparam_ct qp = &query->params;
-	const char *msg, *whynot;
 	struct pdns_tuple tup;
 	u_long first, last;
+	const char *msg;
 	int ret = 0;
 
 	msg = tuple_make(&tup, buf, len);
@@ -418,61 +417,8 @@ data_blob(query_t query, const char *buf, size_t len) {
 		last = (u_long)tup.zone_last;
 	}
 
-	/* time fencing can in some cases (-A & -B w/o -c) require
-	 * asking the server for more than we really want, and so
-	 * we have to winnow it down upon receipt. (see also -J.)
-	 */
-	whynot = NULL;
-	DEBUG(3, true, "filtering-- ");
-	if (qp->after != 0) {
-		const int first_vs_after = time_cmp(first, qp->after),
-			last_vs_after = time_cmp(last, qp->after);
-
-		DEBUG(4, false, "FvA %d LvA %d: ",
-			 first_vs_after, last_vs_after);
-
-		if (qp->complete) {
-			if (first_vs_after < 0) {
-				whynot = "first is too early";
-			}
-		} else {
-			if (last_vs_after < 0) {
-				whynot = "last is too early";
-			}
-		}
-	}
-	if (qp->before != 0) {
-		const int first_vs_before = time_cmp(first, qp->before),
-			last_vs_before = time_cmp(last, qp->before);
-
-		DEBUG(4, false, "FvB %d LvB %d: ",
-			 first_vs_before, last_vs_before);
-
-		if (qp->complete) {
-			if (last_vs_before > 0) {
-				whynot = "last is too late";
-			}
-		} else {
-			if (first_vs_before > 0) {
-				whynot = "first is too late";
-			}
-		}
-	}
-
-	if (whynot == NULL) {
-		DEBUG(3, false, "selected!\n");
-	} else {
-		DEBUG(3, false, "skipped (%s).\n", whynot);
-	}
-	DEBUG(3, true, "\tF..L = %s", time_str(first, false));
-	DEBUG(3, false, " .. %s\n", time_str(last, false));
-	DEBUG(3, true, "\tA..B = %s", time_str(qp->after, false));
-	DEBUG(3, false, " .. %s\n", time_str(qp->before, false));
-	if (whynot != NULL)
-		goto next;
-
 	if (sorting != no_sort) {
-		/* POSIX sort is given five extra fields at the
+		/* POSIX sort(1) is given five extra fields at the
 		 * front of each line (first,last,count,name,data)
 		 * which are accessed as -k1 .. -k5 on the
 		 * sort command line. we strip them off later
@@ -505,7 +451,6 @@ data_blob(query_t query, const char *buf, size_t len) {
 		(*presenter)(&tup, buf, len, writer);
 	}
 	ret = 1;
- next:
 	tuple_unmake(&tup);
  more:
 	return (ret);

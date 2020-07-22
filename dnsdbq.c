@@ -99,10 +99,10 @@ static const char * const conf_files[] = {
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
 	{ "lookup", "/lookup", lookup_ok,
-	  present_text_lookup, present_json, present_csv_lookup, false },
+	  present_text_lookup, present_json, present_csv_lookup },
 	{ "summarize", "/summarize", summarize_ok,
-	  present_text_summarize, present_json, present_csv_summarize, true },
-	{ NULL, NULL, NULL, NULL, NULL, NULL, false }
+	  present_text_summarize, present_json, present_csv_summarize },
+	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 /* Private. */
@@ -467,12 +467,6 @@ main(int argc, char *argv[]) {
 	/* validate some interrelated options. */
 	if (multiple && batching == batch_none)
 		usage("using -m without -f makes no sense.");
-	if (sorting == no_sort && json_fd == -1 && qp.complete) {
-		fprintf(stderr,
-			"warning: -c w/o -J requires -s or -S for dedup;"
-			" defaulting to -S\n");
-		sorting = reverse_sort;
-	}
 	if ((msg = (*pverb->ok)()) != NULL)
 		usage(msg);
 	if ((msg = psys->verb_ok(pverb->name, &qp)) != NULL)
@@ -1368,6 +1362,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
  */
 static query_t
 query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
+	struct pdns_fence fence = {};
 	query_t query = NULL;
 
 	CREATE(query, sizeof(struct query));
@@ -1383,49 +1378,25 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	 *
 	 * the 4-tuple is: first_after, first_before, last_after, last_before
 	 */
-	if (qpp->after != 0 && qpp->before != 0) {
-		if (qpp->complete || pverb->force_complete) {
-			/* each db tuple must be enveloped by time fence. */
-			launch(query, &(struct pdns_fence){
-				.first_after = qpp->after,
-				.last_before = qpp->before});
-		} else {
-			/* we need tuples that end after fence start... */
-			launch(query, &(struct pdns_fence){
-				.last_after = qpp->after});
-			/* ...and that begin before the time fence end. */
-			launch(query, &(struct pdns_fence){
-				.first_before = qpp->before});
-			/* and we will filter in reader_func() to
-			 * select only those tuples which either:
-			 * ...(start within), or (end within), or
-			 * ...(start before and end after).
-			 */
-		}
-	} else if (qpp->after != 0) {
+	if (qpp->after != 0) {
 		if (qpp->complete) {
 			/* each db tuple must begin after the fence-start. */
-			launch(query, &(struct pdns_fence){
-				.first_after = qpp->after});
+			fence.first_after = qpp->after;
 		} else {
 			/* each db tuple must end after the fence-start. */
-			launch(query, &(struct pdns_fence){
-				.last_after = qpp->after});
+			fence.last_after = qpp->after;
 		}
-	} else if (qpp->before != 0) {
+	}
+	if (qpp->before != 0) {
 		if (qpp->complete) {
 			/* each db tuple must end before the fence-end. */
-			launch(query, &(struct pdns_fence){
-				.last_before = qpp->before});
+			fence.last_before = qpp->before;
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			launch(query, &(struct pdns_fence){
-				.first_before = qpp->before});
+			fence.first_before = qpp->before;
 		}
-	} else {
-		/* no time fencing. */
-		launch(query, &(pdns_fence_t){});
 	}
+	launch(query, &fence);
 	return query;
 }
 

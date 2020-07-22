@@ -101,14 +101,7 @@ and
 (separately or together) will select partial overlaps of database tuples and
 time search criteria. To match only complete overlaps, add the -c
 ("completeness") command line option (this is also known as "strict"
-mode). Note that without
-.Fl c ,
-the use of
-.Fl A
-and
-.Fl B
-together will cause this program to make two upstream queries, and then merge
-and deduplicate the two results.
+mode).
 .It Fl d
 enable debug mode.  Repeat for more debug output.
 .It Fl f
