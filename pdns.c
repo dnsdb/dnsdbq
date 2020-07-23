@@ -42,7 +42,7 @@ present_text_lookup(pdns_tuple_ct tup,
 	if (tup->obj.time_first != NULL && tup->obj.time_last != NULL) {
 		char duration[50];
 
-		if (ns_format_ttl(tup->time_last - tup->time_first + 1,
+		if (ns_format_ttl(tup->time_last - tup->time_first + 1, //non-0
 				  duration, sizeof duration) < 0)
 			strcpy(duration, "?");
 		printf(";; record times: %s",
@@ -55,7 +55,7 @@ present_text_lookup(pdns_tuple_ct tup,
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
 		char duration[50];
 
-		if (ns_format_ttl(tup->zone_last - tup->zone_first + 1,
+		if (ns_format_ttl(tup->zone_last - tup->zone_first, // no +1
 				  duration, sizeof duration) < 0)
 			strcpy(duration, "?");
 		printf(";;   zone times: %s",
