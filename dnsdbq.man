@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl cdfgGhIjmqSsUv8
+.Op Fl cdfgGhIjmqSsUv468
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -370,6 +370,10 @@ observation count.
 turns off TLS certificate verification (unsafe).
 .It Fl v
 report the version of dnsdbq and exit.
+.It Fl 4
+use to force connecting to the DNSDB server via IPv4.
+.It Fl 6
+use to force connecting to the DNSDB server via IPv6.
 .It Fl 8
 Normally dnsdbq requires that
 .Fl n

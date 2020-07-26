@@ -32,7 +32,7 @@ extern const struct verb verbs[];
 #endif
 
 EXTERN	const char id_swclient[]	INIT("dnsdbq");
-EXTERN	const char id_version[]		INIT("2.2.1");
+EXTERN	const char id_version[]		INIT("2.2.2");
 EXTERN	const char *program_name	INIT(NULL);
 EXTERN	const char path_sort[]		INIT("/usr/bin/sort");
 EXTERN	const char json_header[]	INIT("Accept: application/json");
@@ -54,6 +54,7 @@ EXTERN	present_e presentation		INIT(pres_text);
 EXTERN	present_t presenter		INIT(NULL);
 EXTERN	struct timeval startup_time	INIT({});
 EXTERN	int exit_code			INIT(0);
+EXTERN	long curl_ipresolve		INIT(CURL_IPRESOLVE_WHATEVER);
 
 #undef INIT
 #undef EXTERN
