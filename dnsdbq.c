@@ -137,7 +137,7 @@ main(int argc, char *argv[]) {
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
 			    "R:r:N:n:i:M:u:p:t:b:k:J:V:"
-			    "dfhIjmqSsUv8" QPARAM_GETOPT))
+			    "dfhIjmqSsUv468" QPARAM_GETOPT))
 	       != -1)
 	{
 		switch (ch) {
@@ -389,6 +389,12 @@ main(int argc, char *argv[]) {
 		case 'h':
 			help();
 			my_exit(0);
+		case '4':
+			curl_ipresolve = CURL_IPRESOLVE_V4;
+			break;
+		case '6':
+			curl_ipresolve = CURL_IPRESOLVE_V6;
+			break;
 		case '8':
 			allow_8bit = true;
 			break;
@@ -630,7 +636,7 @@ static void
 help(void) {
 	verb_ct v;
 
-	printf("usage: %s [-cdfgGhIjmqSsUv8] [-p dns|json|csv]\n",
+	printf("usage: %s [-cdfgGhIjmqSsUv468] [-p dns|json|csv]\n",
 	       program_name);
 	puts("\t[-k (first|last|duration|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
@@ -673,6 +679,8 @@ help(void) {
 	     "\t-s/-S can be repeated before several -k arguments.\n"
 	     "use -U to turn off SSL certificate verification.\n"
 	     "use -v to show the program version.\n"
+	     "use -4 to force connecting to the server via IPv4.\n"
+	     "use -6 to force connecting to the server via IPv6.\n"
 	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments");
 
 	puts("for -u, system must be one of:");

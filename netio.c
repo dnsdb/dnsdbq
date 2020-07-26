@@ -96,6 +96,12 @@ create_fetch(query_t query, char *url) {
 		curl_easy_setopt(fetch->easy, CURLOPT_SSL_VERIFYPEER, 0L);
 		curl_easy_setopt(fetch->easy, CURLOPT_SSL_VERIFYHOST, 0L);
 	}
+
+	/* if user specified a prefence for IPv4 or IPv6, use it. */
+	if (curl_ipresolve != CURL_IPRESOLVE_WHATEVER)
+		curl_easy_setopt(fetch->easy,
+				 CURLOPT_IPRESOLVE, curl_ipresolve);
+
 	if (psys->auth != NULL)
 	    psys->auth(fetch);
 	fetch->hdrs = curl_slist_append(fetch->hdrs, json_header);
