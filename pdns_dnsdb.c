@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#if WANT_PDNS_DNSDB
+#if WANT_PDNS_DNSDB || WANT_PDNS_DNSDB2
 
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
@@ -83,6 +83,8 @@ static const char env_dnsdb_base_url[] = "DNSDB_SERVER";
 static char *api_key = NULL;
 static char *dnsdb_base_url = NULL;
 
+static const char dnsdb2_url_prefix[] = "/dnsdb/v2";
+
 static const struct pdns_system dnsdb = {
 	"dnsdb", "https://api.dnsdb.info",
 	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
@@ -97,6 +99,20 @@ pdns_system_ct
 pdns_dnsdb(void) {
 	return &dnsdb;
 }
+
+#if WANT_PDNS_DNSDB2
+static const struct pdns_system dnsdb2 = {
+	"dnsdb2", "https://api.dnsdb.info/dnsdb/v2",
+	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
+	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
+	dnsdb_setval, dnsdb_ready, dnsdb_destroy
+};
+
+pdns_system_ct
+pdns_dnsdb2(void) {
+	return &dnsdb2;
+}
+#endif /* WANT_PDNS_DNSDB2 */
 
 /*---------------------------------------------------------------- private
  */
@@ -134,6 +150,21 @@ dnsdb_ready(void) {
 	}
 	if (dnsdb_base_url == NULL)
 		dnsdb_base_url = strdup(psys->base_url);
+
+	/* If SAF (aka APIv2) ensure URL contains special /dnsdb/v2 prefix. */
+	if (encap == encap_saf &&
+	    strstr(dnsdb_base_url, dnsdb2_url_prefix) == NULL) {
+		int x;
+		char *ret;
+		x = asprintf(&ret, "%s%s", dnsdb_base_url, dnsdb2_url_prefix);
+		if (x < 0) {
+			perror("asprintf");
+			abort();
+		}
+		DESTROY(dnsdb_base_url);
+		dnsdb_base_url = ret;
+	}
+
 	if (api_key == NULL)
 		return "no API key given";
 	return NULL;
@@ -155,14 +186,14 @@ dnsdb_destroy(void) {
  * which might have the same JSON output format but a different REST syntax.
  * returns a string that must be freed.
  */
-char *
+static char *
 dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
 	char *ret = NULL, *max_count_str = NULL, *offset_str = NULL,
 		*first_after_str = NULL, *first_before_str = NULL,
 		*last_after_str = NULL, *last_before_str = NULL,
 		*query_limit_str = NULL;
-	int x;
+	int x, num_slash;
 
 	/* count the number of slashes in the base url, after the ://
 	 * if present.  1 or more means there's a /path after the host.
@@ -174,12 +205,15 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 		p += sizeof "://" - sizeof "";
 	else
 		p = dnsdb_base_url;
-	x = 0;
-	for (; *p != '\0'; p++)
-		x += (*p == '/');
+	num_slash = 0;
+	if (strstr(dnsdb_base_url, dnsdb2_url_prefix) == NULL)
+		for (; *p != '\0'; p++)
+			num_slash += (*p == '/');
 	verb_path = "";
-	if (x == 0) {
-		if (pverb->url_fragment != NULL)
+	if (num_slash == 0) {
+		if (encap == encap_saf && strcmp(path, "rate_limit") == 0)
+			verb_path = "";
+		else if (pverb->url_fragment != NULL)
 			verb_path = pverb->url_fragment;
 		else
 			verb_path = "/lookup";
@@ -326,8 +360,10 @@ dnsdb_auth(fetch_t fetch) {
 
 static const char *
 dnsdb_status(fetch_t fetch) {
-	/* early (current) versions of DNSDB returns 404 for "no rrs found". */
-	if (fetch->rcode == 404)
+	/* APIv2 DNSDB returns 200 with no obj lines for "no rrs found".
+	 * early (current) versions of DNSDB returns 404 for "no rrs found".
+	 */
+	if (encap != encap_saf && fetch->rcode == HTTP_NOT_FOUND)
 		return status_noerror;
 	return status_error;
 }
@@ -431,7 +467,8 @@ dnsdb_info_blob(const char *buf, size_t len) {
 			rate_tuple_unmake(&tup);
 		}
 	} else if (presentation == pres_json) {
-		fwrite(buf, 1, len, stdout);
+		/* Ignore any failure in pprint_json. */
+		(void) pprint_json(buf, len, stdout);
 	} else {
 		abort();
 	}
@@ -547,4 +584,4 @@ rate_tuple_unmake(rate_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-#endif /*WANT_PDNS_DNSDB*/
+#endif /*WANT_PDNS_DNSDB || WANT_PDNS_DNSDB2*/

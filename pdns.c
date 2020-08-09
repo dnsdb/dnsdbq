@@ -153,17 +153,41 @@ present_text_summarize(pdns_tuple_ct tup,
 	putchar('\n');
 }
 
+/* pprint_json -- pretty-print a JSON buffer after validation.
+ *
+ * returns true if could parse the json ok, otherwise returns false.
+ */
+bool
+pprint_json(const char *buf, size_t len, FILE *outf) {
+	json_t	*js;
+	json_error_t error;
+
+	js = json_loadb(buf, len, 0, &error);
+	if (js == NULL) {
+		fprintf(stderr, "JSON parsing error %d:%d: %s %s\n",
+			error.line, error.column,
+			error.text, error.source);
+		return false;
+	}
+
+	json_dumpf(js, outf, JSON_INDENT(2));
+	fputc('\n', outf);
+
+	json_decref(js);
+	return true;
+}
+
 /* present_json -- render one DNSDB tuple as newline-separated JSON.
  *
  * note: used by both lookup and summarize verbs.
  */
 void
-present_json(pdns_tuple_ct tup __attribute__ ((unused)),
-	     const char *jsonbuf,
-	     size_t jsonlen,
+present_json(pdns_tuple_ct tup,
+	     const char *jsonbuf __attribute__ ((unused)),
+	     size_t jsonlen __attribute__ ((unused)),
 	     writer_t writer __attribute__ ((unused)))
 {
-	fwrite(jsonbuf, 1, jsonlen, stdout);
+	json_dumpf(tup->obj.cof_obj, stdout, JSON_INDENT(0) | JSON_COMPACT);
 	putchar('\n');
 }
 
@@ -291,8 +315,39 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	}
 	DEBUG(4, true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2)));
 
+	if (encap != encap_saf) {
+		tup->obj.cof_obj = tup->obj.main;
+	} else {
+		tup->obj.saf_cond = json_object_get(tup->obj.main, "cond");
+		if (tup->obj.saf_cond != NULL) {
+			if (!json_is_string(tup->obj.saf_cond)) {
+				msg = "cond must be a string";
+				goto ouch;
+			}
+			tup->cond = json_string_value(tup->obj.saf_cond);
+		}
+
+		tup->obj.saf_msg = json_object_get(tup->obj.main, "msg");
+		if (tup->obj.saf_msg != NULL) {
+			if (!json_is_string(tup->obj.saf_msg)) {
+				msg = "msg must be a string";
+				goto ouch;
+			}
+			tup->msg = json_string_value(tup->obj.saf_msg);
+		}
+
+		tup->obj.saf_obj = json_object_get(tup->obj.main, "obj");
+		if (tup->obj.saf_obj != NULL) {
+			if (!json_is_object(tup->obj.saf_obj)) {
+				msg = "obj must be an object";
+				goto ouch;
+			}
+			tup->obj.cof_obj = tup->obj.saf_obj;
+		}
+	}
+
 	/* Timestamps. */
-	tup->obj.zone_first = json_object_get(tup->obj.main,
+	tup->obj.zone_first = json_object_get(tup->obj.cof_obj,
 					      "zone_time_first");
 	if (tup->obj.zone_first != NULL) {
 		if (!json_is_integer(tup->obj.zone_first)) {
@@ -302,7 +357,8 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		tup->zone_first = (u_long)
 			json_integer_value(tup->obj.zone_first);
 	}
-	tup->obj.zone_last = json_object_get(tup->obj.main, "zone_time_last");
+	tup->obj.zone_last =
+		json_object_get(tup->obj.cof_obj, "zone_time_last");
 	if (tup->obj.zone_last != NULL) {
 		if (!json_is_integer(tup->obj.zone_last)) {
 			msg = "zone_time_last must be an integer";
@@ -311,7 +367,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		tup->zone_last = (u_long)
 			json_integer_value(tup->obj.zone_last);
 	}
-	tup->obj.time_first = json_object_get(tup->obj.main, "time_first");
+	tup->obj.time_first = json_object_get(tup->obj.cof_obj, "time_first");
 	if (tup->obj.time_first != NULL) {
 		if (!json_is_integer(tup->obj.time_first)) {
 			msg = "time_first must be an integer";
@@ -320,7 +376,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		tup->time_first = (u_long)
 			json_integer_value(tup->obj.time_first);
 	}
-	tup->obj.time_last = json_object_get(tup->obj.main, "time_last");
+	tup->obj.time_last = json_object_get(tup->obj.cof_obj, "time_last");
 	if (tup->obj.time_last != NULL) {
 		if (!json_is_integer(tup->obj.time_last)) {
 			msg = "time_last must be an integer";
@@ -331,7 +387,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	}
 
 	/* Count. */
-	tup->obj.count = json_object_get(tup->obj.main, "count");
+	tup->obj.count = json_object_get(tup->obj.cof_obj, "count");
 	if (tup->obj.count != NULL) {
 		if (!json_is_integer(tup->obj.count)) {
 			msg = "count must be an integer";
@@ -340,7 +396,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		tup->count = json_integer_value(tup->obj.count);
 	}
 	/* Bailiwick. */
-	tup->obj.bailiwick = json_object_get(tup->obj.main, "bailiwick");
+	tup->obj.bailiwick = json_object_get(tup->obj.cof_obj, "bailiwick");
 	if (tup->obj.bailiwick != NULL) {
 		if (!json_is_string(tup->obj.bailiwick)) {
 			msg = "bailiwick must be a string";
@@ -349,7 +405,8 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		tup->bailiwick = json_string_value(tup->obj.bailiwick);
 	}
 	/* num_results -- just for a summarize. */
-	tup->obj.num_results = json_object_get(tup->obj.main, "num_results");
+	tup->obj.num_results =
+		json_object_get(tup->obj.cof_obj, "num_results");
 	if (tup->obj.num_results != NULL) {
 		if (!json_is_integer(tup->obj.num_results)) {
 			msg = "num_results must be an integer";
@@ -359,7 +416,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	}
 
 	/* Records. */
-	tup->obj.rrname = json_object_get(tup->obj.main, "rrname");
+	tup->obj.rrname = json_object_get(tup->obj.cof_obj, "rrname");
 	if (tup->obj.rrname != NULL) {
 		if (!json_is_string(tup->obj.rrname)) {
 			msg = "rrname must be a string";
@@ -367,7 +424,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		}
 		tup->rrname = json_string_value(tup->obj.rrname);
 	}
-	tup->obj.rrtype = json_object_get(tup->obj.main, "rrtype");
+	tup->obj.rrtype = json_object_get(tup->obj.cof_obj, "rrtype");
 	if (tup->obj.rrtype != NULL) {
 		if (!json_is_string(tup->obj.rrtype)) {
 			msg = "rrtype must be a string";
@@ -375,7 +432,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		}
 		tup->rrtype = json_string_value(tup->obj.rrtype);
 	}
-	tup->obj.rdata = json_object_get(tup->obj.main, "rdata");
+	tup->obj.rdata = json_object_get(tup->obj.cof_obj, "rdata");
 	if (tup->obj.rdata != NULL) {
 		if (json_is_string(tup->obj.rdata)) {
 			tup->rdata = json_string_value(tup->obj.rdata);
@@ -403,6 +460,9 @@ tuple_unmake(pdns_tuple_t tup) {
 }
 
 /* data_blob -- process one deblocked json blob as a counted string.
+ *
+ * presents each blob and then frees it.
+ * returns number of tuples processed (for now, 1 or 0).
  */
 int
 data_blob(query_t query, const char *buf, size_t len) {
@@ -417,6 +477,47 @@ data_blob(query_t query, const char *buf, size_t len) {
 		fputs(msg, stderr);
 		fputc('\n', stderr);
 		goto more;
+	}
+
+	if (encap == encap_saf) {
+		if (tup.msg != NULL) {
+			DEBUG(5, true, "data_blob tup.msg = %s\n", tup.msg);
+			query->saf_msg = strdup(tup.msg);
+		}
+
+		if (tup.cond != NULL) {
+			DEBUG(5, true, "data_blob tup.cond = %s\n", tup.cond);
+			/* if we goto next now, this line will not be counted */
+			if (strcmp(tup.cond, "begin") == 0) {
+				query->saf_cond = sc_begin;
+				goto next;
+			} else if (strcmp(tup.cond, "ongoing") == 0) {
+				/* "cond":"ongoing" key vals should
+				 * be ignored but the rest of line used. */
+				query->saf_cond = sc_ongoing;
+			} else if (strcmp(tup.cond, "succeeded") == 0) {
+				query->saf_cond = sc_succeeded;
+				goto next;
+			} else if (strcmp(tup.cond, "limited") == 0) {
+				query->saf_cond = sc_limited;
+				goto next;
+			} else if (strcmp(tup.cond, "failed") == 0) {
+				query->saf_cond = sc_failed;
+				goto next;
+			} else {
+				/* use sc_missing for an invalid cond value  */
+				query->saf_cond = sc_missing;
+				fprintf(stderr,
+					"%s: Unknown value for \"cond\": %s\n",
+					program_name, tup.cond);
+			}
+		}
+
+		/* A COF keepalive will have no "obj" but may have a "cond" or "msg". */
+		if (tup.obj.saf_obj == NULL) {
+			DEBUG(4, true, "COF object is empty, i.e. a keepalive\n");
+			goto next;
+		}
 	}
 
 	/* there are two sets of timestamps in a tuple. we prefer
@@ -465,9 +566,10 @@ data_blob(query_t query, const char *buf, size_t len) {
 	} else {
 		(*presenter)(&tup, buf, len, writer);
 	}
+
 	ret = 1;
+ next:
 	tuple_unmake(&tup);
  more:
 	return (ret);
 }
-

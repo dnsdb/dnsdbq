@@ -43,6 +43,16 @@ static bool curl_cleanup_needed = false;
 static query_t paused[MAX_JOBS];
 static int npaused = 0;
 
+const char saf_begin[] = "begin";
+const char saf_ongoing[] = "ongoing";
+const char saf_succeeded[] = "succeeded";
+const char saf_limited[] = "limited";
+const char saf_failed[] = "failed";
+
+const char *saf_valid_conds[] = {
+	saf_begin, saf_ongoing, saf_succeeded, saf_limited, saf_failed
+};
+
 /* make_curl -- perform global initializations of libcurl.
  */
 void
@@ -104,7 +114,11 @@ create_fetch(query_t query, char *url) {
 
 	if (psys->auth != NULL)
 	    psys->auth(fetch);
-	fetch->hdrs = curl_slist_append(fetch->hdrs, json_header);
+
+	if (encap == encap_saf)
+		fetch->hdrs = curl_slist_append(fetch->hdrs, jsonl_header);
+	else
+		fetch->hdrs = curl_slist_append(fetch->hdrs, json_header);
 	curl_easy_setopt(fetch->easy, CURLOPT_HTTPHEADER, fetch->hdrs);
 	curl_easy_setopt(fetch->easy, CURLOPT_WRITEFUNCTION, writer_func);
 	curl_easy_setopt(fetch->easy, CURLOPT_WRITEDATA, fetch);
@@ -276,10 +290,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			curl_easy_getinfo(fetch->easy,
 					  CURLINFO_RESPONSE_CODE,
 					  &fetch->rcode);
-		if (fetch->rcode != 200) {
+		if (fetch->rcode != HTTP_OK) {
 			char *message = strndup(fetch->buf, fetch->len);
 
-			/* only report the first line of data */
+			/* only report the first line of data. */
 			char *eol = strpbrk(message, "\r\n");
 			if (eol != NULL)
 				*eol = '\0';
@@ -324,6 +338,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			      qp->output_limit);
 			/* cause CURLE_WRITE_ERROR for this transfer. */
 			bytes = 0;
+			if (encap == encap_saf)
+				query->saf_cond = sc_we_limited;
 			/* inform io_engine() that the abort is intentional. */
 			fetch->stopped = true;
 		} else if (writer->info) {
@@ -338,9 +354,24 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			writer->ps_len += pre_len + 1;
 		} else {
 			query->writer->count +=
-				data_blob(query,
-					  fetch->buf,
-					  pre_len);
+				data_blob(query, fetch->buf, pre_len);
+
+			if (encap == encap_saf)
+				switch (query->saf_cond) {
+				case sc_init:
+				case sc_begin:
+				case sc_ongoing:
+				case sc_missing:
+					break;
+				case sc_succeeded:
+				case sc_limited:
+				case sc_failed:
+				case sc_we_limited:
+					/* inform io_engine() intentional
+					 * abort. */
+					fetch->stopped = true;
+					break;
+				}
 		}
 		memmove(fetch->buf, nl + 1, post_len);
 		fetch->len = post_len;
@@ -355,8 +386,20 @@ static void
 query_done(query_t query) {
 	DEBUG(2, true, "query_done(%s)\n", query->command);
 
-	/* if this was an actively written query, unpause another. */
-	if (batching == batch_verbose) {
+	if (batching == batch_none && !quiet) {
+		const char *msg = or_else(query->saf_msg, "");
+
+		if (query->saf_cond == sc_limited)
+			fprintf(stderr, "Query limited: %s\n", msg);
+		else if (query->saf_cond == sc_failed)
+			fprintf(stderr, "Query failed: %s\n", msg);
+		else if (query->saf_cond == sc_missing)
+			fprintf(stderr, "Query response_missing: %s\n", msg);
+		else if (query->status != NULL)
+			fprintf(stderr, "Query status: %s (%s)\n",
+				query->status, query->message);
+	} else if (batching == batch_verbose) {
+		/* if this was an actively written query, unpause another. */
 		writer_t writer = query->writer;
 
 		if (multiple) {
@@ -367,7 +410,8 @@ query_done(query_t query) {
 		writer->ps_len = (size_t)
 			asprintf(&writer->ps_buf, "-- %s (%s)\n",
 				 or_else(query->status, status_noerror),
-				 or_else(query->message, "no error"));
+				 or_else(query->message,
+					 or_else(query->saf_msg, "no error")));
 		if (npaused > 0) {
 			query_t unpause;
 			fetch_t fetch;
@@ -636,7 +680,18 @@ io_drain(void) {
 		query = fetch->query;
 
 		if (cm->msg == CURLMSG_DONE) {
-			DEBUG(2, true, "io_drain(%s) DONE\n", query->command);
+			if (fetch->rcode == 0)
+				curl_easy_getinfo(fetch->easy,
+						  CURLINFO_RESPONSE_CODE,
+						  &fetch->rcode);
+
+			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
+			      query->command, fetch->rcode);
+			if (encap == encap_saf)
+				DEBUG(2, true, "... saf_cond %d saf_msg %s\n",
+				      query->saf_cond,
+				      or_else(query->saf_msg, ""));
+
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
 				fprintf(stderr,
 					"%s: warning: libcurl failed since "
@@ -659,6 +714,18 @@ io_drain(void) {
 					curl_easy_strerror(cm->data.result));
 				exit_code = 1;
 			}
+
+			/* record emptiness as status if nothing else. */
+			if (encap == encap_saf &&
+			    query->writer != NULL &&
+			    query->writer->count == 0 &&
+			    query->status == NULL)
+			{
+				query_status(query,
+					     status_noerror,
+					     "no results found for query.");
+			}
+
 			fetch_done(fetch);
 			fetch_unlink(fetch);
 			fetch_reap(fetch);
