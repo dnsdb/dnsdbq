@@ -49,7 +49,7 @@
 #include "defs.h"
 #include "netio.h"
 #include "pdns.h"
-#if WANT_PDNS_DNSDB
+#if WANT_PDNS_DNSDB || WANT_PDNS_DNSDB2
 #include "pdns_dnsdb.h"
 #endif
 #if WANT_PDNS_CIRCL
@@ -684,7 +684,12 @@ help(void) {
 	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments");
 
 	puts("for -u, system must be one of:");
+#if WANT_PDNS_DNSDB
 	puts("\tdnsdb");
+#endif
+#if WANT_PDNS_DNSDB2
+	puts("\tdnsdb2");
+#endif
 #if WANT_PDNS_CIRCL
 	puts("\tcircl");
 #endif
@@ -704,6 +709,12 @@ pick_system(const char *name) {
 #if WANT_PDNS_DNSDB
 	if (strcmp(name, "dnsdb") == 0)
 		return pdns_dnsdb();
+#endif
+#if WANT_PDNS_DNSDB2
+	if (strcmp(name, "dnsdb2") == 0) {
+		encap = encap_saf;
+		return pdns_dnsdb2();
+	}
 #endif
 #if WANT_PDNS_CIRCL
 	if (strcmp(name, "circl") == 0)
@@ -940,6 +951,10 @@ read_configs(void) {
 			     "echo dnsdb apikey $APIKEY;"
 			     "echo dnsdb server $DNSDB_SERVER;"
 #endif
+#if WANT_PDNS_DNSDB2
+			     "echo dnsdb2 apikey $APIKEY;"
+			     "echo dnsdb2 server $DNSDB_SERVER;"
+#endif
 #if WANT_PDNS_CIRCL
 			     "echo circl apikey $CIRCL_AUTH;"
 			     "echo circl server $CIRCL_SERVER;"
@@ -1053,6 +1068,10 @@ do_batch(FILE *f, qparam_ct qpp) {
 		nl = strchr(command, '\n');
 		if (nl != NULL)
 			*nl = '\0';
+
+		/* allow # as a comment syntax */
+		if (command[0] == '#')
+			continue;
 
 		DEBUG(1, true, "do_batch(%s)\n", command);
 

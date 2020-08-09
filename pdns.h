@@ -20,8 +20,19 @@
 #include <jansson.h>
 #include "netio.h"
 
+/* main is the primary jansson library object from a json_loadb().
+ * all the other fields in this structure will point inside main, as
+ * borrowed references, so const.  main must be deallocated
+ * by json_decref() which then invalidates all the other fields.
+ *
+ * cof_obj points to the object that contains time_first...num_results.
+ * If not using SAF encapulation, then cof_obj points to main.
+ * If using SAF encapulation, then saf_cond, saf_msg, and saf_obj are
+ * parsed from main and cof_obj is repointed to saf_obj.
+ */
 struct pdns_json {
-	json_t	*main,
+	json_t *main;
+	const json_t *cof_obj, *saf_obj , *saf_cond, *saf_msg,
 		*time_first, *time_last, *zone_first, *zone_last,
 		*bailiwick, *rrname, *rrtype, *rdata,
 		*count, *num_results;
@@ -30,7 +41,7 @@ struct pdns_json {
 struct pdns_tuple {
 	struct pdns_json  obj;
 	u_long		  time_first, time_last, zone_first, zone_last;
-	const char	 *bailiwick, *rrname, *rrtype, *rdata;
+	const char	 *bailiwick, *rrname, *rrtype, *rdata, *cond, *msg;
 	json_int_t	  count, num_results;
 };
 typedef struct pdns_tuple *pdns_tuple_t;
@@ -72,7 +83,7 @@ struct pdns_system {
 	 */
 	void		(*auth)(fetch_t);
 
-	/* map a non-200 HTTP rcode from a fetch to a static error indicator. */
+	/* map a non-200 HTTP rcode from a fetch to an error indicator. */
 	const char *	(*status)(fetch_t);
 
 	/* verify that the specified verb is supported by this pdns system.
@@ -83,7 +94,6 @@ struct pdns_system {
 	/* set a configuration key-value pair.	Returns NULL if ok;
 	 * otherwise returns a static error message.
 	 */
-
 	const char *	(*setval)(const char *, const char *);
 
 	/* check if ready with enough config settings to try API queries.
@@ -105,6 +115,7 @@ typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, writer_t);
 struct verb {
 	const char	*name;
 	const char	*url_fragment;
+
 	/* review the command line options for constraints being met.
 	 * Returns NULL if ok; otherwise returns a static error message.
 	 */
@@ -130,6 +141,7 @@ struct qdesc {
 typedef struct qdesc *qdesc_t;
 typedef const struct qdesc *qdesc_ct;
 
+bool pprint_json(const char *, size_t, FILE *);
 void present_json(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_text_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_csv_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
@@ -138,5 +150,9 @@ void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 int data_blob(query_t, const char *, size_t);
+
+/* Some HTTP status codes we handle specifically */
+#define HTTP_OK		   200
+#define HTTP_NOT_FOUND	   404
 
 #endif /*PDNS_H_INCLUDED*/

@@ -41,18 +41,19 @@
 .Op Fl V Ar verb
 .Sh DESCRIPTION
 .Nm dnsdbq
-constructs and issues queries to the Farsight DNSDB and displays
-responses. It is commonly used as a production command line interface
-to the DNSDB API server. Its default query type is a "lookup" query.
-As an option, it can issue a "summarize" query type.
+constructs and issues queries to Passive DNS systems which return
+data in the IETF Passive DNS Common Output Format. Farsight Security's
+DNSDB is one such system.
+.Nm dnsdbq
+displays responses in various formats.  It is commonly used as a
+production command line interface to such systems.
 .Pp
-DNSDB is a database that stores and indexes both the passive DNS data
-available via Farsight Security's Security Information Exchange as well as the
-authoritative DNS data that various zone operators make available. DNSDB makes
-it easy to search for individual DNS RRsets and provides additional metadata
-for search results such as first seen and last seen timestamps as well as the
-DNS bailiwick associated with an RRset. DNSDB also has the ability to perform
-inverse or rdata searches.
+Its default query type is a "lookup" query.  As an option, it can
+issue a "summarize" query type.
+.Pp
+Farsight Security's DNSDB system implements both APIv1 and APIv2 interfaces.
+APIv1 is accessed by specifying system "dnsdb."  APIv2 is accessed by
+specifying system "dnsdb2".
 .Pp
 You'll need to get an API key from Farsight to use
 .Ic dnsdbq
@@ -106,7 +107,7 @@ mode).
 enable debug mode.  Repeat for more debug output.
 .It Fl f
 specify batch lookup mode allowing one or more queries to be performed.
-Queries will be read from standard input and are expected to be be in
+Queries will be read from standard input and are expected to be in
 one of the following formats:
 .Bl -dash -offset indent
 .It
@@ -140,6 +141,8 @@ Where
 $OPTIONS alone on a line allows command line options to be changed mid-batch.
 If no options are given, the query parameters will be reset to those given
 on the command line, if any, or else to defaults.
+.Pp
+A line starting with a # will be ignored as a comment.
 .Pp
 Any internal slash (/) or comma (,) characters within the search names
 of a batch entry must be URL-encoded (for example, %2F or %2C).
@@ -503,7 +506,7 @@ enable access to a passive DNS system compatible with the CIRCL.LU system.
 .It Ev DNSDBQ_SYSTEM
 contains the default value for the
 .Ar u
-option described above. Can be "dnsdb" or "circl". If unset,
+option described above. Can be "dnsdb", "dnsdb2", or "circl". If unset,
 .Nm dnsdbq
 will probe for any configured system.
 .El

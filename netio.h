@@ -20,6 +20,19 @@
 #include <stdbool.h>
 #include <curl/curl.h>
 
+/* encapsulation protocol.  original DNBDB APIv1 and CIRCL use encap_bare. */
+typedef enum { encap_bare = 0, encap_saf } encap_e;
+
+/* official SAF condition values, plus sc_init, sc_we_limited, and sc_missing.
+ */
+typedef enum {
+	sc_init = 0,	 /* initial condition */
+	/* official */
+	sc_begin, sc_ongoing, sc_succeeded, sc_limited, sc_failed,
+	sc_we_limited,	 /* we noticed we hit the output limit */
+	sc_missing	 /* cond was missing at end of input stream */
+} saf_cond_e;
+
 /* search parameters, per query and globally. */
 struct qparam {
 	u_long		after;
@@ -58,6 +71,8 @@ struct query {
 	char		*status;
 	char		*message;
 	bool		hdr_sent;
+	saf_cond_e	saf_cond;
+	char		*saf_msg;
 };
 typedef struct query *query_t;
 

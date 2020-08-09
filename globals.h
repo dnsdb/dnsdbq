@@ -32,10 +32,11 @@ extern const struct verb verbs[];
 #endif
 
 EXTERN	const char id_swclient[]	INIT("dnsdbq");
-EXTERN	const char id_version[]		INIT("2.2.2");
+EXTERN	const char id_version[]		INIT("2.3.0");
 EXTERN	const char *program_name	INIT(NULL);
 EXTERN	const char path_sort[]		INIT("/usr/bin/sort");
 EXTERN	const char json_header[]	INIT("Accept: application/json");
+EXTERN	const char jsonl_header[]	INIT("Accept: application/x-ndjson");
 EXTERN	const char env_time_fmt[]	INIT("DNSDBQ_TIME_FORMAT");
 EXTERN	const char status_noerror[]	INIT("NOERROR");
 EXTERN	const char status_error[]	INIT("ERROR");
@@ -52,6 +53,7 @@ EXTERN	sort_e sorting			INIT(no_sort);
 EXTERN	batch_e batching		INIT(batch_none);
 EXTERN	present_e presentation		INIT(pres_text);
 EXTERN	present_t presenter		INIT(NULL);
+EXTERN	encap_e encap			INIT(encap_bare);
 EXTERN	struct timeval startup_time	INIT({});
 EXTERN	int exit_code			INIT(0);
 EXTERN	long curl_ipresolve		INIT(CURL_IPRESOLVE_WHATEVER);
