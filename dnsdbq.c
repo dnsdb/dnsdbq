@@ -731,19 +731,19 @@ qdesc_debug(const char *where, qdesc_ct qdp) {
 
 	const char *sep = "\040";
 	if (qdp->thing != NULL) {
-		debug(true, "%sth '%s'", sep, qdp->thing);
+		debug(false, "%sth '%s'", sep, qdp->thing);
 		sep = ",\040";
 	}
 	if (qdp->rrtype != NULL) {
-		debug(true, "%srr '%s'\n", sep, qdp->rrtype);
+		debug(false, "%srr '%s'", sep, qdp->rrtype);
 		sep = ",\040";
 	}
 	if (qdp->bailiwick != NULL) {
-		debug(true, "%sbw '%s'\n", sep, qdp->bailiwick);
+		debug(false, "%sbw '%s'", sep, qdp->bailiwick);
 		sep = ",\040";
 	}
 	if (qdp->pfxlen != NULL) {
-		debug(true, "%spfx '%s'\n", sep, qdp->pfxlen);
+		debug(false, "%spfx '%s'", sep, qdp->pfxlen);
 		sep = ",\040";
 	}
 	debug(false, " ]\n");
@@ -1432,9 +1432,9 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 static void
 launch(query_t query, pdns_fence_ct fp) {
 	qparam_ct qpp = &query->params;
-	char *url, sep;
+	char *url;
 
-	url = psys->url(query->command, &sep, qpp, fp);
+	url = psys->url(query->command, NULL, qpp, fp);
 	if (url == NULL)
 		my_exit(1);
 
