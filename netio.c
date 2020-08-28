@@ -345,10 +345,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		} else if (writer->info) {
 			/* concatenate this fragment (with \n) to info_buf. */
 			char *temp = NULL;
-
-			asprintf(&temp, "%s%*.*s\n",
+			if (asprintf(&temp, "%s%*.*s\n",
 				 or_else(writer->ps_buf, ""),
-				 (int)pre_len, (int)pre_len, fetch->buf);
+				 (int)pre_len, (int)pre_len, fetch->buf) < 0)
+				my_panic(true, "asprintf");
 			DESTROY(writer->ps_buf);
 			writer->ps_buf = temp;
 			writer->ps_len += pre_len + 1;
