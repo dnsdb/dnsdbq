@@ -521,9 +521,10 @@ be used. If neither variable is present, the configuration file is consulted.
 contains the URL of the DNSDB API server, and optionally a URI prefix to be
 used (default is "/lookup"). If not set, the configuration file is consulted.
 .It Ev DNSDBQ_TIME_FORMAT
-controls how human readable date times are displayed.  If "iso" then ISO8601
-(RFC3339) format is used, for example; "2018-09-06T22:48:00Z".  If "csv" then
-an Excel CSV compatible format is used; for example, "2018-09-06 22:48:00".
+controls how human readable date times are displayed from the "-p csv"
+output format.  If "iso" then ISO8601 (RFC3339) format is used, for
+example; "2018-09-06T22:48:00Z".  If "csv" then an Excel CSV
+compatible format is used; for example, "2018-09-06 22:48:00".
 .El
 .Sh "EXIT STATUS"
 Success (exit status zero) occurs if a connection could be established
