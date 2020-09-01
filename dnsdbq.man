@@ -309,12 +309,11 @@ for comma separated value output. This format is information losing,
 since
 it cannot express multiple resource records that are in a single RRset.
 Instead, each resource record is expressed in a separate line of output.
-.El
-.Pp
 See the
-.Ic DNSDB_TIME_FORMAT
-environment variable below for controlling how human readable
-timestamps are formatted.
+.Ic DNSDBQ_TIME_FORMAT
+environment variable below for controlling how
+timestamps are formatted for this option.
+.El
 .It Fl q
 makes the program reticent about warnings.
 .It Fl R Ar HEX
