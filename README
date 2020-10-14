@@ -55,8 +55,22 @@ On Linux (CentOS 6):
 On FreeBSD 10:
 	pkg install curl jansson
 
-On OSX:
+On macOS:
 	brew install jansson
+
+        If you want an almost static dnsdbq binary on macOS, that
+        is, one without any non-System library dependencies, you can
+        rebuild dnsdbq with a static jansson library.  That binary
+        could then be deployed on any identical macOS version and
+        architecture.
+
+        1. Find the static jansson library, probably
+           /usr/local/lib/libjansson.a as installed by brew.
+        2. Change the Makefile's line
+              JANSLIBS = -L/usr/local/lib -ljansson
+           to instead specify the static library location, probably to:
+              JANSLIBS = /usr/local/lib/libjansson.a
+        3. Then run make
 
 Getting Started
 	Add the API key to ~/.dnsdb-query.conf in the below given format,
