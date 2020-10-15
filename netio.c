@@ -718,6 +718,7 @@ io_drain(void) {
 			/* record emptiness as status if nothing else. */
 			if (encap == encap_saf &&
 			    query->writer != NULL &&
+			    !query->writer->info &&
 			    query->writer->count == 0 &&
 			    query->status == NULL)
 			{
