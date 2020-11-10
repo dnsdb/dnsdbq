@@ -263,8 +263,8 @@ limit's value. Otherwise the default is no output limit.
 for the summarize verb, stops summarizing when the count reaches that
 max_count, which must be a positive integer.  The resulting total
 count may exceed max_count as it will include the entire count from
-the last rrset examined.  The default is to not constrain the maximum
-count.  The number of rrsets summarized is also limited by the
+the last RRset examined.  The default is to not constrain the maximum
+count.  The number of RRsets summarized is also limited by the
 query_limit.
 .It Fl m
 used only with
@@ -321,7 +321,7 @@ specify raw
 .Ic rrset
 owner data ("left-hand side") query. HEX is as described above.
 .It Fl r Ar rrset
-specify rrset ("left-hand side") name query.
+specify RRset ("left-hand side") name query.
 .It Fl s
 sort output in ascending key order. Limits (if any) specified by
 .Fl l
@@ -436,7 +436,7 @@ $ dnsdbq ... -i 128.223.32.0/24
 $ dnsdbq ... -i 128.223.32.0-128.223.32.32
 .Ed
 .Pp
-Perform an rrset query for a single A record for
+Perform an RRset query for a single A record for
 .Ic farsightsecurity.com .
 The output is serialized as JSON and is piped to the
 .Ic jq
