@@ -375,7 +375,7 @@ dnsdb_verb_ok(const char *verb_name, qparam_ct qpp __attribute__((unused))) {
 		if (qpp->offset != 0)
 			return "only 'lookup' understands offsets";
 		/* -L (output_limit) cannot be used except for verb "lookup". */
-		if (qpp->output_limit != -1)
+		if (qpp->explicit_output_limit != -1)
 			return "only 'lookup' understands output limits";
 	}
 	return (NULL);

@@ -40,7 +40,8 @@ EXTERN	const char jsonl_header[]	INIT("Accept: application/x-ndjson");
 EXTERN	const char env_time_fmt[]	INIT("DNSDBQ_TIME_FORMAT");
 EXTERN	const char status_noerror[]	INIT("NOERROR");
 EXTERN	const char status_error[]	INIT("ERROR");
-EXTERN	struct qparam qparam_empty INIT({ .query_limit = -1L, .output_limit = -1L });
+EXTERN	struct qparam qparam_empty INIT({ .query_limit = -1L,
+			.explicit_output_limit = -1L, .output_limit = -1L });
 EXTERN	verb_ct pverb			INIT(NULL);
 EXTERN	pdns_system_ct psys		INIT(NULL);
 EXTERN	int debug_level			INIT(0);

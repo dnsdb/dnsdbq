@@ -38,6 +38,9 @@ struct qparam {
 	u_long		after;
 	u_long		before;
 	long		query_limit;
+	/* actually set on the command line or in OPTIONS */
+	long		explicit_output_limit;
+	/* inferred and used in output code */
 	long		output_limit;
 	long		offset;
 	bool		complete;
