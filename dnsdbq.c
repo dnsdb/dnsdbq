@@ -872,6 +872,7 @@ qparam_option(int opt, const char *arg, qparam_t qpp) {
 		if (!parse_long(arg, &qpp->output_limit) ||
 		    (qpp->output_limit <= 0))
 			return "-L must be positive";
+                qpp->explicit_output_limit = qpp->output_limit;
 		break;
 	case 'O':
 		if (!parse_long(optarg, &qpp->offset) ||
