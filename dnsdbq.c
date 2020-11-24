@@ -614,8 +614,9 @@ main(int argc, char *argv[]) {
 
 	/* validate some interrelated options. */
 	if (after != 0 && before != 0) {
-		if (after > 0 && before > 0 && after > before)
-			usage("-A -B requires after <= before (for now)");
+		if (complete && after > 0 && before > 0 && after > before)
+			usage("-A -B requires after <= before "
+			      "if using complete time matching");
 		if (sorted == no_sort && json_fd == -1 && !complete) {
 			fprintf(stderr,
 				"-A and -B w/o -c requires sorting for dedup, "
