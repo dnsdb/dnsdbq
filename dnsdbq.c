@@ -832,9 +832,10 @@ static const char *
 qparam_ready(qparam_t qpp) {
 	if (qpp->output_limit == -1 && qpp->query_limit != -1 && !multiple)
 		qpp->output_limit = qpp->query_limit;
-	if (qpp->after != 0 && qpp->before != 0) {
+	if (qpp->complete && qpp->after != 0 && qpp->before != 0) {
 		if (qpp->after > qpp->before)
-			return "-A value must be before -B value (for now)";
+			return "-A value must be before -B value"
+			       " if using complete time matching";
 	}
 	if (qpp->complete && qpp->after == 0 && qpp->before == 0)
 		return "-c without -A or -B makes no sense.";
