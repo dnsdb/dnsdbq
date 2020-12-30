@@ -123,9 +123,12 @@ create_fetch(query_t query, char *url) {
 	curl_easy_setopt(fetch->easy, CURLOPT_WRITEFUNCTION, writer_func);
 	curl_easy_setopt(fetch->easy, CURLOPT_WRITEDATA, fetch);
 	curl_easy_setopt(fetch->easy, CURLOPT_PRIVATE, fetch);
+#ifdef CURL_AT_LEAST_VERSION
+/* If CURL_AT_LEAST_VERSION is not defined then the curl is probably too old */
 #if CURL_AT_LEAST_VERSION(7,42,0)
 	/* do not allow curl to swallow /./ and /../ in our URLs */
 	curl_easy_setopt(fetch->easy, CURLOPT_PATH_AS_IS, 1L);
+#endif
 #endif /* CURL_AT_LEAST_VERSION */
 	if (debug_level >= 3)
 		curl_easy_setopt(fetch->easy, CURLOPT_VERBOSE, 1L);
