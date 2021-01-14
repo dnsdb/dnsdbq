@@ -1455,6 +1455,7 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	writer_t writer;
 	ssize_t len;
 
+	encap = encap_bare;	/* the json output files are in bare format, not SAF */
 	writer = writer_init(qpp->output_limit);
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
@@ -1464,7 +1465,7 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	query->fetches = fetch;
 	writer->queries = query;
 	CREATE(buf, ideal_buffer);
-	while ((len = read(json_fd, buf, sizeof buf)) > 0) {
+	while ((len = read(json_fd, buf, ideal_buffer)) > 0) {
 		writer_func(buf, 1, (size_t)len, query->fetches);
 	}
 	DESTROY(buf);
