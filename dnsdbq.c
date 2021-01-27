@@ -639,11 +639,12 @@ static void
 help(void) {
 	verb_ct v;
 
-	printf("usage: %s [-cdfgGhIjmqSsUv468] [-p dns|json|csv]\n",
+	printf("usage: %s [-acdfgGhIjmqSsUv468] [-p dns|json|csv]\n",
 	       program_name);
 	puts("\t[-k (first|last|duration|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
-	     "\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
+	     "\t[-u system] [-O offset] [-V verb] [-M max_count]\n"
+	     "\t[-D asn_domain] {\n"
 	     "\t\t-f |\n"
 	     "\t\t-J inputfile |\n"
 	     "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -654,9 +655,10 @@ help(void) {
 	     "\t\t\t-R RAW-OWNER-DATA[/TYPE[/BAILIWICK]]\n"
 	     "\t\t}\n"
 	     "\t}");
-	puts("for -A and -B, use absolute format YYYY-MM-DD[ HH:MM:SS],\n"
-	     "\tor relative format %dw%dd%dh%dm%ds.\n"
+	printf("for -A and -B, use absolute format YYYY-MM-DD[ HH:MM:SS],\n"
+	     "\tor relative format %%dw%%dd%%dh%%dm%%ds.\n"
 	     "use -c to get complete (strict) time matching for -A and -B.\n"
+	     "for -D, the default is \"%s\"\n"
 	     "use -d one or more times to ramp up the diagnostic output.\n"
 	     "for -f, stdin must contain lines of the following forms:\n"
 	     "\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
@@ -684,7 +686,8 @@ help(void) {
 	     "use -v to show the program version.\n"
 	     "use -4 to force connecting to the server via IPv4.\n"
 	     "use -6 to force connecting to the server via IPv6.\n"
-	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments");
+	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments",
+	     asn_domain);
 
 	puts("for -u, system must be one of:");
 #if WANT_PDNS_DNSDB
