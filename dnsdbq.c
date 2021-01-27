@@ -136,8 +136,8 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "R:r:N:n:i:M:u:p:t:b:k:J:V:"
-			    "dfhIjmqSsUv468" QPARAM_GETOPT))
+			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:"
+			    "adfhIjmqSsUv468" QPARAM_GETOPT))
 	       != -1)
 	{
 		switch (ch) {
@@ -148,6 +148,9 @@ main(int argc, char *argv[]) {
 		case 'O':
 			if ((msg = qparam_option(ch, optarg, &qp)) != NULL)
 				usage(msg);
+			break;
+		case 'a':
+			asn_lookup = true;
 			break;
 		case 'R': {
 			if (qd.mode != no_mode)

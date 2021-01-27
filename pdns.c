@@ -14,18 +14,23 @@
  * limitations under the License.
  */
 
+/* asprintf() does not appear on linux without this */
+#define _GNU_SOURCE
+
 #include <assert.h>
 
 #include "defs.h"
 #include "netio.h"
 #include "ns_ttl.h"
 #include "pdns.h"
+#include "pdns_asn.h"
 #include "time.h"
 #include "globals.h"
 
+static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
 
-/* present_text_look -- render one pdns tuple in "dig" style ascii text.
+/* present_text_lookup -- render one pdns tuple in "dig" style ascii text.
  */
 void
 present_text_lookup(pdns_tuple_ct tup,
@@ -97,19 +102,38 @@ present_text_lookup(pdns_tuple_ct tup,
 				rdata = json_string_value(rr);
 			else
 				rdata = "[bad value]";
-			printf("%s  %s  %s\n",
-				tup->rrname, tup->rrtype, rdata);
+			present_text_line(tup->rrname, tup->rrtype, rdata);
 			ppflag = true;
 		}
 	} else {
-		printf("%s  %s  %s\n",
-			tup->rrname, tup->rrtype, tup->rdata);
+		present_text_line(tup->rrname, tup->rrtype, tup->rdata);
 		ppflag = true;
 	}
 
 	/* Cleanup. */
 	if (ppflag)
 		putchar('\n');
+}
+
+/* present_text_line -- render one RR in "dig" style ascii text.
+ */
+static void
+present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
+	char *asn = NULL, *cidr = NULL, *comment = NULL;
+	const char *result = asn_from_rr(rrtype, rdata, &asn, &cidr);
+	if (result != NULL) {
+		comment = strdup(result);
+	} else if (asn != NULL && cidr != NULL) {
+		asprintf(&comment, "[AS%s %s]", asn, cidr);
+		free(asn);
+		free(cidr);
+	}
+	printf("%s  %s  %s", rrname, rrtype, rdata);
+	if (comment != NULL) {
+		printf("  ; %s", comment);
+		free(comment);
+	}
+	putchar('\n');
 }
 
 /* present_text_summ -- render summarize object in "dig" style ascii text.

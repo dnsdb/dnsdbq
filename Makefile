@@ -32,11 +32,15 @@ CDEFS = -DWANT_PDNS_DNSDB=1 -DWANT_PDNS_DNSDB2=1 -DWANT_PDNS_CIRCL=1
 CGPROF =
 CDEBUG = -g -O3
 CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)
+INCL= $(CURLINCL) $(JANSINCL)
+LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
 
 TOOL = dnsdbq
-TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o pdns.o pdns_circl.o pdns_dnsdb.o \
+TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o \
+	pdns.o pdns_circl.o pdns_dnsdb.o pdns_asn.o \
 	sort.o time.o
-TOOL_SRC = $(TOOL).c ns_ttl.c netio.c pdns.c pdns_circl.c pdns_dnsdb.c \
+TOOL_SRC = $(TOOL).c ns_ttl.c netio.c \
+	pdns.c pdns_circl.c pdns_dnsdb.c pdns_asn.c \
 	sort.c time.c
 
 all: $(TOOL)
@@ -54,10 +58,10 @@ clean:
 	rm -f $(TOOL_OBJ)
 
 dnsdbq: $(TOOL_OBJ) Makefile
-	$(CC) $(CDEBUG) -o $(TOOL) $(CGPROF) $(TOOL_OBJ) $(CURLLIBS) $(JANSLIBS)
+	$(CC) $(CDEBUG) -o $(TOOL) $(CGPROF) $(TOOL_OBJ) $(LIBS)
 
 .c.o:
-	$(CC) $(CFLAGS) $(CURLINCL) $(JANSINCL) -c $<
+	$(CC) $(CFLAGS) $(INCL) -c $<
 
 $(TOOL_OBJ): Makefile
 

@@ -20,10 +20,11 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl cdfgGhIjmqSsUv468
+.Op Fl acdfgGhIjmqSsUv468
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
+.Op Fl D Ar asn_domain
 .Op Fl i Ar ip
 .Op Fl J Ar input_file
 .Op Fl k Ar sort_keys
@@ -80,6 +81,9 @@ or
 .Ic com .
 .Sh OPTIONS
 .Bl -tag -width 3n
+.It Fl a
+enables ASN/CIDR lookup for IPv4 address output annotations. See also
+.Fl D .
 .It Fl A Ar timestamp
 Specify a backward time fence. Only results seen by the passive DNS
 on or after this time will be selected. See also
@@ -103,6 +107,10 @@ and
 time search criteria. To match only complete overlaps, add the -c
 ("completeness") command line option (this is also known as "strict"
 mode).
+.It Fl D
+specify the domain for ASN/CIDR lookups.
+Default is "asn.routeviews.org". See also
+.Fl a .
 .It Fl d
 enable debug mode.  Repeat for more debug output.
 .It Fl f
