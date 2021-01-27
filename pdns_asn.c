@@ -17,7 +17,9 @@
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
 
+#include <arpa/inet.h>
 #include <arpa/nameser.h>
+#include <netinet/in.h>
 #include <errno.h>
 #include <netdb.h>
 #include <resolv.h>
@@ -27,6 +29,7 @@
 #include "pdns_asn.h"
 
 static const char *asn_from_ipv4(const char *, char **, char **);
+static const char *asn_from_ipv6(const char *, char **, char **);
 static const char *asn_from_dns(const char *, char **, char **);
 
 const char *
@@ -34,20 +37,55 @@ asn_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr) {
 	if (asn_lookup) {
 		if (strcmp(rrtype, "A") == 0)
 			return asn_from_ipv4(rdata, asn, cidr);
+		if (strcmp(rrtype, "AAAA") == 0)
+			return asn_from_ipv6(rdata, asn, cidr);
 	}
 	return NULL;
 }
 
 static const char *
 asn_from_ipv4(const char *addr, char **asn, char **cidr) {
-	int a1, a2, a3, a4;
+	u_char a4[32/8];
 	char *dname;
 
-	if (sscanf(addr, "%d.%d.%d.%d", &a1, &a2, &a3, &a4) != 4)
-		return "bad ipv4 rdata pattern (sscanf failed)";
-	if (asprintf(&dname, "%d.%d.%d.%d.%s", a4, a3, a2, a1, asn_domain) < 0)
+	if (inet_pton(AF_INET, addr, a4) < 0)
+		return strerror(errno);
+	int n = asprintf(&dname, "%d.%d.%d.%d.%s",
+			 a4[3], a4[2], a4[1], a4[0], asn_domain);
+	if (n < 0)
 		return strerror(errno);
 	const char *result = asn_from_dns(dname, asn, cidr);
+	free(dname);
+	return result;
+}
+
+static const char *
+asn_from_ipv6(const char *addr, char **asn, char **cidr) {
+	u_char a6[128/8];
+	const char *result;
+	char *dname, *p;
+	int i;
+
+	if (inet_pton(AF_INET6, addr, &a6) < 0)
+		return strerror(errno);
+	dname = malloc(strlen(asn_domain) + (128/4)*2);
+	if (dname == NULL)
+		return strerror(errno);
+	result = NULL;
+	p = dname;
+	for (i = (128/8) - 1; i >= 0; i--) {
+		int n = sprintf(p, "%x.%x.", a6[i] & 0xf, a6[i] >> 4);
+		if (n < 0) {
+			result = strerror(errno);
+			break;
+		}
+		p += n;
+	}
+	if (result == NULL) {
+		strcpy(p, asn_domain);
+		result = asn_from_dns(dname, asn, cidr);
+	}
+	p = NULL;
 	free(dname);
 	return result;
 }
