@@ -183,10 +183,9 @@ present_text_summarize(pdns_tuple_ct tup,
  */
 bool
 pprint_json(const char *buf, size_t len, FILE *outf) {
-	json_t	*js;
 	json_error_t error;
 
-	js = json_loadb(buf, len, 0, &error);
+	json_t *js = json_loadb(buf, len, 0, &error);
 	if (js == NULL) {
 		fprintf(stderr, "JSON parsing error %d:%d: %s %s\n",
 			error.line, error.column,
@@ -215,7 +214,7 @@ present_json(pdns_tuple_ct tup,
 	putchar('\n');
 }
 
-/* present_csv_look -- render one DNSDB tuple as comma-separated values (CSV).
+/* present_csv_lookup -- render one DNSDB tuple as comma-separated values (CSV)
  */
 void
 present_csv_lookup(pdns_tuple_ct tup,
@@ -226,7 +225,10 @@ present_csv_lookup(pdns_tuple_ct tup,
 	if (!writer->csv_headerp) {
 		printf("time_first,time_last,zone_first,zone_last,"
 		       "count,bailiwick,"
-		       "rrname,rrtype,rdata\n");
+		       "rrname,rrtype,rdata");
+		if (asn_lookup)
+			fputs(",asn,cidr", stdout);
+		putchar('\n');
 		writer->csv_headerp = true;
 	}
 
@@ -284,6 +286,26 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 	putchar(',');
 	if (tup->obj.rdata != NULL)
 		printf("\"%s\"", rdata);
+
+	if (asn_lookup && tup->obj.rrtype != NULL && tup->obj.rdata != NULL) {
+		char *asn = NULL, *cidr = NULL;
+		const char *result = asn_from_rr(tup->rrtype, rdata,
+						 &asn, &cidr);
+		if (result != NULL) {
+			asn = strdup(result);
+			cidr = strdup(result);
+		}
+		putchar(',');
+		if (asn != NULL) {
+			printf("%s", asn);
+			free(asn);
+		}
+		putchar(',');
+		if (cidr != NULL) {
+			printf("\"%s\"", cidr);
+			free(cidr);
+		}
+	}
 	putchar('\n');
 }
 
