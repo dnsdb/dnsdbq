@@ -94,7 +94,7 @@ static const char *
 asn_from_dns(const char *dname, char **asn, char **cidr) {
 	const u_char *rdata, *end;
 	int n, an, ntxt, rcode;
-	u_char buf[NS_MAXMSG];
+	u_char buf[NS_PACKETSZ];
 	const char *result;
 	char *txt[3];
 	ns_msg msg;
