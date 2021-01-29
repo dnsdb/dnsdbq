@@ -99,9 +99,13 @@ static const char * const conf_files[] = {
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
 	{ "lookup", "/lookup", lookup_ok,
-	  present_text_lookup, present_json, present_csv_lookup },
+	  present_text_lookup,
+	  present_json_lookup,
+	  present_csv_lookup },
 	{ "summarize", "/summarize", summarize_ok,
-	  present_text_summarize, present_json, present_csv_summarize },
+	  present_text_summarize,
+	  present_json_summarize,
+	  present_csv_summarize },
 	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
@@ -152,6 +156,9 @@ main(int argc, char *argv[]) {
 		case 'a':
 			asn_lookup = true;
 			break;
+		case 'D':
+			asn_domain = optarg;
+			break;
 		case 'R': {
 			if (qd.mode != no_mode)
 				usage("-r, -n, -i, -N, or -R "
@@ -169,13 +176,13 @@ main(int argc, char *argv[]) {
 				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
-					qd.rrtype = strndup(p + 1,
-							 (size_t)(q - p - 1));
+					qd.rrtype = strndup(p + 1, (size_t)
+							    (q - p - 1));
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 			} else {
 				qd.thing = strdup(optarg);
 			}
@@ -198,13 +205,13 @@ main(int argc, char *argv[]) {
 				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
-					qd.rrtype = strndup(p + 1,
-							 (size_t)(q - p - 1));
+					qd.rrtype = strndup(p + 1, (size_t)
+							    (q - p - 1));
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 			} else {
 				qd.thing = strdup(optarg);
 			}
@@ -227,13 +234,13 @@ main(int argc, char *argv[]) {
 				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
-					qd.rrtype = strndup(p + 1,
-							 (size_t)(q - p - 1));
+					qd.rrtype = strndup(p + 1, (size_t)
+							    (q - p - 1));
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 			} else {
 				qd.thing = strdup(optarg);
 			}
@@ -256,13 +263,13 @@ main(int argc, char *argv[]) {
 				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
-					qd.rrtype = strndup(p + 1,
-							 (size_t)(q - p - 1));
+					qd.rrtype = strndup(p + 1, (size_t)
+							    (q - p - 1));
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 			} else {
 				qd.thing = strdup(optarg);
 			}
@@ -278,7 +285,7 @@ main(int argc, char *argv[]) {
 			const char *p = strchr(optarg, '/');
 			if (p != NULL) {
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 				qd.pfxlen = strdup(p + 1);
 			} else {
 				qd.thing = strdup(optarg);
@@ -657,6 +664,7 @@ help(void) {
 	     "\t}");
 	printf("for -A and -B, use absolute format YYYY-MM-DD[ HH:MM:SS],\n"
 	     "\tor relative format %%dw%%dd%%dh%%dm%%ds.\n"
+	     "use -a to get ASNs associated with reported IP addresses\n"
 	     "use -c to get complete (strict) time matching for -A and -B.\n"
 	     "for -D, the default is \"%s\"\n"
 	     "use -d one or more times to ramp up the diagnostic output.\n"

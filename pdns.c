@@ -29,6 +29,8 @@
 
 static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
+static json_t *annotate_rdata(pdns_tuple_ct);
+static json_t *annotate_one(const char *, const json_t *);
 
 /* present_text_lookup -- render one pdns tuple in "dig" style ascii text.
  */
@@ -200,15 +202,81 @@ pprint_json(const char *buf, size_t len, FILE *outf) {
 	return true;
 }
 
-/* present_json -- render one DNSDB tuple as newline-separated JSON.
- *
- * note: used by both lookup and summarize verbs.
+/* present_json_lookup -- render one DNSDB tuple as newline-separated JSON.
  */
 void
-present_json(pdns_tuple_ct tup,
-	     const char *jsonbuf __attribute__ ((unused)),
-	     size_t jsonlen __attribute__ ((unused)),
-	     writer_t writer __attribute__ ((unused)))
+present_json_lookup(pdns_tuple_ct tup,
+		    const char *jsonbuf __attribute__ ((unused)),
+		    size_t jsonlen __attribute__ ((unused)),
+		    writer_t writer __attribute__ ((unused)))
+{
+	if (asn_lookup) {
+		json_t *copy = annotate_rdata(tup);
+		json_dumpf(copy, stdout, JSON_INDENT(0) | JSON_COMPACT);
+		json_decref(copy);
+	} else {
+		json_dumpf(tup->obj.cof_obj, stdout,
+			   JSON_INDENT(0) | JSON_COMPACT);
+	}
+	putchar('\n');
+}
+
+static json_t *
+annotate_rdata(pdns_tuple_ct tup) {
+	json_t *copy = json_deep_copy(tup->obj.cof_obj),
+		*origins = json_array();
+
+	if (json_is_array(tup->obj.rdata)) {
+		size_t slot, nslots;
+
+		nslots = json_array_size(tup->obj.rdata);
+		for (slot = 0; slot < nslots; slot++) {
+			json_t *rr = json_array_get(tup->obj.rdata, slot);
+
+			json_array_append(origins,
+					  annotate_one(tup->rrtype, rr));
+		}
+	} else {
+		json_array_append(origins,
+				  annotate_one(tup->rrtype, tup->obj.rdata));
+	}
+	json_object_set_new_nocheck(copy, "dnsdbq-origins", origins);
+	return copy;
+}
+
+static json_t *
+annotate_one(const char *rrtype, const json_t *rr) {
+	char *asn = NULL, *cidr = NULL;
+	json_t *origin = json_object();
+	const char *result;
+
+	if (!json_is_string(rr)) {
+		json_object_set_new_nocheck(origin, "comment",
+					    json_string("not a string"));
+	} else if ((result = asn_from_rr(rrtype, 
+					 json_string_value(rr),
+					 &asn, &cidr)) != NULL)
+	{
+		json_object_set_new_nocheck(origin, "comment",
+					    json_string(result));
+	} else if (asn != NULL && cidr != NULL) {
+		json_object_set_new_nocheck(origin, "asn",
+					    json_integer(atoi(asn)));
+		json_object_set_new_nocheck(origin, "cidr",
+					    json_string(cidr));
+		free(asn);
+		free(cidr);
+	}
+	return origin;
+}
+
+/* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
+ */
+void
+present_json_summarize(pdns_tuple_ct tup,
+		       const char *jsonbuf __attribute__ ((unused)),
+		       size_t jsonlen __attribute__ ((unused)),
+		       writer_t writer __attribute__ ((unused)))
 {
 	json_dumpf(tup->obj.cof_obj, stdout, JSON_INDENT(0) | JSON_COMPACT);
 	putchar('\n');
@@ -533,7 +601,8 @@ data_blob(query_t query, const char *buf, size_t len) {
 
 		if (tup.cond != NULL) {
 			DEBUG(5, true, "data_blob tup.cond = %s\n", tup.cond);
-			/* if we goto next now, this line will not be counted */
+			/* if we goto next now, this line will not be counted.
+			 */
 			if (strcmp(tup.cond, "begin") == 0) {
 				query->saf_cond = sc_begin;
 				goto next;
@@ -551,7 +620,7 @@ data_blob(query_t query, const char *buf, size_t len) {
 				query->saf_cond = sc_failed;
 				goto next;
 			} else {
-				/* use sc_missing for an invalid cond value  */
+				/* use sc_missing for an invalid cond value */
 				query->saf_cond = sc_missing;
 				fprintf(stderr,
 					"%s: Unknown value for \"cond\": %s\n",
@@ -559,9 +628,12 @@ data_blob(query_t query, const char *buf, size_t len) {
 			}
 		}
 
-		/* A COF keepalive will have no "obj" but may have a "cond" or "msg". */
+		/* A COF keepalive will have no "obj"
+		 * but may have a "cond" or "msg".
+		 */
 		if (tup.obj.saf_obj == NULL) {
-			DEBUG(4, true, "COF object is empty, i.e. a keepalive\n");
+			DEBUG(4, true,
+			      "COF object is empty, i.e. a keepalive\n");
 			goto next;
 		}
 	}

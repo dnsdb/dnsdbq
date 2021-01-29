@@ -32,7 +32,7 @@
  */
 struct pdns_json {
 	json_t *main;
-	const json_t *cof_obj, *saf_obj , *saf_cond, *saf_msg,
+	const json_t *cof_obj, *saf_obj, *saf_cond, *saf_msg,
 		*time_first, *time_last, *zone_first, *zone_last,
 		*bailiwick, *rrname, *rrtype, *rdata,
 		*count, *num_results;
@@ -142,7 +142,8 @@ typedef struct qdesc *qdesc_t;
 typedef const struct qdesc *qdesc_ct;
 
 bool pprint_json(const char *, size_t, FILE *);
-void present_json(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_json_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_json_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_text_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_csv_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_text_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
