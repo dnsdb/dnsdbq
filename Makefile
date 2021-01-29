@@ -37,11 +37,11 @@ LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
 
 TOOL = dnsdbq
 TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o \
-	pdns.o pdns_circl.o pdns_dnsdb.o pdns_asn.o \
-	sort.o time.o
+	pdns.o pdns_circl.o pdns_dnsdb.o \
+	sort.o time.o asn.o
 TOOL_SRC = $(TOOL).c ns_ttl.c netio.c \
-	pdns.c pdns_circl.c pdns_dnsdb.c pdns_asn.c \
-	sort.c time.c
+	pdns.c pdns_circl.c pdns_dnsdb.c \
+	sort.c time.c asn.c
 
 all: $(TOOL)
 

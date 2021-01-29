@@ -25,8 +25,8 @@
 #include <resolv.h>
 #include <stdlib.h>
 #include <string.h>
+#include "asn.h"
 #include "globals.h"
-#include "pdns_asn.h"
 
 static const char *asn_from_ipv4(const char *, char **, char **);
 static const char *asn_from_ipv6(const char *, char **, char **);
@@ -94,7 +94,7 @@ static const char *
 asn_from_dns(const char *dname, char **asn, char **cidr) {
 	const u_char *rdata, *end;
 	int n, an, ntxt, rcode;
-	u_char buf[NS_MAXMSG];
+	u_char buf[NS_PACKETSZ];
 	const char *result;
 	char *txt[3];
 	ns_msg msg;

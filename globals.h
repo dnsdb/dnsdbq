@@ -65,9 +65,7 @@ EXTERN	long curl_ipresolve		INIT(CURL_IPRESOLVE_WHATEVER);
 #undef INIT
 #undef EXTERN
 
-void debug(bool, const char *, ...);
 __attribute__((noreturn)) void my_exit(int);
 __attribute__((noreturn)) void my_panic(bool, const char *);
-const char *or_else(const char *, const char *);
 
 #endif /*GLOBALS_H_INCLUDED*/

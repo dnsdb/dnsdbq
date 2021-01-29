@@ -19,11 +19,11 @@
 
 #include <assert.h>
 
+#include "asn.h"
 #include "defs.h"
 #include "netio.h"
 #include "ns_ttl.h"
 #include "pdns.h"
-#include "pdns_asn.h"
 #include "time.h"
 #include "globals.h"
 
