@@ -240,7 +240,7 @@ annotate_rdata(pdns_tuple_ct tup) {
 		json_array_append(origins,
 				  annotate_one(tup->rrtype, tup->obj.rdata));
 	}
-	json_object_set_new_nocheck(copy, "dnsdbq-rdata", origins);
+	json_object_set_new_nocheck(copy, "dnsdbq_rdata", origins);
 	return copy;
 }
 
@@ -260,8 +260,14 @@ annotate_one(const char *rrtype, const json_t *rr) {
 		json_object_set_new_nocheck(origin, "comment",
 					    json_string(result));
 	} else if (asinfo != NULL && cidr != NULL) {
-		json_object_set_new_nocheck(origin, "asinfo",
-					    json_string(asinfo));
+		json_t *array = json_array();
+		char *copy, *walker, *token;
+
+		copy = walker = strdup(asinfo);
+		while ((token = strsep(&walker, " ")) != NULL)
+			json_array_append(array, json_integer(atoi(token)));
+		free(copy);
+		json_object_set_new_nocheck(origin, "asinfo", array);
 		json_object_set_new_nocheck(origin, "cidr",
 					    json_string(cidr));
 		free(asinfo);
