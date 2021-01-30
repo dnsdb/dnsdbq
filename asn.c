@@ -28,39 +28,41 @@
 #include "asn.h"
 #include "globals.h"
 
-static const char *asn_from_ipv4(const char *, char **, char **);
-static const char *asn_from_ipv6(const char *, char **, char **);
-static const char *asn_from_dns(const char *, char **, char **);
+static const char *asinfo_from_ipv4(const char *, char **, char **);
+static const char *asinfo_from_ipv6(const char *, char **, char **);
+static const char *asinfo_from_dns(const char *, char **, char **);
 
 const char *
-asn_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr) {
-	if (asn_lookup) {
+asinfo_from_rr(const char *rrtype, const char *rdata,
+	       char **asinfo, char **cidr)
+{
+	if (asinfo_lookup) {
 		if (strcmp(rrtype, "A") == 0)
-			return asn_from_ipv4(rdata, asn, cidr);
+			return asinfo_from_ipv4(rdata, asinfo, cidr);
 		if (strcmp(rrtype, "AAAA") == 0)
-			return asn_from_ipv6(rdata, asn, cidr);
+			return asinfo_from_ipv6(rdata, asinfo, cidr);
 	}
 	return NULL;
 }
 
 static const char *
-asn_from_ipv4(const char *addr, char **asn, char **cidr) {
+asinfo_from_ipv4(const char *addr, char **asinfo, char **cidr) {
 	u_char a4[32/8];
 	char *dname;
 
 	if (inet_pton(AF_INET, addr, a4) < 0)
 		return strerror(errno);
 	int n = asprintf(&dname, "%d.%d.%d.%d.%s",
-			 a4[3], a4[2], a4[1], a4[0], asn_domain);
+			 a4[3], a4[2], a4[1], a4[0], asinfo_domain);
 	if (n < 0)
 		return strerror(errno);
-	const char *result = asn_from_dns(dname, asn, cidr);
+	const char *result = asinfo_from_dns(dname, asinfo, cidr);
 	free(dname);
 	return result;
 }
 
 static const char *
-asn_from_ipv6(const char *addr, char **asn, char **cidr) {
+asinfo_from_ipv6(const char *addr, char **asinfo, char **cidr) {
 	u_char a6[128/8];
 	const char *result;
 	char *dname, *p;
@@ -68,7 +70,7 @@ asn_from_ipv6(const char *addr, char **asn, char **cidr) {
 
 	if (inet_pton(AF_INET6, addr, &a6) < 0)
 		return strerror(errno);
-	dname = malloc(strlen(asn_domain) + (128/4)*2);
+	dname = malloc(strlen(asinfo_domain) + (128/4)*2);
 	if (dname == NULL)
 		return strerror(errno);
 	result = NULL;
@@ -82,8 +84,8 @@ asn_from_ipv6(const char *addr, char **asn, char **cidr) {
 		p += n;
 	}
 	if (result == NULL) {
-		strcpy(p, asn_domain);
-		result = asn_from_dns(dname, asn, cidr);
+		strcpy(p, asinfo_domain);
+		result = asinfo_from_dns(dname, asinfo, cidr);
 	}
 	p = NULL;
 	free(dname);
@@ -91,7 +93,7 @@ asn_from_ipv6(const char *addr, char **asn, char **cidr) {
 }
 
 static const char *
-asn_from_dns(const char *dname, char **asn, char **cidr) {
+asinfo_from_dns(const char *dname, char **asinfo, char **cidr) {
 	const u_char *rdata, *end;
 	int n, an, ntxt, rcode;
 	u_char buf[NS_PACKETSZ];
@@ -144,7 +146,7 @@ asn_from_dns(const char *dname, char **asn, char **cidr) {
 		}
 		return result;
 	}
-	*asn = strdup(txt[0]);
+	*asinfo = strdup(txt[0]);
 	asprintf(cidr, "%s/%s", txt[1], txt[2]);
 	return NULL;
 }

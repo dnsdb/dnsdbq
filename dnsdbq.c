@@ -154,10 +154,10 @@ main(int argc, char *argv[]) {
 				usage(msg);
 			break;
 		case 'a':
-			asn_lookup = true;
+			asinfo_lookup = true;
 			break;
 		case 'D':
-			asn_domain = optarg;
+			asinfo_domain = optarg;
 			break;
 		case 'R': {
 			if (qd.mode != no_mode)
@@ -629,7 +629,7 @@ help(void) {
 	puts("\t[-k (first|last|duration|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
 	     "\t[-u system] [-O offset] [-V verb] [-M max_count]\n"
-	     "\t[-D asn_domain] {\n"
+	     "\t[-D asinfo_domain] {\n"
 	     "\t\t-f |\n"
 	     "\t\t-J inputfile |\n"
 	     "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -673,7 +673,7 @@ help(void) {
 	     "use -4 to force connecting to the server via IPv4.\n"
 	     "use -6 to force connecting to the server via IPv6.\n"
 	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments",
-	     asn_domain);
+	     asinfo_domain);
 
 	puts("for -u, system must be one of:");
 #if WANT_PDNS_DNSDB

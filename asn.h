@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-#ifndef ASN_H_INCLUDED
-#define ASN_H_INCLUDED 1
+#ifndef ASINFO_H_INCLUDED
+#define ASINFO_H_INCLUDED 1
 
 const char *
-asn_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr);
+asinfo_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr);
 
-#endif /*ASN_H_INCLUDED*/
+#endif /*ASINFO_H_INCLUDED*/

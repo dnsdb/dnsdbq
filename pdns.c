@@ -121,13 +121,13 @@ present_text_lookup(pdns_tuple_ct tup,
  */
 static void
 present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
-	char *asn = NULL, *cidr = NULL, *comment = NULL;
-	const char *result = asn_from_rr(rrtype, rdata, &asn, &cidr);
+	char *asinfo = NULL, *cidr = NULL, *comment = NULL;
+	const char *result = asinfo_from_rr(rrtype, rdata, &asinfo, &cidr);
 	if (result != NULL) {
 		comment = strdup(result);
-	} else if (asn != NULL && cidr != NULL) {
-		asprintf(&comment, "[AS%s %s]", asn, cidr);
-		free(asn);
+	} else if (asinfo != NULL && cidr != NULL) {
+		asprintf(&comment, "[AS(%s) %s]", asinfo, cidr);
+		free(asinfo);
 		free(cidr);
 	}
 	printf("%s  %s  %s", rrname, rrtype, rdata);
@@ -210,7 +210,7 @@ present_json_lookup(pdns_tuple_ct tup,
 		    size_t jsonlen __attribute__ ((unused)),
 		    writer_t writer __attribute__ ((unused)))
 {
-	if (asn_lookup) {
+	if (asinfo_lookup) {
 		json_t *copy = annotate_rdata(tup);
 		json_dumpf(copy, stdout, JSON_INDENT(0) | JSON_COMPACT);
 		json_decref(copy);
@@ -246,25 +246,25 @@ annotate_rdata(pdns_tuple_ct tup) {
 
 static json_t *
 annotate_one(const char *rrtype, const json_t *rr) {
-	char *asn = NULL, *cidr = NULL;
+	char *asinfo = NULL, *cidr = NULL;
 	json_t *origin = json_object();
 	const char *result;
 
 	if (!json_is_string(rr)) {
 		json_object_set_new_nocheck(origin, "comment",
 					    json_string("not a string"));
-	} else if ((result = asn_from_rr(rrtype, 
-					 json_string_value(rr),
-					 &asn, &cidr)) != NULL)
+	} else if ((result = asinfo_from_rr(rrtype, 
+					    json_string_value(rr),
+					    &asinfo, &cidr)) != NULL)
 	{
 		json_object_set_new_nocheck(origin, "comment",
 					    json_string(result));
-	} else if (asn != NULL && cidr != NULL) {
-		json_object_set_new_nocheck(origin, "asn",
-					    json_integer(atoi(asn)));
+	} else if (asinfo != NULL && cidr != NULL) {
+		json_object_set_new_nocheck(origin, "asinfo",
+					    json_string(asinfo));
 		json_object_set_new_nocheck(origin, "cidr",
 					    json_string(cidr));
-		free(asn);
+		free(asinfo);
 		free(cidr);
 	}
 	json_object_set_nocheck(origin, "rdata", json_deep_copy(rr));
@@ -295,8 +295,8 @@ present_csv_lookup(pdns_tuple_ct tup,
 		printf("time_first,time_last,zone_first,zone_last,"
 		       "count,bailiwick,"
 		       "rrname,rrtype,rdata");
-		if (asn_lookup)
-			fputs(",asn,cidr", stdout);
+		if (asinfo_lookup)
+			fputs(",asinfo,cidr", stdout);
 		putchar('\n');
 		writer->csv_headerp = true;
 	}
@@ -355,19 +355,19 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 	putchar(',');
 	if (tup->obj.rdata != NULL)
 		printf("\"%s\"", rdata);
-
-	if (asn_lookup && tup->obj.rrtype != NULL && tup->obj.rdata != NULL) {
-		char *asn = NULL, *cidr = NULL;
-		const char *result = asn_from_rr(tup->rrtype, rdata,
-						 &asn, &cidr);
+	if (asinfo_lookup && tup->obj.rrtype != NULL &&
+	    tup->obj.rdata != NULL) {
+		char *asinfo = NULL, *cidr = NULL;
+		const char *result = asinfo_from_rr(tup->rrtype, rdata,
+						    &asinfo, &cidr);
 		if (result != NULL) {
-			asn = strdup(result);
+			asinfo = strdup(result);
 			cidr = strdup(result);
 		}
 		putchar(',');
-		if (asn != NULL) {
-			printf("%s", asn);
-			free(asn);
+		if (asinfo != NULL) {
+			printf("\"%s\"", asinfo);
+			free(asinfo);
 		}
 		putchar(',');
 		if (cidr != NULL) {

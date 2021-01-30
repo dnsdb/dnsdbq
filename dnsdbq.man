@@ -82,7 +82,7 @@ or
 .Sh OPTIONS
 .Bl -tag -width 3n
 .It Fl a
-enables ASN/CIDR lookup for IPv4 address output annotations. See also
+enables ASINFO/CIDR lookup for IPv4 address output annotations. See also
 .Fl D .
 .It Fl A Ar timestamp
 Specify a backward time fence. Only results seen by the passive DNS
@@ -108,8 +108,10 @@ time search criteria. To match only complete overlaps, add the -c
 ("completeness") command line option (this is also known as "strict"
 mode).
 .It Fl D
-specify the domain for ASN/CIDR lookups.
-Default is "asn.routeviews.org". See also
+specify the domain for ASINFO/CIDR lookups.
+Default is
+.Ic "asn.routeviews.org" .
+See also
 .Fl a .
 .It Fl d
 enable debug mode.  Repeat for more debug output.
@@ -506,7 +508,7 @@ $ head -1 batch-output.json | jq .
   ]
 }
 .Ed
-.Sh ASN LOOKUPS
+.Sh ASINFO LOOKUPS
 When the
 .Fl a
 option is used, every address seen in a response will cause a DNS lookup
@@ -521,9 +523,12 @@ For best results, always use an on-server or on-LAN
 recursive DNS service, and consider whether to configure that recursive DNS
 service to be a "stealth secondary" of the zone denoted by the 
 .Fl D
-option.
+option. For the default
+.Fl D
+value, more information can be found online at
+.Ic "http://archive.routeviews.org/dnszones/" .
 .Pp
-Use of DNS lookups to retrieve ASN metadata can be extremely fast
+Use of DNS lookups to retrieve ASINFO metadata can be extremely fast
 and surveillance-free, but some attention must be paid in order to obtain
 that outcome. For occasional low-volume use, your current recursive DNS
 placement and configuration is probably good enough.
