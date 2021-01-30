@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-#ifndef PDNS_ASN_H_INCLUDED
-#define PDNS_ASN_H_INCLUDED 1
+#ifndef ASN_H_INCLUDED
+#define ASN_H_INCLUDED 1
 
 const char *
 asn_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr);
 
-#endif /*PDNS_ASN_H_INCLUDED*/
+#endif /*ASN_H_INCLUDED*/
