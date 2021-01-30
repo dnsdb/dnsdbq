@@ -65,7 +65,7 @@ of "bailiwick reconstruction" where an RRset's position within the DNS
 hierarchy is approximated. This serves two purposes:
 .Bl -enum -offset indent
 .It
-Provide context of the location of a given DNS record within the DNS hierarchy
+Provide context of the location of a given DNS record within the DNS hierarchy.
 .It
 Prevent "untrustworthy" records that are a result of intentional or
 unintentional cache poisoning attempts from being replicated by downstream
@@ -450,7 +450,7 @@ The output is serialized as JSON and is piped to the
 .Ic jq
 program (a command-line JSON processor) for pretty printing.
 .Bd -literal -offset 4n
-$ dnsdbq -r farsightsecurity.com/A -l 1 -j | jq .
+$ dnsdbq -r farsightsecurity.com/A -l 1 -j -a | jq .
 {
   "count": 6350,
   "time_first": 1380123423,
@@ -460,9 +460,20 @@ $ dnsdbq -r farsightsecurity.com/A -l 1 -j | jq .
   "bailiwick": "farsightsecurity.com.",
   "rdata": [
     "66.160.140.81"
+  ],
+  "dnsdbq-rdata": [
+    {
+      "asn": 6939,
+      "cidr": "66.160.128.0/18",
+      "rdata": "66.160.140.81"
+    }
   ]
 }
 .Ed
+.Pp
+Note the "dnsdbq-rdata" element added due to the use of the
+.Fl a
+option.
 .Pp
 Perform a batched operation for a several different
 .Ic rrset
@@ -495,6 +506,27 @@ $ head -1 batch-output.json | jq .
   ]
 }
 .Ed
+.Sh ASN LOOKUPS
+When the
+.Fl a
+option is used, every address seen in a response will cause a DNS lookup
+under the domain specified by the
+.Fl D
+option. This stream of DNS queries might be an intolerable information leak
+depending on the nature of the underlying research, and it could also lead
+to unusably bad performance depending on the placement of your configured
+recursive DNS service.
+.Pp
+For best results, always use an on-server or on-LAN
+recursive DNS service, and consider whether to configure that recursive DNS
+service to be a "stealth secondary" of the zone denoted by the 
+.Fl D
+option.
+.Pp
+Use of DNS lookups to retrieve ASN metadata can be extremely fast
+and surveillance-free, but some attention must be paid in order to obtain
+that outcome. For occasional low-volume use, your current recursive DNS
+placement and configuration is probably good enough.
 .Sh FILES
 .Ic ~/.isc-dnsdb-query.conf ,
 .Ic ~/.dnsdb-query.conf ,
