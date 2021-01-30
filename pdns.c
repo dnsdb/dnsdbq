@@ -240,7 +240,7 @@ annotate_rdata(pdns_tuple_ct tup) {
 		json_array_append(origins,
 				  annotate_one(tup->rrtype, tup->obj.rdata));
 	}
-	json_object_set_new_nocheck(copy, "dnsdbq-origins", origins);
+	json_object_set_new_nocheck(copy, "dnsdbq-rdata", origins);
 	return copy;
 }
 
@@ -267,6 +267,7 @@ annotate_one(const char *rrtype, const json_t *rr) {
 		free(asn);
 		free(cidr);
 	}
+	json_object_set_nocheck(origin, "rdata", json_deep_copy(rr));
 	return origin;
 }
 
