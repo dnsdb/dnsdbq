@@ -126,7 +126,21 @@ present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
 	if (result != NULL) {
 		comment = strdup(result);
 	} else if (asinfo != NULL && cidr != NULL) {
-		asprintf(&comment, "[AS(%s) %s]", asinfo, cidr);
+		const char *src = asinfo;
+		bool wordbreak = true;
+		char ch, *dst;
+
+		dst = comment = malloc(strlen(asinfo) * 3 + strlen(cidr) + 1);
+		while ((ch = *src++) != '\0') {
+			if (wordbreak) {
+				*dst++ = 'A';
+				*dst++ = 'S';
+			}
+			*dst++ = ch;
+			wordbreak = (ch == '\040');
+		}
+		*dst++ = '\040';
+		dst = stpcpy(dst, cidr);
 		free(asinfo);
 		free(cidr);
 	}

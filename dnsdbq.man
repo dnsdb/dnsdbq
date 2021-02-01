@@ -110,7 +110,9 @@ mode).
 .It Fl D
 specify the domain for ASINFO/CIDR lookups.
 Default is
-.Ic "asn.routeviews.org" .
+.Ic "asn.routeviews.org"
+but you may wish to try
+.Ic "aspath.routeviews.org" .
 See also
 .Fl a .
 .It Fl d
