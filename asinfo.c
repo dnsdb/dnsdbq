@@ -94,15 +94,21 @@ asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 
 static const char *
 asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
-	const u_char *rdata, *end;
-	int n, an, ntxt, rcode;
+	static struct __res_state res;
+	int n, an, ntxt, rcode, rdlen;
 	u_char buf[NS_PACKETSZ];
+	const u_char *rdata;
 	const char *result;
 	char *txt[3];
 	ns_msg msg;
 	ns_rr rr;
 
-	n = res_query(dname, ns_c_in, ns_t_txt, buf, sizeof buf);
+	DEBUG(1, true, "asinfo_from_dns(%s)\n", dname);
+	if ((res.options & RES_INIT) == 0) {
+		res_ninit(&res);
+		res.options |= RES_USEVC;
+	}
+	n = res_nquery(&res, dname, ns_c_in, ns_t_txt, buf, sizeof buf);
 	if (n < 0)
 		return hstrerror(_res.res_h_errno);
 	if (ns_initparse(buf, n, &msg) < 0)
@@ -119,35 +125,56 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 		return strerror(errno);
 	/* beyond this point, txt[] must be freed before returning. */
 	rdata = ns_rr_rdata(rr);
-	end = ns_msg_end(msg);
+	rdlen = ns_rr_rdlen(rr);
 	ntxt = 0;
 	result = NULL;
-	while (end - rdata > 0) {
+	while (rdlen > 0) {
 		if (ntxt == 3) {
 			result = "len(TXT[]) > 3";
 			break;
 		}
 		n = *rdata++;
+		rdlen--;
+		if (n > rdlen) {
+			result = "TXT overrun";
+			break;
+		}
 		txt[ntxt] = strndup((const char *)rdata, (size_t)n);
 		if (txt[ntxt] == NULL) {
 			result = "strndup FAIL";
 			break;
 		}
+		DEBUG(2, true, "TXT[%d] \"%s\"\n", ntxt, txt[ntxt]);
 		rdata += n;
+		rdlen -= n;
 		ntxt++;
 	}
 	if (result == NULL) {
-		if (ntxt < 3)
-			result = "len(TXT[] < 3";
-	}
-	if (result == NULL) {
-		char *tmp;
-		if (asprintf(&tmp, "%s/%s", txt[1], txt[2]) < 0) {
-			result = strerror(errno);
+		const int seplen = sizeof " | " - 1;
+		const char *t1 = NULL, *t2 = NULL;
+		
+		if (ntxt == 1 &&
+		    (t1 = strstr(txt[0], " | ")) != NULL &&
+		    (t2 = strstr(t1 + seplen, " | ")) != NULL)
+		{
+			/* team-cymru.com format. */
+			*asnum = strndup(txt[0],
+					 (size_t)(t1 - txt[0]));
+			*cidr = strndup(t1 + seplen,
+					(size_t)(t2 - (t1 + seplen)));
+			t1 = t2 = NULL;
+		} else if (ntxt == 3) {
+			/* routeviews.org format. */
+			char *tmp;
+			if (asprintf(&tmp, "%s/%s", txt[1], txt[2]) < 0) {
+				result = strerror(errno);
+			} else {
+				*asnum = strdup(txt[0]);
+				*cidr = tmp;
+				tmp = NULL;
+			}
 		} else {
-			*asnum = strdup(txt[0]);
-			*cidr = tmp;
-			tmp = NULL;
+			result = "unrecognized asinfo TXT format";
 		}
 	}
 	for (n = 0; n < ntxt; n++) {
