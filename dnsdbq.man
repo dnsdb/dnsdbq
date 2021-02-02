@@ -82,8 +82,10 @@ or
 .Sh OPTIONS
 .Bl -tag -width 3n
 .It Fl a
-enables ASINFO/CIDR lookup for IPv4 address output annotations. See also
-.Fl D .
+enables ASINFO/CIDR annotation for IP addresses in AAAA or A RRsets.
+Depending on the data source given by
+.Fl D ,
+the result might be of a least-specific, most-specific, or intermediate route.
 .It Fl A Ar timestamp
 Specify a backward time fence. Only results seen by the passive DNS
 on or after this time will be selected. See also
@@ -108,13 +110,12 @@ time search criteria. To match only complete overlaps, add the -c
 ("completeness") command line option (this is also known as "strict"
 mode).
 .It Fl D
-specify the domain for ASINFO/CIDR lookups.
+specify the data source for ASINFO/CIDR annotations, if enabled by
+.Fl a .
 Default is
-.Ic "asn.routeviews.org"
+.Ic "asn.routeviews.org" ,
 but you may wish to try
 .Ic "aspath.routeviews.org" .
-See also
-.Fl a .
 .It Fl d
 enable debug mode.  Repeat for more debug output.
 .It Fl f
@@ -467,7 +468,7 @@ $ dnsdbq -r farsightsecurity.com/A -l 1 -j -a | jq .
   ],
   "dnsdbq-rdata": [
     {
-      "asn": 6939,
+      "asinfo": [ 6939 ],
       "cidr": "66.160.128.0/18",
       "rdata": "66.160.140.81"
     }
