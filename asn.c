@@ -117,6 +117,7 @@ asinfo_from_dns(const char *dname, char **asinfo, char **cidr) {
 		return "ANCOUNT > 1";
 	if (ns_parserr(&msg, ns_s_an, 0, &rr) < 0)
 		return strerror(errno);
+	/* beyond this point, txt[] must be freed before returning. */
 	rdata = ns_rr_rdata(rr);
 	end = ns_msg_end(msg);
 	ntxt = 0;
@@ -139,14 +140,19 @@ asinfo_from_dns(const char *dname, char **asinfo, char **cidr) {
 		if (ntxt < 3)
 			result = "len(TXT[] < 3";
 	}
-	if (result != NULL) {
-		for (n = 0; n < ntxt; n++) {
-			free(txt[n]);
-			txt[n] = NULL;
+	if (result == NULL) {
+		char *tmp;
+		if (asprintf(&tmp, "%s/%s", txt[1], txt[2]) < 0) {
+			result = strerror(errno);
+		} else {
+			*asinfo = strdup(txt[0]);
+			*cidr = tmp;
+			tmp = NULL;
 		}
-		return result;
 	}
-	*asinfo = strdup(txt[0]);
-	asprintf(cidr, "%s/%s", txt[1], txt[2]);
-	return NULL;
+	for (n = 0; n < ntxt; n++) {
+		free(txt[n]);
+		txt[n] = NULL;
+	}
+	return result;
 }
