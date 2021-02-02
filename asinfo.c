@@ -25,7 +25,7 @@
 #include <resolv.h>
 #include <stdlib.h>
 #include <string.h>
-#include "asn.h"
+#include "asinfo.h"
 #include "globals.h"
 
 static const char *asinfo_from_ipv4(const char *, char **, char **);
@@ -34,19 +34,19 @@ static const char *asinfo_from_dns(const char *, char **, char **);
 
 const char *
 asinfo_from_rr(const char *rrtype, const char *rdata,
-	       char **asinfo, char **cidr)
+	       char **asnum, char **cidr)
 {
 	if (asinfo_lookup) {
 		if (strcmp(rrtype, "A") == 0)
-			return asinfo_from_ipv4(rdata, asinfo, cidr);
+			return asinfo_from_ipv4(rdata, asnum, cidr);
 		if (strcmp(rrtype, "AAAA") == 0)
-			return asinfo_from_ipv6(rdata, asinfo, cidr);
+			return asinfo_from_ipv6(rdata, asnum, cidr);
 	}
 	return NULL;
 }
 
 static const char *
-asinfo_from_ipv4(const char *addr, char **asinfo, char **cidr) {
+asinfo_from_ipv4(const char *addr, char **asnum, char **cidr) {
 	u_char a4[32/8];
 	char *dname;
 
@@ -56,13 +56,13 @@ asinfo_from_ipv4(const char *addr, char **asinfo, char **cidr) {
 			 a4[3], a4[2], a4[1], a4[0], asinfo_domain);
 	if (n < 0)
 		return strerror(errno);
-	const char *result = asinfo_from_dns(dname, asinfo, cidr);
+	const char *result = asinfo_from_dns(dname, asnum, cidr);
 	free(dname);
 	return result;
 }
 
 static const char *
-asinfo_from_ipv6(const char *addr, char **asinfo, char **cidr) {
+asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 	u_char a6[128/8];
 	const char *result;
 	char *dname, *p;
@@ -85,7 +85,7 @@ asinfo_from_ipv6(const char *addr, char **asinfo, char **cidr) {
 	}
 	if (result == NULL) {
 		strcpy(p, asinfo_domain);
-		result = asinfo_from_dns(dname, asinfo, cidr);
+		result = asinfo_from_dns(dname, asnum, cidr);
 	}
 	p = NULL;
 	free(dname);
@@ -93,7 +93,7 @@ asinfo_from_ipv6(const char *addr, char **asinfo, char **cidr) {
 }
 
 static const char *
-asinfo_from_dns(const char *dname, char **asinfo, char **cidr) {
+asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	const u_char *rdata, *end;
 	int n, an, ntxt, rcode;
 	u_char buf[NS_PACKETSZ];
@@ -145,7 +145,7 @@ asinfo_from_dns(const char *dname, char **asinfo, char **cidr) {
 		if (asprintf(&tmp, "%s/%s", txt[1], txt[2]) < 0) {
 			result = strerror(errno);
 		} else {
-			*asinfo = strdup(txt[0]);
+			*asnum = strdup(txt[0]);
 			*cidr = tmp;
 			tmp = NULL;
 		}

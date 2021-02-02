@@ -17,6 +17,8 @@
 #ifndef ASINFO_H_INCLUDED
 #define ASINFO_H_INCLUDED 1
 
+#include <stdbool.h>
+
 const char *
 asinfo_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr);
 

@@ -161,12 +161,10 @@ sortable_rdata(pdns_tuple_ct tup) {
 	struct sortbuf buf = {NULL, 0};
 
 	if (json_is_array(tup->obj.rdata)) {
-		size_t slot, nslots;
+		size_t index;
+		json_t *rr;
 
-		nslots = json_array_size(tup->obj.rdata);
-		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(tup->obj.rdata, slot);
-
+		json_array_foreach(tup->obj.rdata, index, rr) {
 			if (json_is_string(rr))
 				sortable_rdatum(&buf, tup->rrtype,
 						json_string_value(rr));

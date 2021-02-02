@@ -19,7 +19,7 @@
 
 #include <assert.h>
 
-#include "asn.h"
+#include "asinfo.h"
 #include "defs.h"
 #include "netio.h"
 #include "ns_ttl.h"
@@ -29,8 +29,9 @@
 
 static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
-static json_t *annotate_rdata(pdns_tuple_ct);
-static json_t *annotate_one(const char *, const json_t *);
+static json_t *annotate_json(pdns_tuple_ct);
+static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
+static json_t *annotate_asinfo(const char *, const char *);
 
 /* present_text_lookup -- render one pdns tuple in "dig" style ascii text.
  */
@@ -93,11 +94,10 @@ present_text_lookup(pdns_tuple_ct tup,
 
 	/* Records. */
 	if (json_is_array(tup->obj.rdata)) {
-		size_t slot, nslots;
+		size_t index;
+		json_t *rr;
 
-		nslots = json_array_size(tup->obj.rdata);
-		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(tup->obj.rdata, slot);
+		json_array_foreach(tup->obj.rdata, index, rr) {
 			const char *rdata = NULL;
 
 			if (json_is_string(rr))
@@ -121,16 +121,17 @@ present_text_lookup(pdns_tuple_ct tup,
  */
 static void
 present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
-	char *asinfo = NULL, *cidr = NULL, *comment = NULL;
-	const char *result = asinfo_from_rr(rrtype, rdata, &asinfo, &cidr);
+	char *asnum = NULL, *cidr = NULL, *comment = NULL;
+	const char *result = asinfo_from_rr(rrtype, rdata, &asnum, &cidr);
+
 	if (result != NULL) {
 		comment = strdup(result);
-	} else if (asinfo != NULL && cidr != NULL) {
-		const char *src = asinfo;
+	} else if (asnum != NULL && cidr != NULL) {
+		const char *src = asnum;
 		bool wordbreak = true;
 		char ch, *dst;
 
-		dst = comment = malloc(strlen(asinfo) * 3 + strlen(cidr) + 1);
+		dst = comment = malloc(strlen(asnum) * 3 + strlen(cidr) + 1);
 		while ((ch = *src++) != '\0') {
 			if (wordbreak) {
 				*dst++ = 'A';
@@ -141,7 +142,7 @@ present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
 		}
 		*dst++ = '\040';
 		dst = stpcpy(dst, cidr);
-		free(asinfo);
+		free(asnum);
 		free(cidr);
 	}
 	printf("%s  %s  %s", rrname, rrtype, rdata);
@@ -224,8 +225,9 @@ present_json_lookup(pdns_tuple_ct tup,
 		    size_t jsonlen __attribute__ ((unused)),
 		    writer_t writer __attribute__ ((unused)))
 {
-	if (asinfo_lookup) {
-		json_t *copy = annotate_rdata(tup);
+	json_t *copy = annotate_json(tup);
+
+	if (copy != NULL) {
 		json_dumpf(copy, stdout, JSON_INDENT(0) | JSON_COMPACT);
 		json_decref(copy);
 	} else {
@@ -236,59 +238,80 @@ present_json_lookup(pdns_tuple_ct tup,
 }
 
 static json_t *
-annotate_rdata(pdns_tuple_ct tup) {
-	json_t *copy = json_deep_copy(tup->obj.cof_obj),
-		*origins = json_array();
+annotate_json(pdns_tuple_ct tup) {
+	json_t *copy = NULL, *anno = NULL;
 
 	if (json_is_array(tup->obj.rdata)) {
-		size_t slot, nslots;
+		size_t index;
+		json_t *rr;
 
-		nslots = json_array_size(tup->obj.rdata);
-		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(tup->obj.rdata, slot);
+		json_array_foreach(tup->obj.rdata, index, rr) {
+			const char *rdata = json_string_value(rr);
+			json_t *asinfo = annotate_asinfo(tup->rrtype, rdata);
 
-			json_array_append(origins,
-					  annotate_one(tup->rrtype, rr));
+			if (asinfo != NULL)
+				anno = annotate_one(anno, rdata,
+						    "asinfo", asinfo);
 		}
 	} else {
-		json_array_append(origins,
-				  annotate_one(tup->rrtype, tup->obj.rdata));
+		json_t *asinfo = annotate_asinfo(tup->rrtype, tup->rdata);
+
+		if (asinfo != NULL)
+			anno = annotate_one(anno, tup->rdata,
+					    "asinfo", asinfo);
 	}
-	json_object_set_new_nocheck(copy, "dnsdbq_rdata", origins);
-	return copy;
+	if (anno != NULL) {
+		copy = json_deep_copy(tup->obj.cof_obj),
+		json_object_set_new_nocheck(copy, "dnsdbq_rdata", anno);
+		return copy;
+	}
+	return NULL;
 }
 
 static json_t *
-annotate_one(const char *rrtype, const json_t *rr) {
-	char *asinfo = NULL, *cidr = NULL;
-	json_t *origin = json_object();
+annotate_one(json_t *anno, const char *rdata, const char *name, json_t *obj) {
+	json_t *this = NULL;
+	bool new = false;
+
+	if (anno == NULL)
+		anno = json_object();
+	if ((this = json_object_get(anno, rdata)) == NULL) {
+		this = json_object();
+		new = true;
+	}
+	json_object_set_new_nocheck(this, name, obj);
+	if (new)
+		json_object_set_new_nocheck(anno, rdata, this);
+	else
+		json_decref(this);
+	return anno;
+}
+
+static json_t *
+annotate_asinfo(const char *rrtype, const char *rdata) {
+	char *asnum = NULL, *cidr = NULL;
+	json_t *asinfo = NULL;
 	const char *result;
 
-	if (!json_is_string(rr)) {
-		json_object_set_new_nocheck(origin, "comment",
-					    json_string("not a string"));
-	} else if ((result = asinfo_from_rr(rrtype, 
-					    json_string_value(rr),
-					    &asinfo, &cidr)) != NULL)
-	{
-		json_object_set_new_nocheck(origin, "comment",
+	if ((result = asinfo_from_rr(rrtype, rdata, &asnum, &cidr)) != NULL) {
+		asinfo = json_object();
+		json_object_set_new_nocheck(asinfo, "comment",
 					    json_string(result));
-	} else if (asinfo != NULL && cidr != NULL) {
+	} else if (asnum != NULL && cidr != NULL) {
 		json_t *array = json_array();
 		char *copy, *walker, *token;
 
-		copy = walker = strdup(asinfo);
+		copy = walker = strdup(asnum);
 		while ((token = strsep(&walker, " ")) != NULL)
 			json_array_append(array, json_integer(atoi(token)));
 		free(copy);
-		json_object_set_new_nocheck(origin, "asinfo", array);
-		json_object_set_new_nocheck(origin, "cidr",
-					    json_string(cidr));
-		free(asinfo);
+		asinfo = json_object();
+		json_object_set_new_nocheck(asinfo, "as", array);
+		json_object_set_new_nocheck(asinfo, "cidr", json_string(cidr));
+		free(asnum);
 		free(cidr);
 	}
-	json_object_set_nocheck(origin, "rdata", json_deep_copy(rr));
-	return origin;
+	return asinfo;
 }
 
 /* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
@@ -316,17 +339,16 @@ present_csv_lookup(pdns_tuple_ct tup,
 		       "count,bailiwick,"
 		       "rrname,rrtype,rdata");
 		if (asinfo_lookup)
-			fputs(",asinfo,cidr", stdout);
+			fputs(",asnum,cidr", stdout);
 		putchar('\n');
 		writer->csv_headerp = true;
 	}
 
 	if (json_is_array(tup->obj.rdata)) {
-		size_t slot, nslots;
+		size_t index;
+		json_t *rr;
 
-		nslots = json_array_size(tup->obj.rdata);
-		for (slot = 0; slot < nslots; slot++) {
-			json_t *rr = json_array_get(tup->obj.rdata, slot);
+		json_array_foreach(tup->obj.rdata, index, rr) {
 			const char *rdata = NULL;
 
 			if (json_is_string(rr))
@@ -377,17 +399,17 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 		printf("\"%s\"", rdata);
 	if (asinfo_lookup && tup->obj.rrtype != NULL &&
 	    tup->obj.rdata != NULL) {
-		char *asinfo = NULL, *cidr = NULL;
+		char *asnum = NULL, *cidr = NULL;
 		const char *result = asinfo_from_rr(tup->rrtype, rdata,
-						    &asinfo, &cidr);
+						    &asnum, &cidr);
 		if (result != NULL) {
-			asinfo = strdup(result);
+			asnum = strdup(result);
 			cidr = strdup(result);
 		}
 		putchar(',');
-		if (asinfo != NULL) {
-			printf("\"%s\"", asinfo);
-			free(asinfo);
+		if (asnum != NULL) {
+			printf("\"%s\"", asnum);
+			free(asnum);
 		}
 		putchar(',');
 		if (cidr != NULL) {
