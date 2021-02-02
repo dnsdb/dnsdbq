@@ -303,7 +303,7 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
 
 		copy = walker = strdup(asnum);
 		while ((token = strsep(&walker, " ")) != NULL)
-			json_array_append(array, json_integer(atoi(token)));
+			json_array_append(array, json_integer(atol(token)));
 		free(copy);
 		asinfo = json_object();
 		json_object_set_new_nocheck(asinfo, "as", array);
