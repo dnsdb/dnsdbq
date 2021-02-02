@@ -70,6 +70,8 @@ depend:
 	mkdep $(CURLINCL) $(JANSINCL) $(CDEFS) $(TOOL_SRC)
 
 # these were made by mkdep on BSD but are now staticly edited
+asinfo.o: asinfo.c \
+  asinfo.h globals.h defs.h sort.h pdns.h netio.h
 dnsdbq.o: dnsdbq.c \
   defs.h netio.h \
   pdns.h \
@@ -82,6 +84,7 @@ netio.o: netio.c \
   pdns.h \
   globals.h sort.h
 pdns.o: pdns.c defs.h \
+  asinfo.h \
   netio.h \
   pdns.h \
   time.h \
