@@ -22,4 +22,7 @@
 const char *
 asinfo_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr);
 
+void
+asinfo_shutdown(void);
+
 #endif /*ASINFO_H_INCLUDED*/

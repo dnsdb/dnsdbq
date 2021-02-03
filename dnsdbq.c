@@ -46,6 +46,7 @@
 /* Types. */
 
 #define MAIN_PROGRAM
+#include "asinfo.h"
 #include "defs.h"
 #include "netio.h"
 #include "pdns.h"
@@ -596,6 +597,9 @@ my_exit(int code) {
 
 	/* sort key specifications and computations, are to be freed. */
 	sort_destroy();
+
+	/* asinfo logic has an internal DNS resolver context. */
+	asinfo_shutdown();
 
 	/* terminate process. */
 	DEBUG(1, true, "about to call exit(%d)\n", code);

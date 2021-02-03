@@ -28,8 +28,12 @@
 #include "asinfo.h"
 #include "globals.h"
 
+static struct __res_state res;
+
 static const char *asinfo_from_ipv4(const char *, char **, char **);
+#ifdef asinfo_ipv6
 static const char *asinfo_from_ipv6(const char *, char **, char **);
+#endif
 static const char *asinfo_from_dns(const char *, char **, char **);
 
 const char *
@@ -39,8 +43,10 @@ asinfo_from_rr(const char *rrtype, const char *rdata,
 	if (asinfo_lookup) {
 		if (strcmp(rrtype, "A") == 0)
 			return asinfo_from_ipv4(rdata, asnum, cidr);
+#ifdef asinfo_ipv6
 		if (strcmp(rrtype, "AAAA") == 0)
 			return asinfo_from_ipv6(rdata, asnum, cidr);
+#endif
 	}
 	return NULL;
 }
@@ -61,6 +67,7 @@ asinfo_from_ipv4(const char *addr, char **asnum, char **cidr) {
 	return result;
 }
 
+#ifdef asinfo_ipv6
 static const char *
 asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 	u_char a6[128/8];
@@ -91,10 +98,10 @@ asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 	free(dname);
 	return result;
 }
+#endif
 
 static const char *
 asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
-	static struct __res_state res;
 	int n, an, ntxt, rcode, rdlen;
 	u_char buf[NS_PACKETSZ];
 	const u_char *rdata;
@@ -152,7 +159,7 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	if (result == NULL) {
 		const int seplen = sizeof " | " - 1;
 		const char *t1 = NULL, *t2 = NULL;
-		
+
 		if (ntxt == 1 &&
 		    (t1 = strstr(txt[0], " | ")) != NULL &&
 		    (t2 = strstr(t1 + seplen, " | ")) != NULL)
@@ -182,4 +189,10 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 		txt[n] = NULL;
 	}
 	return result;
+}
+
+void
+asinfo_shutdown(void) {
+	if ((res.options & RES_INIT) != 0)
+		res_nclose(&res);
 }
