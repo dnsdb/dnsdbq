@@ -113,7 +113,8 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	DEBUG(1, true, "asinfo_from_dns(%s)\n", dname);
 	if ((res.options & RES_INIT) == 0) {
 		res_ninit(&res);
-		res.options |= RES_USEVC;
+		/* use a TCP connection and keep it open */
+		res.options |= RES_USEVC|RES_STAYOPEN;
 	}
 	n = res_nquery(&res, dname, ns_c_in, ns_t_txt, buf, sizeof buf);
 	if (n < 0)
