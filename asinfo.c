@@ -215,8 +215,11 @@ keep_best(char **asnum, char **cidr, char *new_asnum, char *new_cidr) {
 		if ((cp = strchr(new_asnum, '/')) == NULL ||
 		    (new_pfxlen = atoi(cp+1)) <= 0 || new_pfxlen > 128)
 			return "bad CIDR syntax";
-		if (new_pfxlen <= pfxlen)
+		if (new_pfxlen <= pfxlen) {
+			free(new_asnum);
+			free(new_cidr);
 			return NULL;
+		}
 		free(*asnum);
 		*asnum = NULL;
 		free(*cidr);
