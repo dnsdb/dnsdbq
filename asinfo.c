@@ -35,6 +35,7 @@ static const char *asinfo_from_ipv4(const char *, char **, char **);
 static const char *asinfo_from_ipv6(const char *, char **, char **);
 #endif
 static const char *asinfo_from_dns(const char *, char **, char **);
+static const char *keep_best(char **, char **, char *, char *);
 
 const char *
 asinfo_from_rr(const char *rrtype, const char *rdata,
@@ -102,11 +103,9 @@ asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 
 static const char *
 asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
-	int n, an, ntxt, rcode, rdlen;
 	u_char buf[NS_PACKETSZ];
-	const u_char *rdata;
+	int n, an, rrn, rcode;
 	const char *result;
-	char *txt[3];
 	ns_msg msg;
 	ns_rr rr;
 
@@ -127,69 +126,105 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	an = ns_msg_count(msg, ns_s_an);
 	if (an == 0)
 		return "ANCOUNT == 0";
-	if (an > 1)
-		return "ANCOUNT > 1";
-	if (ns_parserr(&msg, ns_s_an, 0, &rr) < 0)
-		return strerror(errno);
-	/* beyond this point, txt[] must be freed before returning. */
-	rdata = ns_rr_rdata(rr);
-	rdlen = ns_rr_rdlen(rr);
-	ntxt = 0;
 	result = NULL;
-	while (rdlen > 0) {
-		if (ntxt == 3) {
-			result = "len(TXT[]) > 3";
-			break;
-		}
-		n = *rdata++;
-		rdlen--;
-		if (n > rdlen) {
-			result = "TXT overrun";
-			break;
-		}
-		txt[ntxt] = strndup((const char *)rdata, (size_t)n);
-		if (txt[ntxt] == NULL) {
-			result = "strndup FAIL";
-			break;
-		}
-		DEBUG(2, true, "TXT[%d] \"%s\"\n", ntxt, txt[ntxt]);
-		rdata += n;
-		rdlen -= n;
-		ntxt++;
-	}
-	if (result == NULL) {
-		const int seplen = sizeof " | " - 1;
-		const char *t1 = NULL, *t2 = NULL;
+	for (rrn = 0; result == NULL && rrn < an; rrn++) {
+		const u_char *rdata;
+		int rdlen, ntxt;
+		char *txt[3];
 
-		if (ntxt == 1 &&
-		    (t1 = strstr(txt[0], " | ")) != NULL &&
-		    (t2 = strstr(t1 + seplen, " | ")) != NULL)
-		{
-			/* team-cymru.com format. */
-			*asnum = strndup(txt[0],
-					 (size_t)(t1 - txt[0]));
-			*cidr = strndup(t1 + seplen,
-					(size_t)(t2 - (t1 + seplen)));
-			t1 = t2 = NULL;
-		} else if (ntxt == 3) {
-			/* routeviews.org format. */
-			char *tmp;
-			if (asprintf(&tmp, "%s/%s", txt[1], txt[2]) < 0) {
-				result = strerror(errno);
-			} else {
-				*asnum = strdup(txt[0]);
-				*cidr = tmp;
-				tmp = NULL;
-			}
-		} else {
-			result = "unrecognized asinfo TXT format";
+		if (ns_parserr(&msg, ns_s_an, rrn, &rr) < 0) {
+			result = strerror(errno);
+			break;
 		}
-	}
-	for (n = 0; n < ntxt; n++) {
-		free(txt[n]);
-		txt[n] = NULL;
+		rdata = ns_rr_rdata(rr);
+		rdlen = ns_rr_rdlen(rr);
+		ntxt = 0;
+		while (rdlen > 0) {
+			if (ntxt == 3) {
+				result = "len(TXT[]) > 3";
+				break;
+			}
+			n = *rdata++;
+			rdlen--;
+			if (n > rdlen) {
+				result = "TXT overrun";
+				break;
+			}
+			txt[ntxt] = strndup((const char *)rdata, (size_t)n);
+			if (txt[ntxt] == NULL) {
+				result = "strndup FAIL";
+				break;
+			}
+			DEBUG(2, true, "TXT[%d] \"%s\"\n", ntxt, txt[ntxt]);
+			rdata += n;
+			rdlen -= n;
+			ntxt++;
+		}
+
+		if (result == NULL) {
+			const int seplen = sizeof " | " - 1;
+			const char *t1 = NULL, *t2 = NULL;
+
+			if (ntxt == 1 &&
+			    (t1 = strstr(txt[0], " | ")) != NULL &&
+			    (t2 = strstr(t1 + seplen, " | ")) != NULL)
+			{
+				/* team-cymru.com format. */
+				char *new_asnum, *new_cidr;
+				new_asnum = strndup(txt[0], (size_t)
+						    (t1 - txt[0]));
+				new_cidr = strndup(t1 + seplen, (size_t)
+						   (t2 - (t1 + seplen)));
+				t1 = t2 = NULL;
+				result = keep_best(asnum, cidr,
+						   new_asnum, new_cidr);
+			} else if (ntxt == 3) {
+				/* routeviews.org format. */
+				char *new_asnum, *new_cidr;
+				if (asprintf(&new_cidr, "%s/%s",
+					     txt[1], txt[2]) >= 0)
+				{
+					new_asnum = strdup(txt[0]);
+					result = keep_best(asnum, cidr,
+							   new_asnum,
+							   new_cidr);
+				} else {
+					result = strerror(errno);
+				}
+			} else {
+				result = "unrecognized asinfo TXT format";
+			}
+		}
+		for (n = 0; n < ntxt; n++) {
+			free(txt[n]);
+			txt[n] = NULL;
+		}
 	}
 	return result;
+}
+
+static const char *
+keep_best(char **asnum, char **cidr, char *new_asnum, char *new_cidr) {
+	if (*asnum != NULL && *cidr != NULL) {
+		int pfxlen, new_pfxlen;
+		char *cp;
+
+		if ((cp = strchr(*asnum, '/')) == NULL ||
+		    (pfxlen = atoi(cp+1)) <= 0 || pfxlen > 128)
+			return "bad CIDR syntax";
+		if ((cp = strchr(new_asnum, '/')) == NULL ||
+		    (new_pfxlen = atoi(cp+1)) <= 0 || new_pfxlen > 128)
+			return "bad CIDR syntax";
+		if (new_pfxlen <= pfxlen)
+			return NULL;
+		free(*asnum);
+		*asnum = NULL;
+		free(*cidr);
+		*cidr = NULL;
+	}
+	*asnum = new_asnum;
+	*cidr = new_cidr;
+	return NULL;
 }
 
 void
