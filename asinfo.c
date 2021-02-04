@@ -116,8 +116,12 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 		res.options |= RES_USEVC|RES_STAYOPEN;
 	}
 	n = res_nquery(&res, dname, ns_c_in, ns_t_txt, buf, sizeof buf);
-	if (n < 0)
-		return hstrerror(_res.res_h_errno);
+	if (n < 0) {
+		if (res.res_h_errno == HOST_NOT_FOUND)
+			return NULL;
+		else
+			return hstrerror(res.res_h_errno);
+	}
 	if (ns_initparse(buf, n, &msg) < 0)
 		return strerror(errno);
 	rcode = ns_msg_getflag(msg, ns_f_rcode);
