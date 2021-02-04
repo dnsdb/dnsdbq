@@ -225,8 +225,14 @@ keep_best(char **asnum, char **cidr, char *new_asnum, char *new_cidr) {
 		free(*cidr);
 		*cidr = NULL;
 	}
-	*asnum = new_asnum;
-	*cidr = new_cidr;
+	if (strcmp(new_asnum, "4294967295") == 0) {
+		/* in routeviews.org, this is how they signal "unknown". */
+		free(new_asnum);
+		free(new_cidr);
+	} else {
+		*asnum = new_asnum;
+		*cidr = new_cidr;
+	}
 	return NULL;
 }
 
