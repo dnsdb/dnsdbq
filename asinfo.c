@@ -210,15 +210,15 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 static const char *
 keep_best(char **asnum, char **cidr, char *new_asnum, char *new_cidr) {
 	if (*asnum != NULL && *cidr != NULL) {
-		int pfxlen, new_pfxlen;
+		int pfxlen = -1, new_pfxlen = -1;
 		char *cp;
 
-		if ((cp = strchr(*asnum, '/')) == NULL ||
+		if ((cp = strchr(*cidr, '/')) == NULL ||
 		    (pfxlen = atoi(cp+1)) <= 0 || pfxlen > 128)
-			return "bad CIDR syntax";
-		if ((cp = strchr(new_asnum, '/')) == NULL ||
+			return "bad CIDR syntax (old)";
+		if ((cp = strchr(new_cidr, '/')) == NULL ||
 		    (new_pfxlen = atoi(cp+1)) <= 0 || new_pfxlen > 128)
-			return "bad CIDR syntax";
+			return "bad CIDR syntax (new)";
 		if (new_pfxlen <= pfxlen) {
 			free(new_asnum);
 			free(new_cidr);
