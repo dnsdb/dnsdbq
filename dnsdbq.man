@@ -511,7 +511,7 @@ $ head -1 batch-output.json | jq .
   ]
 }
 .Ed
-.Sh ASINFO LOOKUPS
+.Sh ASINFO/CIDR LOOKUPS
 When the
 .Fl a
 option is used, every address seen in a response will cause a DNS lookup
@@ -531,10 +531,20 @@ option. For the default
 value, more information can be found online at
 .Ic "http://archive.routeviews.org/dnszones/" .
 .Pp
-Use of DNS lookups to retrieve ASINFO metadata can be extremely fast
+Use of DNS lookups to retrieve ASINFO/CIDR metadata can be extremely fast
 and surveillance-free, but some attention must be paid in order to obtain
 that outcome. For occasional low-volume use, your current recursive DNS
 placement and configuration is probably good enough.
+.Pp
+Note that while Passive DNS information is historical, the ASINFO/CIDR
+annotations made possible using the
+.Fl a
+and
+.Fl D
+options are based on current information. Internet routing system
+information may have changed since the DNS data was recorded. More
+information about this can be found online at
+.Ic "https://github.com/dnsdb/dnsdbq/blob/master/README" .
 .Sh FILES
 .Ic ~/.isc-dnsdb-query.conf ,
 .Ic ~/.dnsdb-query.conf ,
