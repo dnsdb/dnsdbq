@@ -131,6 +131,52 @@ Background on ASINFO/CIDR lookups and annotations:
     perhaps a domestic US corporation's IP address inexplicably ended
     up being originated by a foreign consumer ISP).
 
+    This code has been tested against three sources of ASN information,
+    each of which are valid arguments to the -D parameter.
+
+      1. asn.routeviews.org  (the default value for the -D parameter).
+
+	 Given an IPv4 in reverse order, this returns a space
+	 separated three-tuple:
+	 "ASN" "CIDR prefix" "prefix length"
+
+	 For badly formatted addresses, it returns:
+	 "4294967295" "0" "0"
+
+	 For unknown addresses, it returns no answers.
+
+	 Examples:
+		$ dig +short 34.168.254.125.asn.routeviews.org TXT
+		"23724" "125.254.168.0" "21"
+		$ dig +short a.b.c.d.asn.routeviews.org TXT
+		"4294967295" "0" "0"
+		$ dig +short 0.0.0.128.aspath.routeviews.org TXT
+		$
+
+      2. aspath.routeviews.org
+
+	 The same as asn.routeviews.org, except it returns a
+	 three-tuple: AS path, CIDR prefix, prefix length.
+
+	 Examples:
+		$ dig +short 0.0.0.4.aspath.routeviews.org TXT
+		"3303 3356" "4.0.0.0" "9"
+
+      3. origin.asn.cymru.com
+
+	 Given an IPv4 in reverse order, this returns a pipe-separated
+	 five-tuple:
+	 ASN | CIDR prefix/prefix length | CC | Registry | Allocated date
+
+	 Example:
+		$ dig +short 0.0.0.4.origin.asn.cymru.com TXT
+		"3356 | 4.0.0.0/9 | US | arin | 1992-12-01"
+
+    Function asinfo_from_dns() in asinfo.c has specific code to parse
+    those formats.  asn.routeviews.org and aspath.routeviews.org do
+    not currently handle IPv6 addresses properly, so dnsdbq does not
+    support IPv6 annotation now.
+
     There is a complication that arises when doing those sort of IP to
     ASN mappings, however: publicly available IP to ASN zones are
     based on currently observed IP to ASN mappings, while the IPs that
