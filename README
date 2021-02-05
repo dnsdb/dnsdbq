@@ -14,19 +14,35 @@
  * limitations under the License.
  */
 
-This is a pure C99 program that accesses passive DNS database systems such as:
-    * the DNSDB API server at Farsight Security
-    * the CIRCL pDNS server at Computer Incident Response Center (LU)
+Table of Contents:
 
-An API key is required for operation. The command syntax was inspired by a
-python script called dnsdb_query, but significant departure has occured,
-largely inspired by a modern understanding of "time fencing" and a desire for
-new features such as CSV output and JSON reprocessing.
+    * Introduction
+    * Dependencies needed
+    * Installing dependencies
+    * Building and installing
+    * Getting Started
+    * Background on ASINFO/CIDR lookups and annotations
+
+Introduction:
+
+    This is a pure C99 program that accesses passive DNS database
+    systems such as:
+	* the DNSDB API server at Farsight Security
+	* the CIRCL pDNS server at Computer Incident Response Center
+	  (LU)
+
+    An API key is required for operation. The command syntax was
+    inspired by a python script called dnsdb_query, but significant
+    departure has occured, largely inspired by a modern understanding
+    of "time fencing" and a desire for new features such as CSV output
+    and JSON reprocessing.
+
 
 Dependencies needed:
     jansson (2.5 or later)
     libcurl (7.28 or later)
     modern compiler (clang or GCC)
+
 
 Installing dependencies:
 
@@ -73,6 +89,7 @@ Installing dependencies:
     On macOS:
 	brew install jansson
 
+
 Building and installing:
 
     (Assumes you have "git")
@@ -94,9 +111,60 @@ Building and installing:
 		JANSLIBS = /usr/local/lib/libjansson.a
 	3. Then run make
 
-Getting Started
+
+Getting Started:
+
     Add the API key to ~/.dnsdb-query.conf in the below given format,
     APIKEY="YOURAPIKEYHERE"
 
     If you don't have an API key, you may qualify for a free one:
     https://www.farsightsecurity.com/dnsdb-community-edition/
+
+
+Background on ASINFO/CIDR lookups and annotations:
+
+    Annotating IP addresses with ASN information can help an analyst
+    focus their attention on unusual or unexpected ASNs (for example,
+    perhaps a domestic US corporation's IP address inexplicably ended
+    up being originated by a foreign consumer ISP).
+
+    There is a complication that arises when doing those sort of IP to
+    ASN mappings, however: publicly available IP to ASN zones are
+    based on currently observed IP to ASN mappings, while the IPs that
+    are being mapped may have been seen in passive DNS months or even
+    years earlier, when that IP may have been originated by a
+    different ASN.
+
+    Often the IP to ASN mappings are quite static, in which case
+    historical IPs will map just fine using the current IP to ASN
+    data. On the other hand, some IPs may have been hijacked and used
+    without authorization, or transferred, or otherwise ended up going
+    from one ASN to another.
+
+    Therefore the IP to ASN mapping should be viewed as an
+    experimental best effort feature, and interpreted with care.
+
+    In addition to the issue of potential ASN misalignment, the size
+    and origin of the reported origin IP and prefix length may also
+    have changed over time. For example, a /19 may have been
+    de-aggregated into a set of more specific /24's. Again, we report
+    the state of the world as it is currently seen by the service used
+    for the IP to ASN mapping.
+
+    Other miscellaneous notes:
+
+    * dnsdbq does not support mapping IPv6 addresses to ASNs at this
+      time.
+
+    * In the case of Multiple Origin ASNs, typically IP to ASN
+      services will report one of the multiple ASNs; other origin
+      ASNs may also exist but not be reported.
+
+    * We do not map ASNs to their owner or the owner description
+      string.  Please see WHOIS for information about the entity
+      currently assigned a given ASN.
+
+    We welcome feedback on this feature. Do you use it and find it
+    useful?  Are there IP-to-ASN service providers we've inadvertently
+    omitted?  Share your feedback by writing
+    <support@farsightsecurity.com>.
