@@ -82,7 +82,7 @@ or
 .Sh OPTIONS
 .Bl -tag -width 3n
 .It Fl a
-enables ASINFO/CIDR annotation for IP addresses in AAAA or A RRsets.
+enables ASINFO/CIDR annotation for IP addresses in A (IPv4 address) RRsets.
 Depending on the data source given by
 .Fl D ,
 the result might be of a least-specific, most-specific, or intermediate route.
