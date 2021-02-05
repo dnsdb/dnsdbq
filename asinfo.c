@@ -52,6 +52,20 @@ asinfo_from_rr(const char *rrtype, const char *rdata,
 	return NULL;
 }
 
+bool
+asinfo_domain_exists(const char *domain) {
+	u_char buf[NS_PACKETSZ];
+
+	return res_query(domain, ns_c_in, ns_t_txt, buf, sizeof buf) > 0 ||
+		_res.res_h_errno != HOST_NOT_FOUND;
+}
+
+void
+asinfo_shutdown(void) {
+	if ((res.options & RES_INIT) != 0)
+		res_nclose(&res);
+}
+
 static const char *
 asinfo_from_ipv4(const char *addr, char **asnum, char **cidr) {
 	u_char a4[32/8];
@@ -238,10 +252,4 @@ keep_best(char **asnum, char **cidr, char *new_asnum, char *new_cidr) {
 		*cidr = new_cidr;
 	}
 	return NULL;
-}
-
-void
-asinfo_shutdown(void) {
-	if ((res.options & RES_INIT) != 0)
-		res_nclose(&res);
 }

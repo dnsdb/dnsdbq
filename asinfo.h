@@ -22,6 +22,9 @@
 const char *
 asinfo_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr);
 
+bool
+asinfo_domain_exists(const char *);
+
 void
 asinfo_shutdown(void);
 

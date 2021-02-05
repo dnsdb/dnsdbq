@@ -426,6 +426,12 @@ main(int argc, char *argv[]) {
 			usage(msg);
 	}
 
+	if (asinfo_lookup && !asinfo_domain_exists(asinfo_domain)) {
+		fprintf(stderr, "%s: ASINFO domain (%s) does not exist.\n",
+			program_name, asinfo_domain);
+		my_exit(1);
+	}
+
 	/* recondition various options for HTML use. */
 	CURL *easy = curl_easy_init();
 	escape(easy, &qd.thing);
