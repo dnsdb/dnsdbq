@@ -305,7 +305,7 @@ presentation format, or a left-hand (".example.com") or right-hand
 ("www.example.") wildcard domain name. Note that left-hand wildcard queries
 are somewhat more expensive than right-hand wildcard queries.
 .It Fl O Ar offset
-to offset by #offset the results returned by the query.  
+to offset by #offset the results returned by the query.
 This gives you incremental results transfers.
 Cannot be negative. The default is 0.
 .It Fl p Ar output_type
@@ -524,7 +524,7 @@ recursive DNS service.
 .Pp
 For best results, always use an on-server or on-LAN
 recursive DNS service, and consider whether to configure that recursive DNS
-service to be a "stealth secondary" of the zone denoted by the 
+service to be a "stealth secondary" of the zone denoted by the
 .Fl D
 option. For the default
 .Fl D
