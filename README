@@ -98,6 +98,9 @@ Building and installing:
     cd dnsdbq
     make install clean
 
+    On FreeBSD, you may need to remove -lresolv in the LIBS line of
+    the Makefile.
+
     On macOS, if you want an almost static dnsdbq binary on macOS,
     that is, one without any non-System library dependencies, you can
     rebuild dnsdbq with a static jansson library.  That binary could
