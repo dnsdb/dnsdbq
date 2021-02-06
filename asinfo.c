@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+/* external. */
+
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
 
@@ -28,7 +30,11 @@
 #include "asinfo.h"
 #include "globals.h"
 
+/* private. */
+
 static struct __res_state res;
+
+/* forward. */
 
 static const char *asinfo_from_ipv4(const char *, char **, char **);
 #ifdef asinfo_ipv6
@@ -37,6 +43,14 @@ static const char *asinfo_from_ipv6(const char *, char **, char **);
 static const char *asinfo_from_dns(const char *, char **, char **);
 static const char *keep_best(char **, char **, char *, char *);
 
+/* public. */
+
+/* asinfo_from_rr(rrtype, rdata, asnum, cidr) -- find ASINFO for A/AAAA string
+ *
+ * return NULL on success, or else, reason (string) for failure.
+ *
+ * side effect: on success, *asnum and *cidr will be heap-allocated strings.
+ */
 const char *
 asinfo_from_rr(const char *rrtype, const char *rdata,
 	       char **asnum, char **cidr)
@@ -52,6 +66,10 @@ asinfo_from_rr(const char *rrtype, const char *rdata,
 	return NULL;
 }
 
+/* asinfo_domain_exists(domain) -- verify DNS-level existence of a domain
+ *
+ * return boolean -- does this domain exist in some form?
+ */
 bool
 asinfo_domain_exists(const char *domain) {
 	u_char buf[NS_PACKETSZ];
@@ -60,12 +78,22 @@ asinfo_domain_exists(const char *domain) {
 		_res.res_h_errno != HOST_NOT_FOUND;
 }
 
+/* asinfo_shutdown() -- deallocate underlying library's heap resources
+ */
 void
 asinfo_shutdown(void) {
 	if ((res.options & RES_INIT) != 0)
 		res_nclose(&res);
 }
 
+/* static. */
+
+/* asinfo_from_ipv4(addr, asnum, cidr) -- prepare and use ASINFO IPv4 name
+ *
+ * return NULL on success, or else, reason (string) for failure.
+ *
+ * side effect: on success, *asnum and *cidr will be heap-allocated strings.
+ */
 static const char *
 asinfo_from_ipv4(const char *addr, char **asnum, char **cidr) {
 	u_char a4[32/8];
@@ -83,6 +111,14 @@ asinfo_from_ipv4(const char *addr, char **asnum, char **cidr) {
 }
 
 #ifdef asinfo_ipv6
+/* asinfo_from_ipv6(addr, asnum, cidr) -- prepare and use ASINFO IPv6 name
+ *
+ * return NULL on success, or else, reason (string) for failure.
+ *
+ * side effect: on success, *asnum and *cidr will be heap-allocated strings.
+ *
+ * NOTE WELL: this is a placeholder, since no ASINFO source has working IPv6.
+ */
 static const char *
 asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 	u_char a6[128/8];
@@ -115,6 +151,12 @@ asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 }
 #endif
 
+/* asinfo_from_dns(dname, asnum, cidr) -- retrieve and parse a ASINFO DNS TXT
+ *
+ * return NULL on success, or else, reason (string) for failure.
+ *
+ * side effect: on success, *asnum and *cidr will be heap-allocated strings.
+ */
 static const char *
 asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	u_char buf[NS_PACKETSZ];
@@ -221,6 +263,12 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	return result;
 }
 
+/* keep_best(asnum, cidr, new_asnum, new_cidr) -- select/keep "best" ASINFO
+ *
+ * return NULL on success, or else, reason (string) for failure.
+ *
+ * side effect: on success, *asnum and *cidr will be heap-allocated strings.
+ */
 static const char *
 keep_best(char **asnum, char **cidr, char *new_asnum, char *new_cidr) {
 	if (*asnum != NULL && *cidr != NULL) {
