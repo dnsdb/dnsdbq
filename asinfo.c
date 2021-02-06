@@ -187,6 +187,10 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	if (an == 0)
 		return "ANCOUNT == 0";
 	result = NULL;
+	/* some ASINFO data sources return multiple TXT RR's, each having
+	 * a prefix length measured in bits. we will select the best
+	 * (longest match) prefix offered.
+	 */
 	for (rrn = 0; result == NULL && rrn < an; rrn++) {
 		const u_char *rdata;
 		int rdlen, ntxt;
@@ -200,6 +204,9 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 		rdlen = ns_rr_rdlen(rr);
 		ntxt = 0;
 		while (rdlen > 0) {
+			/* no current ASINFO source has a TXT schema having
+			 * more than three TXT segments (<character-strings>).
+			 */
 			if (ntxt == 3) {
 				result = "len(TXT[]) > 3";
 				break;
@@ -229,7 +236,14 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 			    (t1 = strstr(txt[0], " | ")) != NULL &&
 			    (t2 = strstr(t1 + seplen, " | ")) != NULL)
 			{
-				/* team-cymru.com format. */
+				/* team-cymru.com format:
+				 *
+				 * one TXT segment per TXT RR, having
+				 * internal structure of vertical bar (|)
+				 * separated fields, of which the first
+				 * two are our desired output values
+				 * (AS number or path or set; CIDR prefix).
+				 */
 				char *new_asnum, *new_cidr;
 				new_asnum = strndup(txt[0], (size_t)
 						    (t1 - txt[0]));
@@ -239,7 +253,14 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 				result = keep_best(asnum, cidr,
 						   new_asnum, new_cidr);
 			} else if (ntxt == 3) {
-				/* routeviews.org format. */
+				/* routeviews.org format:
+				 *
+				 * three TXT segments per TXT RR, which are
+				 * the AS number or path or set, and the
+				 * prefix mantissa, and the prefix length.
+				 * we use the first directly, and combine
+				 * the second and third to form CIDR prefix.
+				 */
 				char *new_asnum, *new_cidr;
 				if (asprintf(&new_cidr, "%s/%s",
 					     txt[1], txt[2]) >= 0)
