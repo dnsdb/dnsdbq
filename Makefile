@@ -32,12 +32,18 @@ CDEFS = -DWANT_PDNS_DNSDB=1 -DWANT_PDNS_DNSDB2=1 -DWANT_PDNS_CIRCL=1
 CGPROF =
 CDEBUG = -g -O3
 CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)
+INCL= $(CURLINCL) $(JANSINCL)
+# freebsd requires that -lresolv _not_ be used here
+LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
+#LIBS= $(CURLLIBS) $(JANSLIBS)
 
 TOOL = dnsdbq
-TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o pdns.o pdns_circl.o pdns_dnsdb.o \
-	sort.o time.o
-TOOL_SRC = $(TOOL).c ns_ttl.c netio.c pdns.c pdns_circl.c pdns_dnsdb.c \
-	sort.c time.c
+TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o \
+	pdns.o pdns_circl.o pdns_dnsdb.o \
+	sort.o time.o asinfo.o
+TOOL_SRC = $(TOOL).c ns_ttl.c netio.c \
+	pdns.c pdns_circl.c pdns_dnsdb.c \
+	sort.c time.c asinfo.c
 
 all: $(TOOL)
 
@@ -54,10 +60,10 @@ clean:
 	rm -f $(TOOL_OBJ)
 
 dnsdbq: $(TOOL_OBJ) Makefile
-	$(CC) $(CDEBUG) -o $(TOOL) $(CGPROF) $(TOOL_OBJ) $(CURLLIBS) $(JANSLIBS)
+	$(CC) $(CDEBUG) -o $(TOOL) $(CGPROF) $(TOOL_OBJ) $(LIBS)
 
 .c.o:
-	$(CC) $(CFLAGS) $(CURLINCL) $(JANSINCL) -c $<
+	$(CC) $(CFLAGS) $(INCL) -c $<
 
 $(TOOL_OBJ): Makefile
 
@@ -66,6 +72,8 @@ depend:
 	mkdep $(CURLINCL) $(JANSINCL) $(CDEFS) $(TOOL_SRC)
 
 # these were made by mkdep on BSD but are now staticly edited
+asinfo.o: asinfo.c \
+  asinfo.h globals.h defs.h sort.h pdns.h netio.h
 dnsdbq.o: dnsdbq.c \
   defs.h netio.h \
   pdns.h \
@@ -78,6 +86,7 @@ netio.o: netio.c \
   pdns.h \
   globals.h sort.h
 pdns.o: pdns.c defs.h \
+  asinfo.h \
   netio.h \
   pdns.h \
   time.h \

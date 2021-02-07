@@ -17,6 +17,9 @@
 #ifndef DEFS_H_INCLUDED
 #define DEFS_H_INCLUDED 1
 
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 #define DEFAULT_SYS "dnsdb"
@@ -32,5 +35,27 @@
 
 typedef enum { pres_text, pres_json, pres_csv } present_e;
 typedef enum { batch_none, batch_original, batch_verbose } batch_e;
+
+/* or_else -- return one pointer or else the other.
+ */
+static inline const char *
+or_else(const char *p, const char *or_else) {
+	if (p != NULL)
+		return p;
+	return or_else;
+}
+
+/* debug -- at the moment, dump to stderr.
+ */
+static inline void
+debug(bool want_header, const char *fmtstr, ...) {
+	va_list ap;
+
+	va_start(ap, fmtstr);
+	if (want_header)
+		fputs("debug: ", stderr);
+	vfprintf(stderr, fmtstr, ap);
+	va_end(ap);
+}
 
 #endif /*DEFS_H_INCLUDED*/

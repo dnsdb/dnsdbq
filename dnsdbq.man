@@ -20,10 +20,11 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl cdfgGhIjmqSsUv468
+.Op Fl acdfgGhIjmqSsUv468
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
+.Op Fl D Ar asn_domain
 .Op Fl i Ar ip
 .Op Fl J Ar input_file
 .Op Fl k Ar sort_keys
@@ -64,7 +65,7 @@ of "bailiwick reconstruction" where an RRset's position within the DNS
 hierarchy is approximated. This serves two purposes:
 .Bl -enum -offset indent
 .It
-Provide context of the location of a given DNS record within the DNS hierarchy
+Provide context of the location of a given DNS record within the DNS hierarchy.
 .It
 Prevent "untrustworthy" records that are a result of intentional or
 unintentional cache poisoning attempts from being replicated by downstream
@@ -80,6 +81,11 @@ or
 .Ic com .
 .Sh OPTIONS
 .Bl -tag -width 3n
+.It Fl a
+enables ASINFO/CIDR annotation for IP addresses in A (IPv4 address) RRsets.
+Depending on the data source given by
+.Fl D ,
+the result might be of a least-specific, most-specific, or intermediate route.
 .It Fl A Ar timestamp
 Specify a backward time fence. Only results seen by the passive DNS
 on or after this time will be selected. See also
@@ -103,6 +109,13 @@ and
 time search criteria. To match only complete overlaps, add the -c
 ("completeness") command line option (this is also known as "strict"
 mode).
+.It Fl D
+specify the data source for ASINFO/CIDR annotations, if enabled by
+.Fl a .
+Default is
+.Ic "asn.routeviews.org" ,
+but you may wish to try
+.Ic "aspath.routeviews.org" .
 .It Fl d
 enable debug mode.  Repeat for more debug output.
 .It Fl f
@@ -292,7 +305,7 @@ presentation format, or a left-hand (".example.com") or right-hand
 ("www.example.") wildcard domain name. Note that left-hand wildcard queries
 are somewhat more expensive than right-hand wildcard queries.
 .It Fl O Ar offset
-to offset by #offset the results returned by the query.  
+to offset by #offset the results returned by the query.
 This gives you incremental results transfers.
 Cannot be negative. The default is 0.
 .It Fl p Ar output_type
@@ -442,7 +455,7 @@ The output is serialized as JSON and is piped to the
 .Ic jq
 program (a command-line JSON processor) for pretty printing.
 .Bd -literal -offset 4n
-$ dnsdbq -r farsightsecurity.com/A -l 1 -j | jq .
+$ dnsdbq -r farsightsecurity.com/A -l 1 -j -a | jq .
 {
   "count": 6350,
   "time_first": 1380123423,
@@ -452,9 +465,20 @@ $ dnsdbq -r farsightsecurity.com/A -l 1 -j | jq .
   "bailiwick": "farsightsecurity.com.",
   "rdata": [
     "66.160.140.81"
+  ],
+  "dnsdbq-rdata": [
+    {
+      "asinfo": [ 6939 ],
+      "cidr": "66.160.128.0/18",
+      "rdata": "66.160.140.81"
+    }
   ]
 }
 .Ed
+.Pp
+Note the "dnsdbq-rdata" element added due to the use of the
+.Fl a
+option.
 .Pp
 Perform a batched operation for a several different
 .Ic rrset
@@ -487,6 +511,40 @@ $ head -1 batch-output.json | jq .
   ]
 }
 .Ed
+.Sh ASINFO/CIDR LOOKUPS
+When the
+.Fl a
+option is used, every address seen in a response will cause a DNS lookup
+under the domain specified by the
+.Fl D
+option. This stream of DNS queries might be an intolerable information leak
+depending on the nature of the underlying research, and it could also lead
+to unusably bad performance depending on the placement of your configured
+recursive DNS service.
+.Pp
+For best results, always use an on-server or on-LAN
+recursive DNS service, and consider whether to configure that recursive DNS
+service to be a "stealth secondary" of the zone denoted by the
+.Fl D
+option. For the default
+.Fl D
+value, more information can be found online at
+.Ic "http://archive.routeviews.org/dnszones/" .
+.Pp
+Use of DNS lookups to retrieve ASINFO/CIDR metadata can be extremely fast
+and surveillance-free, but some attention must be paid in order to obtain
+that outcome. For occasional low-volume use, your current recursive DNS
+placement and configuration is probably good enough.
+.Pp
+Note that while Passive DNS information is historical, the ASINFO/CIDR
+annotations made possible using the
+.Fl a
+and
+.Fl D
+options are based on current information. Internet routing system
+information may have changed since the DNS data was recorded. More
+information about this can be found online at
+.Ic "https://github.com/dnsdb/dnsdbq/blob/master/README" .
 .Sh FILES
 .Ic ~/.isc-dnsdb-query.conf ,
 .Ic ~/.dnsdb-query.conf ,

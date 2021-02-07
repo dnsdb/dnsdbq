@@ -17,6 +17,7 @@
 #ifndef GLOBALS_H_INCLUDED
 #define GLOBALS_H_INCLUDED 1
 
+#include "defs.h"
 #include "sort.h"
 
 #ifdef MAIN_PROGRAM
@@ -32,7 +33,7 @@ extern const struct verb verbs[];
 #endif
 
 EXTERN	const char id_swclient[]	INIT("dnsdbq");
-EXTERN	const char id_version[]		INIT("2.3.0");
+EXTERN	const char id_version[]		INIT("2.4.0");
 EXTERN	const char *program_name	INIT(NULL);
 EXTERN	const char path_sort[]		INIT("/usr/bin/sort");
 EXTERN	const char json_header[]	INIT("Accept: application/json");
@@ -40,11 +41,13 @@ EXTERN	const char jsonl_header[]	INIT("Accept: application/x-ndjson");
 EXTERN	const char env_time_fmt[]	INIT("DNSDBQ_TIME_FORMAT");
 EXTERN	const char status_noerror[]	INIT("NOERROR");
 EXTERN	const char status_error[]	INIT("ERROR");
+EXTERN	const char *asinfo_domain	INIT("asn.routeviews.org");
 EXTERN	struct qparam qparam_empty INIT({ .query_limit = -1L,
 			.explicit_output_limit = -1L, .output_limit = -1L });
 EXTERN	verb_ct pverb			INIT(NULL);
 EXTERN	pdns_system_ct psys		INIT(NULL);
 EXTERN	int debug_level			INIT(0);
+EXTERN	bool asinfo_lookup		INIT(false);
 EXTERN	bool donotverify		INIT(false);
 EXTERN	bool quiet			INIT(false);
 EXTERN	bool iso8601			INIT(false);
@@ -62,9 +65,7 @@ EXTERN	long curl_ipresolve		INIT(CURL_IPRESOLVE_WHATEVER);
 #undef INIT
 #undef EXTERN
 
-void debug(bool, const char *, ...);
 __attribute__((noreturn)) void my_exit(int);
 __attribute__((noreturn)) void my_panic(bool, const char *);
-const char *or_else(const char *, const char *);
 
 #endif /*GLOBALS_H_INCLUDED*/

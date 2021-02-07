@@ -46,6 +46,7 @@
 /* Types. */
 
 #define MAIN_PROGRAM
+#include "asinfo.h"
 #include "defs.h"
 #include "netio.h"
 #include "pdns.h"
@@ -99,9 +100,13 @@ static const char * const conf_files[] = {
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
 	{ "lookup", "/lookup", lookup_ok,
-	  present_text_lookup, present_json, present_csv_lookup },
+	  present_text_lookup,
+	  present_json_lookup,
+	  present_csv_lookup },
 	{ "summarize", "/summarize", summarize_ok,
-	  present_text_summarize, present_json, present_csv_summarize },
+	  present_text_summarize,
+	  present_json_summarize,
+	  present_csv_summarize },
 	{ NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
@@ -136,8 +141,8 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "R:r:N:n:i:M:u:p:t:b:k:J:V:"
-			    "dfhIjmqSsUv468" QPARAM_GETOPT))
+			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:"
+			    "adfhIjmqSsUv468" QPARAM_GETOPT))
 	       != -1)
 	{
 		switch (ch) {
@@ -148,6 +153,12 @@ main(int argc, char *argv[]) {
 		case 'O':
 			if ((msg = qparam_option(ch, optarg, &qp)) != NULL)
 				usage(msg);
+			break;
+		case 'a':
+			asinfo_lookup = true;
+			break;
+		case 'D':
+			asinfo_domain = optarg;
 			break;
 		case 'R': {
 			if (qd.mode != no_mode)
@@ -166,13 +177,13 @@ main(int argc, char *argv[]) {
 				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
-					qd.rrtype = strndup(p + 1,
-							 (size_t)(q - p - 1));
+					qd.rrtype = strndup(p + 1, (size_t)
+							    (q - p - 1));
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 			} else {
 				qd.thing = strdup(optarg);
 			}
@@ -195,13 +206,13 @@ main(int argc, char *argv[]) {
 				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
-					qd.rrtype = strndup(p + 1,
-							 (size_t)(q - p - 1));
+					qd.rrtype = strndup(p + 1, (size_t)
+							    (q - p - 1));
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 			} else {
 				qd.thing = strdup(optarg);
 			}
@@ -224,13 +235,13 @@ main(int argc, char *argv[]) {
 				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
-					qd.rrtype = strndup(p + 1,
-							 (size_t)(q - p - 1));
+					qd.rrtype = strndup(p + 1, (size_t)
+							    (q - p - 1));
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 			} else {
 				qd.thing = strdup(optarg);
 			}
@@ -253,13 +264,13 @@ main(int argc, char *argv[]) {
 				const char *q = strchr(p + 1, '/');
 				if (q != NULL) {
 					qd.bailiwick = strdup(q + 1);
-					qd.rrtype = strndup(p + 1,
-							 (size_t)(q - p - 1));
+					qd.rrtype = strndup(p + 1, (size_t)
+							    (q - p - 1));
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 			} else {
 				qd.thing = strdup(optarg);
 			}
@@ -275,7 +286,7 @@ main(int argc, char *argv[]) {
 			const char *p = strchr(optarg, '/');
 			if (p != NULL) {
 				qd.thing = strndup(optarg,
-						      (size_t)(p - optarg));
+						   (size_t)(p - optarg));
 				qd.pfxlen = strdup(p + 1);
 			} else {
 				qd.thing = strdup(optarg);
@@ -413,6 +424,12 @@ main(int argc, char *argv[]) {
 		msg = check_7bit(qd.thing);
 		if (msg != NULL)
 			usage(msg);
+	}
+
+	if (asinfo_lookup && !asinfo_domain_exists(asinfo_domain)) {
+		fprintf(stderr, "%s: ASINFO domain (%s) does not exist.\n",
+			program_name, asinfo_domain);
+		my_exit(1);
 	}
 
 	/* recondition various options for HTML use. */
@@ -570,19 +587,6 @@ main(int argc, char *argv[]) {
 	my_exit(exit_code);
 }
 
-/* debug -- at the moment, dump to stderr.
- */
-void
-debug(bool want_header, const char *fmtstr, ...) {
-	va_list ap;
-
-	va_start(ap, fmtstr);
-	if (want_header)
-		fputs("debug: ", stderr);
-	vfprintf(stderr, fmtstr, ap);
-	va_end(ap);
-}
-
 /* my_exit -- close or destroy global objects, then exit.
  */
 __attribute__((noreturn)) void
@@ -599,6 +603,9 @@ my_exit(int code) {
 
 	/* sort key specifications and computations, are to be freed. */
 	sort_destroy();
+
+	/* asinfo logic has an internal DNS resolver context. */
+	asinfo_shutdown();
 
 	/* terminate process. */
 	DEBUG(1, true, "about to call exit(%d)\n", code);
@@ -617,15 +624,6 @@ my_panic(bool want_perror, const char *s) {
 	my_exit(1);
 }
 
-/* or_else -- return one pointer or else the other.
- */
-const char *
-or_else(const char *p, const char *or_else) {
-	if (p != NULL)
-		return p;
-	return or_else;
-}
-
 /* Private. */
 
 /* help -- display a brief usage-help text; then exit.
@@ -636,11 +634,12 @@ static void
 help(void) {
 	verb_ct v;
 
-	printf("usage: %s [-cdfgGhIjmqSsUv468] [-p dns|json|csv]\n",
+	printf("usage: %s [-acdfgGhIjmqSsUv468] [-p dns|json|csv]\n",
 	       program_name);
 	puts("\t[-k (first|last|duration|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
-	     "\t[-u system] [-O offset] [-V verb] [-M max_count] {\n"
+	     "\t[-u system] [-O offset] [-V verb] [-M max_count]\n"
+	     "\t[-D asinfo_domain] {\n"
 	     "\t\t-f |\n"
 	     "\t\t-J inputfile |\n"
 	     "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -651,9 +650,11 @@ help(void) {
 	     "\t\t\t-R RAW-OWNER-DATA[/TYPE[/BAILIWICK]]\n"
 	     "\t\t}\n"
 	     "\t}");
-	puts("for -A and -B, use absolute format YYYY-MM-DD[ HH:MM:SS],\n"
-	     "\tor relative format %dw%dd%dh%dm%ds.\n"
+	printf("for -A and -B, use absolute format YYYY-MM-DD[ HH:MM:SS],\n"
+	     "\tor relative format %%dw%%dd%%dh%%dm%%ds.\n"
+	     "use -a to get ASNs associated with reported IP addresses\n"
 	     "use -c to get complete (strict) time matching for -A and -B.\n"
+	     "for -D, the default is \"%s\"\n"
 	     "use -d one or more times to ramp up the diagnostic output.\n"
 	     "for -f, stdin must contain lines of the following forms:\n"
 	     "\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
@@ -681,7 +682,8 @@ help(void) {
 	     "use -v to show the program version.\n"
 	     "use -4 to force connecting to the server via IPv4.\n"
 	     "use -6 to force connecting to the server via IPv6.\n"
-	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments");
+	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments",
+	     asinfo_domain);
 
 	puts("for -u, system must be one of:");
 #if WANT_PDNS_DNSDB
