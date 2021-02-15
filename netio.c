@@ -115,7 +115,7 @@ create_fetch(query_t query, char *url) {
 	if (psys->auth != NULL)
 	    psys->auth(fetch);
 
-	if (encap == encap_saf)
+	if (psys->encap == encap_saf)
 		fetch->hdrs = curl_slist_append(fetch->hdrs, jsonl_header);
 	else
 		fetch->hdrs = curl_slist_append(fetch->hdrs, json_header);
@@ -341,7 +341,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			      qp->output_limit);
 			/* cause CURLE_WRITE_ERROR for this transfer. */
 			bytes = 0;
-			if (encap == encap_saf)
+			if (psys->encap == encap_saf)
 				query->saf_cond = sc_we_limited;
 			/* inform io_engine() that the abort is intentional. */
 			fetch->stopped = true;
@@ -359,7 +359,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			query->writer->count +=
 				data_blob(query, fetch->buf, pre_len);
 
-			if (encap == encap_saf)
+			if (psys->encap == encap_saf)
 				switch (query->saf_cond) {
 				case sc_init:
 				case sc_begin:
@@ -690,7 +690,7 @@ io_drain(void) {
 
 			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
 			      query->command, fetch->rcode);
-			if (encap == encap_saf)
+			if (psys->encap == encap_saf)
 				DEBUG(2, true, "... saf_cond %d saf_msg %s\n",
 				      query->saf_cond,
 				      or_else(query->saf_msg, ""));
@@ -719,7 +719,7 @@ io_drain(void) {
 			}
 
 			/* record emptiness as status if nothing else. */
-			if (encap == encap_saf &&
+			if (psys->encap == encap_saf &&
 			    query->writer != NULL &&
 			    !query->writer->info &&
 			    query->writer->count == 0 &&

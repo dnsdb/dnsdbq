@@ -20,8 +20,8 @@
 #include <stdbool.h>
 #include <curl/curl.h>
 
-/* encapsulation protocol.  original DNBDB APIv1 and CIRCL use encap_bare. */
-typedef enum { encap_bare = 0, encap_saf } encap_e;
+/* encapsulation protocol.  ruminate, DNBDB APIv1 and CIRCL use encap_cof. */
+typedef enum { encap_cof = 0, encap_saf } encap_e;
 
 /* official SAF condition values, plus sc_init, sc_we_limited, and sc_missing.
  */

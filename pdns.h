@@ -60,6 +60,9 @@ struct pdns_system {
 	/* default URL to reach this pdns API endpoint.	 May be overridden. */
 	const char	*base_url;
 
+	/* what encapsulation does this system speak? */
+	encap_e		encap;
+
 	/* start creating a URL corresponding to a command-path string.
 	 * first argument is the input URL path.
 	 * second is an output parameter pointing to the separator character

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#if WANT_PDNS_DNSDB || WANT_PDNS_DNSDB2
+#if WANT_PDNS_DNSDB
 
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
@@ -86,7 +86,14 @@ static char *dnsdb_base_url = NULL;
 static const char dnsdb2_url_prefix[] = "/dnsdb/v2";
 
 static const struct pdns_system dnsdb = {
-	"dnsdb", "https://api.dnsdb.info",
+	"dnsdb", "https://api.dnsdb.info", encap_cof,
+	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
+	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
+	dnsdb_setval, dnsdb_ready, dnsdb_destroy
+};
+
+static const struct pdns_system dnsdb2 = {
+	"dnsdb2", "https://api.dnsdb.info/dnsdb/v2", encap_saf,
 	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
 	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
 	dnsdb_setval, dnsdb_ready, dnsdb_destroy
@@ -100,19 +107,10 @@ pdns_dnsdb(void) {
 	return &dnsdb;
 }
 
-#if WANT_PDNS_DNSDB2
-static const struct pdns_system dnsdb2 = {
-	"dnsdb2", "https://api.dnsdb.info/dnsdb/v2",
-	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
-	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
-	dnsdb_setval, dnsdb_ready, dnsdb_destroy
-};
-
 pdns_system_ct
 pdns_dnsdb2(void) {
 	return &dnsdb2;
 }
-#endif /* WANT_PDNS_DNSDB2 */
 
 /*---------------------------------------------------------------- private
  */
@@ -152,7 +150,7 @@ dnsdb_ready(void) {
 		dnsdb_base_url = strdup(psys->base_url);
 
 	/* If SAF (aka APIv2) ensure URL contains special /dnsdb/v2 prefix. */
-	if (encap == encap_saf &&
+	if (psys->encap == encap_saf &&
 	    strstr(dnsdb_base_url, dnsdb2_url_prefix) == NULL) {
 		int x;
 		char *ret;
@@ -211,7 +209,7 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 			num_slash += (*p == '/');
 	verb_path = "";
 	if (num_slash == 0) {
-		if (encap == encap_saf && strcmp(path, "rate_limit") == 0)
+		if (psys->encap == encap_saf && strcmp(path, "rate_limit") == 0)
 			verb_path = "";
 		else if (pverb->url_fragment != NULL)
 			verb_path = pverb->url_fragment;
@@ -360,12 +358,12 @@ dnsdb_auth(fetch_t fetch) {
 
 static const char *
 dnsdb_status(fetch_t fetch) {
-	/* APIv2 DNSDB returns 200 with no obj lines for "no rrs found".
-	 * early (current) versions of DNSDB returns 404 for "no rrs found".
+	/* APIv1 DNSDB returns 404 for "no rrs found".
+	 * APIv2 DNSDB returns 200 with no SAF lines for "no rrs found".
 	 */
-	if (encap != encap_saf && fetch->rcode == HTTP_NOT_FOUND)
-		return status_noerror;
-	return status_error;
+	if (psys->encap == encap_saf && fetch->rcode == HTTP_NOT_FOUND)
+		return status_error;
+	return status_noerror;
 }
 
 static const char *
@@ -589,4 +587,4 @@ rate_tuple_unmake(rate_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-#endif /*WANT_PDNS_DNSDB || WANT_PDNS_DNSDB2*/
+#endif /*WANT_PDNS_DNSDB*/

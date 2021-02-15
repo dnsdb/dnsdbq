@@ -472,9 +472,13 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	}
 	DEBUG(4, true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2)));
 
-	if (encap != encap_saf) {
+	switch (psys->encap) {
+	case encap_cof:
+		/* the COF just is the JSON object. */
 		tup->obj.cof_obj = tup->obj.main;
-	} else {
+		break;
+	case encap_saf:
+		/* the COF is embedded in the JSONL object. */
 		tup->obj.saf_cond = json_object_get(tup->obj.main, "cond");
 		if (tup->obj.saf_cond != NULL) {
 			if (!json_is_string(tup->obj.saf_cond)) {
@@ -501,6 +505,10 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			}
 			tup->obj.cof_obj = tup->obj.saf_obj;
 		}
+		break;
+	default:
+		/* we weren't prepared for this -- unknown program state. */
+		abort();
 	}
 
 	/* Timestamps. */
@@ -636,7 +644,7 @@ data_blob(query_t query, const char *buf, size_t len) {
 		goto more;
 	}
 
-	if (encap == encap_saf) {
+	if (psys->encap == encap_saf) {
 		if (tup.msg != NULL) {
 			DEBUG(5, true, "data_blob tup.msg = %s\n", tup.msg);
 			query->saf_msg = strdup(tup.msg);

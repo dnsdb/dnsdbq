@@ -50,7 +50,7 @@
 #include "defs.h"
 #include "netio.h"
 #include "pdns.h"
-#if WANT_PDNS_DNSDB || WANT_PDNS_DNSDB2
+#if WANT_PDNS_DNSDB
 #include "pdns_dnsdb.h"
 #endif
 #if WANT_PDNS_CIRCL
@@ -688,8 +688,6 @@ help(void) {
 	puts("for -u, system must be one of:");
 #if WANT_PDNS_DNSDB
 	puts("\tdnsdb");
-#endif
-#if WANT_PDNS_DNSDB2
 	puts("\tdnsdb2");
 #endif
 #if WANT_PDNS_CIRCL
@@ -711,10 +709,7 @@ pick_system(const char *name) {
 #if WANT_PDNS_DNSDB
 	if (strcmp(name, "dnsdb") == 0)
 		return pdns_dnsdb();
-#endif
-#if WANT_PDNS_DNSDB2
 	if (strcmp(name, "dnsdb2") == 0) {
-		encap = encap_saf;
 		return pdns_dnsdb2();
 	}
 #endif
@@ -954,8 +949,6 @@ read_configs(void) {
 #if WANT_PDNS_DNSDB
 			     "echo dnsdb apikey $APIKEY;"
 			     "echo dnsdb server $DNSDB_SERVER;"
-#endif
-#if WANT_PDNS_DNSDB2
 			     "echo dnsdb2 apikey $APIKEY;"
 			     "echo dnsdb2 server $DNSDB_SERVER;"
 #endif
@@ -1457,7 +1450,11 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	writer_t writer;
 	ssize_t len;
 
-	encap = encap_bare;	/* the json output files are in bare format, not SAF */
+#if WANT_PDNS_DNSDB
+	/* the json output files are in bare format, not SAF: downgrade. */
+	if (strcmp(psys->name, "dnsdb2") == 0)
+		psys = pdns_dnsdb();
+#endif
 	writer = writer_init(qpp->output_limit);
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
