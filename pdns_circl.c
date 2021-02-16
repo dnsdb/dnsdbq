@@ -26,7 +26,7 @@
 #include "pdns_circl.h"
 #include "globals.h"
 
-static char *circl_url(const char *, char *, qparam_ct, pdns_fence_ct);
+static char *circl_url(const char *, char *, qparam_ct, pdns_fence_ct, bool);
 static void circl_auth(fetch_t);
 static const char *circl_status(fetch_t);
 static const char *circl_verb_ok(const char *, qparam_ct);
@@ -39,7 +39,7 @@ static char *circl_authinfo = NULL;
 
 static const struct pdns_system circl = {
 	"circl", "https://www.circl.lu/pdns/query", encap_cof,
-	circl_url, NULL, NULL,
+	NULL, pdns_true, circl_url, NULL,
 	circl_auth, circl_status, circl_verb_ok,
 	circl_setval, circl_ready, circl_destroy
 };
@@ -92,7 +92,8 @@ circl_destroy(void) {
 static char *
 circl_url(const char *path, char *sep,
 	  qparam_ct qp __attribute__((unused)),
-	  pdns_fence_ct fp __attribute__((unused)))
+	  pdns_fence_ct fp __attribute__((unused)),
+	  bool meta __attribute__((unused)))
 {
 	const char *val = NULL;
 	char *ret;

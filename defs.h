@@ -22,7 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define DEFAULT_SYS "dnsdb"
+#define DEFAULT_SYS "dnsdb2"
 #define DEFAULT_VERB 0
 #define	MAX_JOBS 8
 #define DNSDBQ_SYSTEM "DNSDBQ_SYSTEM"
@@ -34,7 +34,7 @@
 #define DEBUG(ge, ...) { if (debug_level >= (ge)) debug(__VA_ARGS__); }
 
 typedef enum { pres_text, pres_json, pres_csv } present_e;
-typedef enum { batch_none, batch_original, batch_verbose } batch_e;
+typedef enum { batch_none, batch_terse, batch_verbose } batch_e;
 
 /* or_else -- return one pointer or else the other.
  */

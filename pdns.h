@@ -63,6 +63,12 @@ struct pdns_system {
 	/* what encapsulation does this system speak? */
 	encap_e		encap;
 
+	/* what's our downgrade path if this system doesn't function? */
+	const struct pdns_system *  (*next)(void);
+
+	/* is this system reachable and functional? */
+	bool		(*probe)(void);
+
 	/* start creating a URL corresponding to a command-path string.
 	 * first argument is the input URL path.
 	 * second is an output parameter pointing to the separator character
@@ -70,16 +76,13 @@ struct pdns_system {
 	 * parameters.	May be NULL if the caller doesn't care.
 	 * the third argument is search parameters.
 	 */
-	char *		(*url)(const char *, char *, qparam_ct, pdns_fence_ct);
+	char *		(*url)(const char *, char *, qparam_ct,
+			       pdns_fence_ct, bool);
 
 	/* send a request for info, such as quota information.
 	 * may be NULL if info requests are not supported by this pDNS system.
 	 */
-	void		(*info_req)(void);
-
-	/* display info from the JSON block we read from the API.
-	 */
-	void		(*info_blob)(const char *, size_t);
+	void		(*info)(void);
 
 	/* add authentication information to the fetch request being created.
 	 * may be NULL if auth is not needed by this pDNS system.
@@ -154,6 +157,8 @@ void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 int data_blob(query_t, const char *, size_t);
+bool pdns_probe(void);
+bool pdns_true(void);
 
 /* Some HTTP status codes we handle specifically */
 #define HTTP_OK		   200

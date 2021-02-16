@@ -307,6 +307,7 @@ main(int argc, char *argv[]) {
 		case 'u':
 			if ((psys = pick_system(optarg)) == NULL)
 				usage("-u must refer to a pdns system");
+			specified = true;
 			break;
 		case 'U':
 			donotverify = true;
@@ -368,9 +369,9 @@ main(int argc, char *argv[]) {
 		case 'f':
 			switch (batching) {
 			case batch_none:
-				batching = batch_original;
+				batching = batch_terse;
 				break;
-			case batch_original:
+			case batch_terse:
 				batching = batch_verbose;
 				break;
 			case batch_verbose:
@@ -471,12 +472,22 @@ main(int argc, char *argv[]) {
 	if (sorting != no_sort)
 		sort_ready();
 	read_configs();
-	if (psys == NULL) {
-		psys = pick_system(DEFAULT_SYS);
-		if (psys == NULL)
-			usage("neither " DNSDBQ_SYSTEM
-			      " nor -u were specified,"
-			      " and there is no default.");
+	if (json_fd != -1) {
+#if WANT_PDNS_DNSDB
+		/* the json output files are in COF format, never SAF. */
+		if (strcmp(psys->name, "dnsdb2") == 0)
+			psys = pdns_dnsdb();
+#endif
+		NULL;
+	} else {
+		if ((msg = psys->ready()) != NULL)
+			usage(msg);
+		make_curl();
+		if (!specified && pdns_probe()) {
+			/* re-test after psys fallback. */
+			if ((msg = psys->ready()) != NULL)
+				usage(msg);
+		}
 	}
 
 	/* verify that some of the fields in our psys are set. */
@@ -528,11 +539,7 @@ main(int argc, char *argv[]) {
 			usage("can't mix -t with -f");
 		if (info)
 			usage("can't mix -I with -f");
-		if ((msg = psys->ready()) != NULL)
-			usage(msg);
-		make_curl();
 		do_batch(stdin, &qp);
-		unmake_curl();
 	} else if (info) {
 		/* use the "info" verb. */
 		if (qd.mode != no_mode)
@@ -543,13 +550,9 @@ main(int argc, char *argv[]) {
 			usage("can't mix -b with -I");
 		if (qd.rrtype != NULL)
 			usage("can't mix -t with -I");
-		if (psys->info_req == NULL || psys->info_blob == NULL)
+		if (psys->info == NULL)
 			usage("there is no 'info' for this service");
-		if ((msg = psys->ready()) != NULL)
-			usage(msg);
-		make_curl();
-		psys->info_req();
-		unmake_curl();
+		psys->info();
 	} else {
 		/* do a LHS or RHS lookup of some kind. */
 		if (qd.mode == no_mode)
@@ -568,14 +571,15 @@ main(int argc, char *argv[]) {
 		if (qd.mode == ip_mode && qd.rrtype != NULL)
 			usage("can't mix -i with -t");
 
-		if ((msg = psys->ready()) != NULL)
-			usage(msg);
-		make_curl();
-		writer_t writer = writer_init(qp.output_limit);
+		writer_t writer = writer_init(qp.output_limit,
+					      ps_stdout, false);
 		(void) query_launcher(&qd, &qp, writer);
 		io_engine(0);
 		writer_fini(writer);
 		writer = NULL;
+	}
+
+	if (json_fd == -1) {
 		unmake_curl();
 	}
 
@@ -1001,9 +1005,7 @@ read_configs(void) {
 			/* some env/conf variables are dnsdbq-specific. */
 			if (strcmp(tok1, "dnsdbq") == 0) {
 				/* env/config psys does not override -u. */
-				if (psys == NULL &&
-				    strcmp(tok2, "system") == 0)
-				{
+				if (strcmp(tok2, "system") == 0 && !specified) {
 					psys = pick_system(tok3);
 					if (psys == NULL) {
 						fprintf(stderr,
@@ -1013,16 +1015,20 @@ read_configs(void) {
 							tok3);
 						my_exit(1);
 					}
+					specified = true;
 				}
 				continue;
 			}
 
 			/* this is the last point where psys can be null. */
 			if (psys == NULL) {
-				/* first match wins and is sticky. */
-				if ((psys = pick_system(tok1)) == NULL)
-					continue;
-				DEBUG(1, true, "picked system %s\n", tok1);
+				psys = pick_system(DEFAULT_SYS);
+				if (psys == NULL)
+					usage("neither " DNSDBQ_SYSTEM
+					      " nor -u were specified,"
+					      " and there is no default.");
+				DEBUG(1, true, "picked system %s\n",
+				      psys->name);
 			}
 
 			/* if this variable is for this system, consume it. */
@@ -1054,7 +1060,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 	/* if doing multiple parallel upstreams, start a writer. */
 	bool one_writer = multiple && batching != batch_verbose;
 	if (one_writer)
-		writer = writer_init(qp.output_limit);
+		writer = writer_init(qp.output_limit, ps_stdout, false);
 
 	while (getline(&command, &n, f) > 0) {
 		const char *msg;
@@ -1085,7 +1091,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 
 		/* if not parallelizing, start a writer here instead. */
 		if (!one_writer)
-			writer = writer_init(qp.output_limit);
+			writer = writer_init(qp.output_limit, ps_stdout, false);
 
 		/* crack the batch line if possible. */
 		msg = batch_parse(command, &qd);
@@ -1120,7 +1126,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 			switch (batching) {
 			case batch_none:
 				break;
-			case batch_original:
+			case batch_terse:
 				assert(writer->ps_buf == NULL &&
 				       writer->ps_len == 0);
 				writer->ps_buf = strdup("--\n");
@@ -1431,7 +1437,7 @@ launch(query_t query, pdns_fence_ct fp) {
 	qparam_ct qpp = &query->params;
 	char *url;
 
-	url = psys->url(query->command, NULL, qpp, fp);
+	url = psys->url(query->command, NULL, qpp, fp, false);
 	if (url == NULL)
 		my_exit(1);
 
@@ -1450,12 +1456,7 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	writer_t writer;
 	ssize_t len;
 
-#if WANT_PDNS_DNSDB
-	/* the json output files are in bare format, not SAF: downgrade. */
-	if (strcmp(psys->name, "dnsdb2") == 0)
-		psys = pdns_dnsdb();
-#endif
-	writer = writer_init(qpp->output_limit);
+	writer = writer_init(qpp->output_limit, NULL, false);
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
 	query->params = *qpp;

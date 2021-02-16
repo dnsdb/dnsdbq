@@ -742,3 +742,24 @@ data_blob(query_t query, const char *buf, size_t len) {
  more:
 	return (ret);
 }
+
+bool
+pdns_true(void) {
+	return true;
+}
+
+bool
+pdns_probe(void) {
+	bool ret = false;
+
+	while (psys->next != NULL && !psys->probe()) {
+		psys = psys->next();
+		if (!quiet)
+			fprintf(stderr,
+				"probe failed, downgrading to '%s', "
+				"consider changing -u or configuration.\n",
+				psys->name);
+		ret = true;
+	}
+	return (ret);
+}
