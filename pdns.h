@@ -57,23 +57,26 @@ struct pdns_system {
 	/* name of this pdns system, as specifiable by the user. */
 	const char	*name;
 
-	/* default URL to reach this pdns API endpoint.	 May be overridden. */
+	/* default URL to reach this pdns API endpoint.  May be overridden. */
 	const char	*base_url;
 
 	/* what encapsulation does this system speak? */
 	encap_e		encap;
 
-	/* what's our downgrade path if this system doesn't function? */
+	/* what's our downgrade path if this system doesn't function
+	 * (respond positively to a probe)?  may be NULL if there is no
+	 * downgrade available.
+	 */
 	const struct pdns_system *  (*next)(void);
 
-	/* is this system reachable and functional? */
+	/* to probe if this system reachable and functional.  May be NULL. */
 	bool		(*probe)(void);
 
 	/* start creating a URL corresponding to a command-path string.
 	 * first argument is the input URL path.
 	 * second is an output parameter pointing to the separator character
 	 * (? or &) that the caller should use between any further URL
-	 * parameters.	May be NULL if the caller doesn't care.
+	 * parameters.  May be NULL if the caller doesn't care.
 	 * the third argument is search parameters.
 	 */
 	char *		(*url)(const char *, char *, qparam_ct,
@@ -97,7 +100,7 @@ struct pdns_system {
 	 */
 	const char *	(*verb_ok)(const char *, qparam_ct);
 
-	/* set a configuration key-value pair.	Returns NULL if ok;
+	/* set a configuration key-value pair.  Returns NULL if ok;
 	 * otherwise returns a static error message.
 	 */
 	const char *	(*setval)(const char *, const char *);
@@ -158,7 +161,6 @@ const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 int data_blob(query_t, const char *, size_t);
 bool pdns_probe(void);
-bool pdns_true(void);
 
 /* Some HTTP status codes we handle specifically */
 #define HTTP_OK		   200

@@ -195,13 +195,13 @@ fetch_unlink(fetch_t fetch) {
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
  */
 writer_t
-writer_init(long output_limit, ps_user_t ps_user, bool meta) {
+writer_init(long output_limit, ps_user_t ps_user, bool meta_query) {
 	writer_t writer = NULL;
 
 	CREATE(writer, sizeof(struct writer));
 	writer->output_limit = output_limit;
 	writer->ps_user = ps_user;
-	writer->meta = meta;
+	writer->meta_query = meta_query;
 
 	if (sorting != no_sort) {
 		/* sorting involves a subprocess (POSIX sort(1) command),
@@ -353,7 +353,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				query->saf_cond = sc_we_limited;
 			/* inform io_engine() that the abort is intentional. */
 			fetch->stopped = true;
-		} else if (writer->meta) {
+		} else if (writer->meta_query) {
 			/* concatenate this fragment (incl \n) to ps_buf. */
 			writer->ps_buf = realloc(writer->ps_buf,
 						 writer->ps_len + pre_len + 1);
@@ -724,7 +724,7 @@ io_drain(void) {
 			/* record emptiness as status if nothing else. */
 			if (psys->encap == encap_saf &&
 			    query->writer != NULL &&
-			    !query->writer->meta &&
+			    !query->writer->meta_query &&
 			    query->writer->count == 0 &&
 			    query->status == NULL)
 			{

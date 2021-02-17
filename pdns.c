@@ -57,7 +57,7 @@ present_text_lookup(pdns_tuple_ct tup,
 			time_str(tup->time_first, iso8601));
 		printf(" .. %s (%s)\n",
 			time_str(tup->time_last, iso8601),
-		        duration);
+			duration);
 		ppflag = true;
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
@@ -70,7 +70,7 @@ present_text_lookup(pdns_tuple_ct tup,
 			time_str(tup->zone_first, iso8601));
 		printf(" .. %s (%s)\n",
 			time_str(tup->zone_last, iso8601),
-		        duration);
+			duration);
 		ppflag = true;
 	}
 
@@ -743,16 +743,17 @@ data_blob(query_t query, const char *buf, size_t len) {
 	return (ret);
 }
 
-bool
-pdns_true(void) {
-	return true;
-}
-
+/* pdns_probe -- maybe probe and switch to a reachable and functional psys.
+ *
+ * if an alternate psys is defined and if psys is not
+ * reachable/functional, then chain to the alternate.
+ * return true if it could not find a reachable/functional psys.
+ */
 bool
 pdns_probe(void) {
-	bool ret = false;
+	bool ret = false;	/* use current psys */
 
-	while (psys->next != NULL && !psys->probe()) {
+	while (psys->next != NULL && psys->probe != NULL && !psys->probe()) {
 		psys = psys->next();
 		if (!quiet)
 			fprintf(stderr,

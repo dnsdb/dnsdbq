@@ -307,7 +307,7 @@ main(int argc, char *argv[]) {
 		case 'u':
 			if ((psys = pick_system(optarg)) == NULL)
 				usage("-u must refer to a pdns system");
-			specified = true;
+			psys_specified = true;
 			break;
 		case 'U':
 			donotverify = true;
@@ -483,7 +483,7 @@ main(int argc, char *argv[]) {
 		if ((msg = psys->ready()) != NULL)
 			usage(msg);
 		make_curl();
-		if (!specified && pdns_probe()) {
+		if (!psys_specified && pdns_probe()) {
 			/* re-test after psys fallback. */
 			if ((msg = psys->ready()) != NULL)
 				usage(msg);
@@ -874,7 +874,7 @@ qparam_option(int opt, const char *arg, qparam_t qpp) {
 		if (!parse_long(arg, &qpp->output_limit) ||
 		    (qpp->output_limit <= 0))
 			return "-L must be positive";
-                qpp->explicit_output_limit = qpp->output_limit;
+		qpp->explicit_output_limit = qpp->output_limit;
 		break;
 	case 'O':
 		if (!parse_long(optarg, &qpp->offset) ||
@@ -1005,7 +1005,7 @@ read_configs(void) {
 			/* some env/conf variables are dnsdbq-specific. */
 			if (strcmp(tok1, "dnsdbq") == 0) {
 				/* env/config psys does not override -u. */
-				if (strcmp(tok2, "system") == 0 && !specified) {
+				if (strcmp(tok2, "system") == 0 && !psys_specified) {
 					psys = pick_system(tok3);
 					if (psys == NULL) {
 						fprintf(stderr,
@@ -1015,7 +1015,7 @@ read_configs(void) {
 							tok3);
 						my_exit(1);
 					}
-					specified = true;
+					psys_specified = true;
 				}
 				continue;
 			}

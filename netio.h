@@ -91,7 +91,7 @@ struct writer {
 	pid_t		sort_pid;
 	bool		sort_killed;
 	bool		csv_headerp;
-	bool		meta;
+	bool		meta_query;
 	char		*ps_buf;
 	size_t		ps_len;
 	ps_user_t	ps_user;

@@ -39,7 +39,7 @@ static char *circl_authinfo = NULL;
 
 static const struct pdns_system circl = {
 	"circl", "https://www.circl.lu/pdns/query", encap_cof,
-	NULL, pdns_true, circl_url, NULL,
+	NULL, NULL, circl_url, NULL,
 	circl_auth, circl_status, circl_verb_ok,
 	circl_setval, circl_ready, circl_destroy
 };
@@ -93,7 +93,7 @@ static char *
 circl_url(const char *path, char *sep,
 	  qparam_ct qp __attribute__((unused)),
 	  pdns_fence_ct fp __attribute__((unused)),
-	  bool meta __attribute__((unused)))
+	  bool meta_query __attribute__((unused)))
 {
 	const char *val = NULL;
 	char *ret;

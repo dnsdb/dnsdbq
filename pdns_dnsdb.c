@@ -87,7 +87,7 @@ static const char dnsdb2_url_prefix[] = "/dnsdb/v2";
 
 static const struct pdns_system dnsdb = {
 	"dnsdb", "https://api.dnsdb.info", encap_cof,
-	NULL, pdns_true, dnsdb_url, dnsdb_info,
+	NULL, NULL, dnsdb_url, dnsdb_info,
 	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
 	dnsdb_setval, dnsdb_ready, dnsdb_destroy
 };
@@ -132,7 +132,7 @@ dnsdb2_probe(void) {
 
 	DEBUG(1, true, "dnsdb2_probe()\n");
 
-	/* start a writer. */
+	/* start a meta_query writer. */
 	writer = writer_init(qparam_empty.output_limit, dnsdb2_pingback, true);
 
 	/* create a rump query. */
@@ -151,6 +151,9 @@ dnsdb2_probe(void) {
 
 	/* probe success? */
 	ret = (fetch->rcode == HTTP_OK);
+	if (ret) {
+		DEBUG(1, true, "Test shows this is a DNSDB APIv2 endpoint\n");
+	}
 
 	/* stop the writer. */
 	writer_fini(writer);
@@ -233,7 +236,7 @@ dnsdb_destroy(void) {
  */
 static char *
 dnsdb_url(const char *path, char *sep, qparam_ct qpp,
-	  pdns_fence_ct fp, bool meta)
+	  pdns_fence_ct fp, bool meta_query)
 {
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
 	char *ret = NULL, *max_count_str = NULL, *offset_str = NULL,
@@ -258,7 +261,7 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp,
 			num_slash += (*p == '/');
 	verb_path = "";
 	if (num_slash == 0) {
-		if (psys->encap == encap_saf && meta)
+		if (psys->encap == encap_saf && meta_query)
 			verb_path = "";
 		else if (pverb->url_fragment != NULL)
 			verb_path = pverb->url_fragment;
@@ -406,7 +409,7 @@ dnsdb_info(void) {
 
 	DEBUG(1, true, "dnsdb_info()\n");
 
-	/* start a writer (meta). */
+	/* start a meta_query writer. */
 	writer = writer_init(qparam_empty.output_limit, dnsdb_infoback, true);
 
 	/* create a rump query. */
