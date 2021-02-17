@@ -747,13 +747,13 @@ data_blob(query_t query, const char *buf, size_t len) {
  *
  * if an alternate psys is defined and if psys is not
  * reachable/functional, then chain to the alternate.
- * return true if it could not find a reachable/functional psys.
+ * return true if psys was changed.
  */
 bool
 pdns_probe(void) {
 	bool ret = false;	/* use current psys */
 
-	while (psys->next != NULL && psys->probe != NULL && !psys->probe()) {
+	while (psys->next != NULL && !psys->probe()) {
 		psys = psys->next();
 		if (!quiet)
 			fprintf(stderr,

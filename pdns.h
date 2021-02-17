@@ -69,7 +69,9 @@ struct pdns_system {
 	 */
 	const struct pdns_system *  (*next)(void);
 
-	/* to probe if this system reachable and functional.  May be NULL. */
+	/* to probe if this system reachable and functional. will be
+	 * NULL whenever "next" (see above) is NULL.
+	 */
 	bool		(*probe)(void);
 
 	/* start creating a URL corresponding to a command-path string.
