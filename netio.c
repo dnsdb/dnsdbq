@@ -83,7 +83,7 @@ unmake_curl(void) {
 
 /* fetch -- given a url, tell libcurl to go fetch it.
  */
-void
+fetch_t
 create_fetch(query_t query, char *url) {
 	fetch_t fetch = NULL;
 	CURLMcode res;
@@ -115,7 +115,7 @@ create_fetch(query_t query, char *url) {
 	if (psys->auth != NULL)
 	    psys->auth(fetch);
 
-	if (encap == encap_saf)
+	if (psys->encap == encap_saf)
 		fetch->hdrs = curl_slist_append(fetch->hdrs, jsonl_header);
 	else
 		fetch->hdrs = curl_slist_append(fetch->hdrs, json_header);
@@ -143,6 +143,7 @@ create_fetch(query_t query, char *url) {
 			program_name, curl_multi_strerror(res));
 		my_exit(1);
 	}
+	return (fetch);
 }
 
 /* fetch_reap -- reap one fetch.
@@ -194,11 +195,13 @@ fetch_unlink(fetch_t fetch) {
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
  */
 writer_t
-writer_init(long output_limit) {
+writer_init(long output_limit, ps_user_t ps_user, bool meta_query) {
 	writer_t writer = NULL;
 
 	CREATE(writer, sizeof(struct writer));
 	writer->output_limit = output_limit;
+	writer->ps_user = ps_user;
+	writer->meta_query = meta_query;
 
 	if (sorting != no_sort) {
 		/* sorting involves a subprocess (POSIX sort(1) command),
@@ -226,6 +229,11 @@ writer_init(long output_limit) {
 	writer->next = writers;
 	writers = writer;
 	return (writer);
+}
+
+void
+ps_stdout(writer_t writer) {
+	fwrite(writer->ps_buf, 1, writer->ps_len, stdout);
 }
 
 /* query_status -- install a status code and description in a query.
@@ -341,25 +349,22 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			      qp->output_limit);
 			/* cause CURLE_WRITE_ERROR for this transfer. */
 			bytes = 0;
-			if (encap == encap_saf)
+			if (psys->encap == encap_saf)
 				query->saf_cond = sc_we_limited;
 			/* inform io_engine() that the abort is intentional. */
 			fetch->stopped = true;
-		} else if (writer->info) {
-			/* concatenate this fragment (with \n) to info_buf. */
-			char *temp = NULL;
-			if (asprintf(&temp, "%s%*.*s\n",
-				 or_else(writer->ps_buf, ""),
-				 (int)pre_len, (int)pre_len, fetch->buf) < 0)
-				my_panic(true, "asprintf");
-			DESTROY(writer->ps_buf);
-			writer->ps_buf = temp;
+		} else if (writer->meta_query) {
+			/* concatenate this fragment (incl \n) to ps_buf. */
+			writer->ps_buf = realloc(writer->ps_buf,
+						 writer->ps_len + pre_len + 1);
+			memcpy(writer->ps_buf + writer->ps_len,
+			       fetch->buf, pre_len + 1);
 			writer->ps_len += pre_len + 1;
 		} else {
 			query->writer->count +=
 				data_blob(query, fetch->buf, pre_len);
 
-			if (encap == encap_saf)
+			if (psys->encap == encap_saf)
 				switch (query->saf_cond) {
 				case sc_init:
 				case sc_begin:
@@ -609,10 +614,8 @@ writer_fini(writer_t writer) {
 
 	/* burp out the stored postscript, if any, and destroy it. */
 	if (writer->ps_len > 0) {
-		if (writer->info)
-			psys->info_blob(writer->ps_buf, writer->ps_len);
-		else
-			fwrite(writer->ps_buf, 1, writer->ps_len, stdout);
+		assert(writer->ps_user != NULL);
+		writer->ps_user(writer);
 		DESTROY(writer->ps_buf);
 		writer->ps_len = 0;
 	}
@@ -690,7 +693,7 @@ io_drain(void) {
 
 			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
 			      query->command, fetch->rcode);
-			if (encap == encap_saf)
+			if (psys->encap == encap_saf)
 				DEBUG(2, true, "... saf_cond %d saf_msg %s\n",
 				      query->saf_cond,
 				      or_else(query->saf_msg, ""));
@@ -719,9 +722,9 @@ io_drain(void) {
 			}
 
 			/* record emptiness as status if nothing else. */
-			if (encap == encap_saf &&
+			if (psys->encap == encap_saf &&
 			    query->writer != NULL &&
-			    !query->writer->info &&
+			    !query->writer->meta_query &&
 			    query->writer->count == 0 &&
 			    query->status == NULL)
 			{

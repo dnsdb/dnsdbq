@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#if WANT_PDNS_DNSDB || WANT_PDNS_DNSDB2
+#if WANT_PDNS_DNSDB
 
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
@@ -59,12 +59,12 @@ typedef struct rate_tuple *rate_tuple_t;
 
 /* forwards. */
 
+static bool dnsdb2_probe(void);
 static const char *dnsdb_setval(const char *, const char *);
 static const char *dnsdb_ready(void);
 static void dnsdb_destroy(void);
-static char *dnsdb_url(const char *, char *, qparam_ct, pdns_fence_ct);
-static void dnsdb_info_req(void);
-static void dnsdb_info_blob(const char *, size_t);
+static char *dnsdb_url(const char *, char *, qparam_ct, pdns_fence_ct, bool);
+static void dnsdb_info(void);
 static void dnsdb_auth(fetch_t);
 static const char *dnsdb_status(fetch_t);
 static const char *dnsdb_verb_ok(const char *, qparam_ct);
@@ -86,8 +86,15 @@ static char *dnsdb_base_url = NULL;
 static const char dnsdb2_url_prefix[] = "/dnsdb/v2";
 
 static const struct pdns_system dnsdb = {
-	"dnsdb", "https://api.dnsdb.info",
-	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
+	"dnsdb", "https://api.dnsdb.info", encap_cof,
+	NULL, NULL, dnsdb_url, dnsdb_info,
+	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
+	dnsdb_setval, dnsdb_ready, dnsdb_destroy
+};
+
+static const struct pdns_system dnsdb2 = {
+	"dnsdb2", "https://api.dnsdb.info/dnsdb/v2", encap_saf,
+	pdns_dnsdb, dnsdb2_probe, dnsdb_url, dnsdb_info,
 	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
 	dnsdb_setval, dnsdb_ready, dnsdb_destroy
 };
@@ -100,22 +107,59 @@ pdns_dnsdb(void) {
 	return &dnsdb;
 }
 
-#if WANT_PDNS_DNSDB2
-static const struct pdns_system dnsdb2 = {
-	"dnsdb2", "https://api.dnsdb.info/dnsdb/v2",
-	dnsdb_url, dnsdb_info_req, dnsdb_info_blob,
-	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
-	dnsdb_setval, dnsdb_ready, dnsdb_destroy
-};
-
 pdns_system_ct
 pdns_dnsdb2(void) {
 	return &dnsdb2;
 }
-#endif /* WANT_PDNS_DNSDB2 */
 
 /*---------------------------------------------------------------- private
  */
+
+static void
+dnsdb2_pingback(writer_t writer) {
+	DEBUG(1, true, "dnsdb2_pingback: %*.*s",
+	      writer->ps_len, writer->ps_len, writer->ps_buf);
+}
+
+/* dnsdb2_probe() -- check that this server understands APIv2
+ */
+static bool
+dnsdb2_probe(void) {
+	query_t query = NULL;
+	writer_t writer;
+	fetch_t fetch;
+	bool ret;
+
+	DEBUG(1, true, "dnsdb2_probe()\n");
+
+	/* start a meta_query writer. */
+	writer = writer_init(qparam_empty.output_limit, dnsdb2_pingback, true);
+
+	/* create a rump query. */
+	CREATE(query, sizeof(struct query));
+	query->writer = writer;
+	query->command = strdup("ping");
+	writer->queries = query;
+
+	/* start a ping. */
+	fetch = create_fetch(query,
+			     dnsdb_url(query->command, NULL, &qparam_empty,
+				       &(struct pdns_fence){}, true));
+
+	/* run all jobs to completion. */
+	io_engine(0);
+
+	/* probe success? */
+	ret = (fetch->rcode == HTTP_OK);
+	if (ret) {
+		DEBUG(1, true, "Test shows this is a DNSDB APIv2 endpoint\n");
+	}
+
+	/* stop the writer. */
+	writer_fini(writer);
+
+	return (ret);
+}
 
 /* dnsdb_setval() -- install configuration element
  */
@@ -139,6 +183,9 @@ static const char *
 dnsdb_ready(void) {
 	const char *value;
 
+	/* for reentrancy. */
+	DESTROY(dnsdb_base_url);
+
 	if ((value = getenv(env_api_key)) != NULL) {
 		dnsdb_setval("apikey", value);
 		DEBUG(1, true, "conf env api_key was set\n");
@@ -152,17 +199,18 @@ dnsdb_ready(void) {
 		dnsdb_base_url = strdup(psys->base_url);
 
 	/* If SAF (aka APIv2) ensure URL contains special /dnsdb/v2 prefix. */
-	if (encap == encap_saf &&
+	if (psys->encap == encap_saf &&
 	    strstr(dnsdb_base_url, dnsdb2_url_prefix) == NULL) {
+		char *temp;
 		int x;
-		char *ret;
-		x = asprintf(&ret, "%s%s", dnsdb_base_url, dnsdb2_url_prefix);
+
+		x = asprintf(&temp, "%s%s", dnsdb_base_url, dnsdb2_url_prefix);
 		if (x < 0) {
 			perror("asprintf");
 			abort();
 		}
 		DESTROY(dnsdb_base_url);
-		dnsdb_base_url = ret;
+		dnsdb_base_url = temp;
 	}
 
 	if (api_key == NULL)
@@ -187,7 +235,9 @@ dnsdb_destroy(void) {
  * returns a string that must be freed.
  */
 static char *
-dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
+dnsdb_url(const char *path, char *sep, qparam_ct qpp,
+	  pdns_fence_ct fp, bool meta_query)
+{
 	const char *verb_path, *p, *scheme_if_needed, *aggr_if_needed;
 	char *ret = NULL, *max_count_str = NULL, *offset_str = NULL,
 		*first_after_str = NULL, *first_before_str = NULL,
@@ -211,7 +261,7 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 			num_slash += (*p == '/');
 	verb_path = "";
 	if (num_slash == 0) {
-		if (encap == encap_saf && strcmp(path, "rate_limit") == 0)
+		if (psys->encap == encap_saf && meta_query)
 			verb_path = "";
 		else if (pverb->url_fragment != NULL)
 			verb_path = pverb->url_fragment;
@@ -319,30 +369,63 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp, pdns_fence_ct fp) {
 }
 
 static void
-dnsdb_info_req(void) {
+dnsdb_infoback(writer_t writer) {
+	switch (presentation) {
+	case pres_text: {
+		struct rate_tuple tup;
+		const char *msg;
+
+		msg = rate_tuple_make(&tup, writer->ps_buf, writer->ps_len);
+		if (msg != NULL) { /* there was an error */
+			puts(msg);
+		} else {
+			puts("rate:");
+			print_rateval("reset", &tup.reset, stdout);
+			print_rateval("expires", &tup.expires, stdout);
+			print_rateval("limit", &tup.limit, stdout);
+			print_rateval("remaining", &tup.remaining, stdout);
+			print_rateval("results_max", &tup.results_max, stdout);
+			print_rateval("offset_max", &tup.offset_max, stdout);
+			print_burstrate("burst rate",
+					&tup.burst_size, &tup.burst_window,
+					stdout);
+			rate_tuple_unmake(&tup);
+		}
+		break;
+	    }
+	case pres_json:
+		/* Ignore any failure in pprint_json. */
+		(void) pprint_json(writer->ps_buf, writer->ps_len, stdout);
+		break;
+	case pres_csv:
+		abort();
+	}
+}
+
+static void
+dnsdb_info(void) {
 	query_t query = NULL;
 	writer_t writer;
 
-	DEBUG(1, true, "dnsdb_info_req()\n");
+	DEBUG(1, true, "dnsdb_info()\n");
 
-	/* start a writer, which might be format functions, or POSIX sort. */
-	writer = writer_init(qparam_empty.output_limit);
+	/* start a meta_query writer. */
+	writer = writer_init(qparam_empty.output_limit, dnsdb_infoback, true);
 
 	/* create a rump query. */
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
 	query->command = strdup("rate_limit");
-	writer->info = true;
 	writer->queries = query;
 
 	/* start a status fetch. */
 	create_fetch(query, dnsdb_url(query->command, NULL, &qparam_empty,
-				      &(struct pdns_fence){}));
+				      &(struct pdns_fence){}, true));
 
 	/* run all jobs to completion. */
 	io_engine(0);
 
-	/* stop the writer, which might involve reading POSIX sort's output. */
+	/* stop the writer. */
 	writer_fini(writer);
 }
 
@@ -360,12 +443,12 @@ dnsdb_auth(fetch_t fetch) {
 
 static const char *
 dnsdb_status(fetch_t fetch) {
-	/* APIv2 DNSDB returns 200 with no obj lines for "no rrs found".
-	 * early (current) versions of DNSDB returns 404 for "no rrs found".
+	/* APIv1 DNSDB returns 404 for "no rrs found".
+	 * APIv2 DNSDB returns 200 with no SAF lines for "no rrs found".
 	 */
-	if (encap != encap_saf && fetch->rcode == HTTP_NOT_FOUND)
-		return status_noerror;
-	return status_error;
+	if (psys->encap == encap_saf && fetch->rcode == HTTP_NOT_FOUND)
+		return status_error;
+	return status_noerror;
 }
 
 static const char *
@@ -445,38 +528,6 @@ print_burstrate(const char *key,
 		fprintf(outf, "%lu per %lu seconds", b_s, b_w);
 
 	fputc('\n', outf);
-}
-
-/* dnsdb_write_info -- assumes that fetch contains the complete JSON block.
- */
-static void
-dnsdb_info_blob(const char *buf, size_t len) {
-	if (presentation == pres_text) {
-		struct rate_tuple tup;
-		const char *msg;
-
-		msg = rate_tuple_make(&tup, buf, len);
-		if (msg != NULL) { /* there was an error */
-			puts(msg);
-		} else {
-			puts("rate:");
-			print_rateval("reset", &tup.reset, stdout);
-			print_rateval("expires", &tup.expires, stdout);
-			print_rateval("limit", &tup.limit, stdout);
-			print_rateval("remaining", &tup.remaining, stdout);
-			print_rateval("results_max", &tup.results_max, stdout);
-			print_rateval("offset_max", &tup.offset_max, stdout);
-			print_burstrate("burst rate",
-					&tup.burst_size, &tup.burst_window,
-					stdout);
-			rate_tuple_unmake(&tup);
-		}
-	} else if (presentation == pres_json) {
-		/* Ignore any failure in pprint_json. */
-		(void) pprint_json(buf, len, stdout);
-	} else {
-		abort();
-	}
 }
 
 /* rateval_make: make an optional key value from the json object.
@@ -589,4 +640,4 @@ rate_tuple_unmake(rate_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-#endif /*WANT_PDNS_DNSDB || WANT_PDNS_DNSDB2*/
+#endif /*WANT_PDNS_DNSDB*/

@@ -19,9 +19,6 @@
 
 #if WANT_PDNS_DNSDB
 pdns_system_ct pdns_dnsdb(void);
-#endif
-
-#if WANT_PDNS_DNSDB2
 pdns_system_ct pdns_dnsdb2(void);
 #endif
 

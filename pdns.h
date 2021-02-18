@@ -57,26 +57,37 @@ struct pdns_system {
 	/* name of this pdns system, as specifiable by the user. */
 	const char	*name;
 
-	/* default URL to reach this pdns API endpoint.	 May be overridden. */
+	/* default URL to reach this pdns API endpoint.  May be overridden. */
 	const char	*base_url;
+
+	/* what encapsulation does this system speak? */
+	encap_e		encap;
+
+	/* what's our downgrade path if this system doesn't function
+	 * (respond positively to a probe)?  may be NULL if there is no
+	 * downgrade available.
+	 */
+	const struct pdns_system *  (*next)(void);
+
+	/* to probe if this system reachable and functional. will be
+	 * NULL whenever "next" (see above) is NULL.
+	 */
+	bool		(*probe)(void);
 
 	/* start creating a URL corresponding to a command-path string.
 	 * first argument is the input URL path.
 	 * second is an output parameter pointing to the separator character
 	 * (? or &) that the caller should use between any further URL
-	 * parameters.	May be NULL if the caller doesn't care.
+	 * parameters.  May be NULL if the caller doesn't care.
 	 * the third argument is search parameters.
 	 */
-	char *		(*url)(const char *, char *, qparam_ct, pdns_fence_ct);
+	char *		(*url)(const char *, char *, qparam_ct,
+			       pdns_fence_ct, bool);
 
 	/* send a request for info, such as quota information.
 	 * may be NULL if info requests are not supported by this pDNS system.
 	 */
-	void		(*info_req)(void);
-
-	/* display info from the JSON block we read from the API.
-	 */
-	void		(*info_blob)(const char *, size_t);
+	void		(*info)(void);
 
 	/* add authentication information to the fetch request being created.
 	 * may be NULL if auth is not needed by this pDNS system.
@@ -91,7 +102,7 @@ struct pdns_system {
 	 */
 	const char *	(*verb_ok)(const char *, qparam_ct);
 
-	/* set a configuration key-value pair.	Returns NULL if ok;
+	/* set a configuration key-value pair.  Returns NULL if ok;
 	 * otherwise returns a static error message.
 	 */
 	const char *	(*setval)(const char *, const char *);
@@ -151,6 +162,7 @@ void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 int data_blob(query_t, const char *, size_t);
+bool pdns_probe(void);
 
 /* Some HTTP status codes we handle specifically */
 #define HTTP_OK		   200

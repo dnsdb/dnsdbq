@@ -57,7 +57,7 @@ present_text_lookup(pdns_tuple_ct tup,
 			time_str(tup->time_first, iso8601));
 		printf(" .. %s (%s)\n",
 			time_str(tup->time_last, iso8601),
-		        duration);
+			duration);
 		ppflag = true;
 	}
 	if (tup->obj.zone_first != NULL && tup->obj.zone_last != NULL) {
@@ -70,7 +70,7 @@ present_text_lookup(pdns_tuple_ct tup,
 			time_str(tup->zone_first, iso8601));
 		printf(" .. %s (%s)\n",
 			time_str(tup->zone_last, iso8601),
-		        duration);
+			duration);
 		ppflag = true;
 	}
 
@@ -472,9 +472,13 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	}
 	DEBUG(4, true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2)));
 
-	if (encap != encap_saf) {
+	switch (psys->encap) {
+	case encap_cof:
+		/* the COF just is the JSON object. */
 		tup->obj.cof_obj = tup->obj.main;
-	} else {
+		break;
+	case encap_saf:
+		/* the COF is embedded in the JSONL object. */
 		tup->obj.saf_cond = json_object_get(tup->obj.main, "cond");
 		if (tup->obj.saf_cond != NULL) {
 			if (!json_is_string(tup->obj.saf_cond)) {
@@ -501,6 +505,10 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			}
 			tup->obj.cof_obj = tup->obj.saf_obj;
 		}
+		break;
+	default:
+		/* we weren't prepared for this -- unknown program state. */
+		abort();
 	}
 
 	/* Timestamps. */
@@ -636,7 +644,7 @@ data_blob(query_t query, const char *buf, size_t len) {
 		goto more;
 	}
 
-	if (encap == encap_saf) {
+	if (psys->encap == encap_saf) {
 		if (tup.msg != NULL) {
 			DEBUG(5, true, "data_blob tup.msg = %s\n", tup.msg);
 			query->saf_msg = strdup(tup.msg);
@@ -732,5 +740,27 @@ data_blob(query_t query, const char *buf, size_t len) {
  next:
 	tuple_unmake(&tup);
  more:
+	return (ret);
+}
+
+/* pdns_probe -- maybe probe and switch to a reachable and functional psys.
+ *
+ * if an alternate psys is defined and if psys is not
+ * reachable/functional, then chain to the alternate.
+ * return true if psys was changed.
+ */
+bool
+pdns_probe(void) {
+	bool ret = false;	/* use current psys */
+
+	while (psys->next != NULL && !psys->probe()) {
+		psys = psys->next();
+		if (!quiet)
+			fprintf(stderr,
+				"probe failed, downgrading to '%s', "
+				"consider changing -u or configuration.\n",
+				psys->name);
+		ret = true;
+	}
 	return (ret);
 }

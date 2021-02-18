@@ -20,8 +20,8 @@
 #include <stdbool.h>
 #include <curl/curl.h>
 
-/* encapsulation protocol.  original DNBDB APIv1 and CIRCL use encap_bare. */
-typedef enum { encap_bare = 0, encap_saf } encap_e;
+/* encapsulation protocol.  ruminate, DNBDB APIv1 and CIRCL use encap_cof. */
+typedef enum { encap_cof = 0, encap_saf } encap_e;
 
 /* official SAF condition values, plus sc_init, sc_we_limited, and sc_missing.
  */
@@ -79,6 +79,8 @@ struct query {
 };
 typedef struct query *query_t;
 
+typedef void (*ps_user_t)(struct writer *);
+
 /* one output stream, having one or several queries merging into it. */
 struct writer {
 	struct writer	*next;
@@ -89,9 +91,10 @@ struct writer {
 	pid_t		sort_pid;
 	bool		sort_killed;
 	bool		csv_headerp;
-	bool		info;		// indicates -I (almost its own verb)
-	char		*ps_buf;	// postscript, from -I (info) or...
-	size_t		ps_len;		// ...the "--" marker if batching
+	bool		meta_query;
+	char		*ps_buf;
+	size_t		ps_len;
+	ps_user_t	ps_user;
 	long		output_limit;
 	int		count;
 };
@@ -99,8 +102,9 @@ typedef struct writer *writer_t;
 
 void make_curl(void);
 void unmake_curl(void);
-void create_fetch(query_t, char *);
-writer_t writer_init(long);
+fetch_t create_fetch(query_t, char *);
+writer_t writer_init(long, ps_user_t, bool);
+void ps_stdout(writer_t);
 void query_status(query_t, const char *, const char *);
 size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 void writer_fini(writer_t);
