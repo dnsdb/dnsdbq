@@ -1,3 +1,4 @@
+#ifndef CRIPPLED_LIBC
 /*
  * Copyright (c) 2014-2020 by Farsight Security, Inc.
  *
@@ -322,3 +323,4 @@ keep_best(char **asnum, char **cidr, char *new_asnum, char *new_cidr) {
 	}
 	return NULL;
 }
+#endif /*CRIPPLED_LIBC*/

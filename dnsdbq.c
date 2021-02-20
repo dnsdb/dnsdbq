@@ -427,10 +427,17 @@ main(int argc, char *argv[]) {
 			usage(msg);
 	}
 
-	if (asinfo_lookup && !asinfo_domain_exists(asinfo_domain)) {
-		fprintf(stderr, "%s: ASINFO domain (%s) does not exist.\n",
-			program_name, asinfo_domain);
-		my_exit(1);
+	if (asinfo_lookup) {
+#ifdef CRIPPLED_LIBC
+		usage("the -a option requires a modern functional C library.");
+#else
+		if (!asinfo_domain_exists(asinfo_domain)) {
+			fprintf(stderr,
+				"%s: ASINFO domain (%s) does not exist.\n",
+				program_name, asinfo_domain);
+			my_exit(1);
+		}
+#endif
 	}
 
 	/* recondition various options for HTML use. */
@@ -608,8 +615,10 @@ my_exit(int code) {
 	/* sort key specifications and computations, are to be freed. */
 	sort_destroy();
 
+#ifndef CRIPPLED_LIBC
 	/* asinfo logic has an internal DNS resolver context. */
 	asinfo_shutdown();
+#endif
 
 	/* terminate process. */
 	DEBUG(1, true, "about to call exit(%d)\n", code);
