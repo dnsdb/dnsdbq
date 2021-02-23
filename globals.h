@@ -44,6 +44,7 @@ EXTERN	const char status_error[]	INIT("ERROR");
 EXTERN	const char *asinfo_domain	INIT("asn.routeviews.org");
 EXTERN	struct qparam qparam_empty INIT({ .query_limit = -1L,
 			.explicit_output_limit = -1L, .output_limit = -1L });
+EXTERN	char *config_file		INIT(NULL);
 EXTERN	verb_ct pverb			INIT(NULL);
 EXTERN	pdns_system_ct psys		INIT(NULL);
 EXTERN	int debug_level			INIT(0);
