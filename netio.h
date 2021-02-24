@@ -76,6 +76,7 @@ struct query {
 	bool		hdr_sent;
 	saf_cond_e	saf_cond;
 	char		*saf_msg;
+	bool		meta_query;
 };
 typedef struct query *query_t;
 

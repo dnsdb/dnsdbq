@@ -139,6 +139,7 @@ dnsdb2_probe(void) {
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
 	query->command = strdup("ping");
+	query->meta_query = true;
 	writer->queries = query;
 
 	/* start a ping. */
@@ -413,6 +414,7 @@ dnsdb_info(void) {
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
 	query->command = strdup("rate_limit");
+	query->meta_query = true;
 	writer->queries = query;
 
 	/* start a status fetch. */
