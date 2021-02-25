@@ -392,12 +392,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
  */
 static void
 query_done(query_t query) {
-	if (query->meta_query) {
-		DEBUG(2, true, "meta query_done(%s)\n", query->command);
+	DEBUG(2, true, "query_done(%s), meta=%d\n",
+	      query->command, query->writer->meta_query);
+	if (query->writer->meta_query)
 		return;
-	}
-
-	DEBUG(2, true, "query_done(%s)\n", query->command);
 
 	if (batching == batch_none && !quiet) {
 		const char *msg = or_else(query->saf_msg, "");
@@ -700,7 +698,8 @@ io_drain(void) {
 			      query->command, fetch->rcode);
 			if (psys->encap == encap_saf)
 				if (query->saf_cond == sc_begin ||
-				    query->saf_cond == sc_ongoing) {
+				    query->saf_cond == sc_ongoing)
+				{
 					/* stream ended without a terminating
 					 * SAF value, so override stale value
 					 * we received before the problem.

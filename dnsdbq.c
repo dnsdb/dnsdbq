@@ -1265,7 +1265,6 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	query->writer->queries = query;
 	query->command = makepath(qdp->mode, qdp->thing, qdp->rrtype,
 				  qdp->bailiwick, qdp->pfxlen);
-	query->meta_query = false;
 
 	/* figure out from time fencing which job(s) we'll be starting.
 	 *
@@ -1327,7 +1326,6 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	fetch->query = query;
 	query->fetches = fetch;
 	writer->queries = query;
-	query->meta_query = false;
 	CREATE(buf, ideal_buffer);
 	while ((len = read(json_fd, buf, ideal_buffer)) > 0) {
 		writer_func(buf, 1, (size_t)len, query->fetches);
