@@ -28,9 +28,7 @@ CWARN   +=-Werror
 # warning about bad indentation, only for clang 6.x+
 #CWARN   +=-Werror=misleading-indentation
 
-# cygwin requires -DCRIPPLED_LIBC
 CDEFS = -DWANT_PDNS_DNSDB=1 -DWANT_PDNS_CIRCL=1
-#CDEFS = -DWANT_PDNS_DNSDB=1 -DWANT_PDNS_CIRCL=1 -DCRIPPLED_LIBC
 CGPROF =
 CDEBUG = -g -O3
 CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)

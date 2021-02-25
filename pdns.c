@@ -31,7 +31,7 @@ static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
 static json_t *annotate_json(pdns_tuple_ct);
 static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
-#ifndef CRIPPLED_LIBC
+#ifndef  __CYGWIN__
 static json_t *annotate_asinfo(const char *, const char *);
 #endif
 
@@ -126,7 +126,7 @@ present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
 	char *asnum = NULL, *cidr = NULL, *comment = NULL;
 	const char *result = NULL;
 
-#ifndef CRIPPLED_LIBC
+#ifndef  __CYGWIN__
 	result = asinfo_from_rr(rrtype, rdata, &asnum, &cidr);
 #endif
 	if (result != NULL) {
@@ -254,7 +254,7 @@ annotate_json(pdns_tuple_ct tup) {
 			const char *rdata = json_string_value(rr);
 			json_t *asinfo = NULL;
 
-#ifndef CRIPPLED_LIBC
+#ifndef __CYGWIN__
 			asinfo = annotate_asinfo(tup->rrtype, rdata);
 #endif
 			if (asinfo != NULL)
@@ -264,7 +264,7 @@ annotate_json(pdns_tuple_ct tup) {
 	} else {
 		json_t *asinfo = NULL;
 
-#ifndef CRIPPLED_LIBC
+#ifndef __CYGWIN__
 		asinfo = annotate_asinfo(tup->rrtype, tup->rdata);
 #endif
 		if (asinfo != NULL)
@@ -298,7 +298,7 @@ annotate_one(json_t *anno, const char *rdata, const char *name, json_t *obj) {
 	return anno;
 }
 
-#ifndef CRIPPLED_LIBC
+#ifndef __CYGWIN__
 static json_t *
 annotate_asinfo(const char *rrtype, const char *rdata) {
 	char *asnum = NULL, *cidr = NULL;
@@ -415,7 +415,7 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 		char *asnum = NULL, *cidr = NULL;
 		const char *result = NULL;
 
-#ifndef CRIPPLED_LIBC
+#ifndef __CYGWIN__
 		result = asinfo_from_rr(tup->rrtype, rdata, &asnum, &cidr);
 #endif
 		if (result != NULL) {

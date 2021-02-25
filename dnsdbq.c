@@ -428,7 +428,7 @@ main(int argc, char *argv[]) {
 	}
 
 	if (asinfo_lookup) {
-#ifdef CRIPPLED_LIBC
+#ifdef  __CYGWIN__
 		usage("the -a option requires a modern functional C library.");
 #else
 		if (!asinfo_domain_exists(asinfo_domain)) {
@@ -615,7 +615,7 @@ my_exit(int code) {
 	/* sort key specifications and computations, are to be freed. */
 	sort_destroy();
 
-#ifndef CRIPPLED_LIBC
+#ifndef __CYGWIN__
 	/* asinfo logic has an internal DNS resolver context. */
 	asinfo_shutdown();
 #endif
