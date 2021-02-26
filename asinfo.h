@@ -19,7 +19,7 @@
 
 #include <stdbool.h>
 
-#ifndef __CYGWIN__
+#ifndef CRIPPLED_LIBC
 const char *
 asinfo_from_rr(const char *rrtype, const char *rdata, char **asn, char **cidr);
 #endif
