@@ -711,14 +711,13 @@ countoff(const char *src, size_t nlabel) {
 				ret = countoff(sp, nlabel+1);
 				ret->nchar += len;
 				ret->lens[nlabel] = len;
-				DEBUG(2, true, "countoff[%d] <- %d\n",
-				      nlabel, len);
 				return (ret);
 			}
 		} else {
 			slash = false;
 		}
 	}
+	/* if the rightmost label has no dot, append the label here. */
 	if (sp - src != 1)
 		nlabel++;
 	ret = (struct counted *)calloc(nlabel+1+1, sizeof(size_t));
@@ -727,7 +726,6 @@ countoff(const char *src, size_t nlabel) {
 		ret->nchar = (size_t)(sp - src);
 		ret->lens[nlabel-1] = ret->nchar;
 	}
-	DEBUG(2, true, "countoff[%d] <= %d\n", nlabel, ret->nchar);
 	return (ret);
 }
 
@@ -738,26 +736,21 @@ countoff(const char *src, size_t nlabel) {
 char *
 reverse(const char *src) {
 	struct counted *c = countoff(src, 0);
-	char *ret = malloc(c->nchar + 1);
+	char *ret = malloc(c->nchar + 1 + 1);
 	char *p = ret;
 	size_t nchar = 0;
 	ssize_t i;
 
-	DEBUG(2, true, "reverse(nchar %d, nlabel %d)\n", c->nchar, c->nlabel);
 	for (i = (ssize_t)c->nlabel-1; i >= 0; i--) {
-		DEBUG(2, true, "reverse[%d] == %d (%d)\n",
-		      i, c->lens[i], nchar);
-		DEBUG(2, true, "memcpy(%p, %p, %d)\n",
-		      p, src + c->nchar - nchar - c->lens[i], c->lens[i]);
-		DEBUG(2, true, ":- \"%*.*s\"\n",
-		      c->lens[i], c->lens[i],
-		      src + c->nchar - nchar - c->lens[i]);
 		memcpy(p, src + c->nchar - nchar - c->lens[i], c->lens[i]);
 		p += c->lens[i];
 		nchar += c->lens[i];
+		/* the rightmost label might not have a dot -- add one? */
+		if (p[-1] != '.')
+			*p++ = '.';
 	}
 	*p = '\0';
-	DEBUG(2, true, "reverse(%s)\n", ret);
+	DESTROY(c);
 	return (ret);
 }
 
