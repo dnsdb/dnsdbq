@@ -37,6 +37,7 @@
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rrset
 .Op Fl r Ar rrset
+.Op Fl T Ar transform[,transform...]
 .Op Fl t Ar rrtype
 .Op Fl u Ar server_sys
 .Op Fl V Ar verb
@@ -357,6 +358,17 @@ been processed, due to store and forward by the sort process.
 sort output in descending key order. See discussion for
 .Fl s
 above.
+.It Fl T Ar transform[,transform...]
+specify one or more transforms to be applied to the output:
+.Bl -tag -width datefix
+.It Cm datefix
+always show dates in human readable format (so, not in database format).
+This will be the format selected by the DNSDBQ_TIME_FORMAT
+environment variable, if set.
+.It Cm reverse
+show the DNS owner name (rrname) in TLD-first order (so, COM.EXAMPLE
+rather than EXAMPLE.COM).
+.El
 .It Fl t Ar rrtype
 specify the resource record type desired.  Default is ANY.
 If present, this option should precede any

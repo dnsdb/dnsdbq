@@ -31,11 +31,10 @@
  * parsed from main and cof_obj is repointed to saf_obj.
  */
 struct pdns_json {
-	json_t *main;
+	json_t *main, *rrname;
 	const json_t *cof_obj, *saf_obj, *saf_cond, *saf_msg,
 		*time_first, *time_last, *zone_first, *zone_last,
-		*bailiwick, *rrname, *rrtype, *rdata,
-		*count, *num_results;
+		*bailiwick, *rrtype, *rdata, *count, *num_results;
 };
 
 struct pdns_tuple {
@@ -152,6 +151,12 @@ struct qdesc {
 typedef struct qdesc *qdesc_t;
 typedef const struct qdesc *qdesc_ct;
 
+struct counted {
+	size_t nlabel;
+	size_t nchar;
+	size_t lens[];
+};
+
 bool pprint_json(const char *, size_t, FILE *);
 void present_json_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_json_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
@@ -161,6 +166,8 @@ void present_text_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
+struct counted *countoff(const char *, size_t);
+char *reverse(const char *);
 int data_blob(query_t, const char *, size_t);
 bool pdns_probe(void);
 

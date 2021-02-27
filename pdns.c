@@ -244,8 +244,19 @@ present_json_lookup(pdns_tuple_ct tup,
 
 static json_t *
 annotate_json(pdns_tuple_ct tup) {
-	json_t *copy = NULL, *anno = NULL;
+	json_t *annoRD = NULL, *annoTF = NULL, *annoTL = NULL;
 
+	/* annotate time first/last? */
+	if ((transforms & TRANS_DATEFIX) != 0 &&
+	    tup->obj.time_first != NULL && tup->obj.time_last != NULL)
+	{
+		annoTF = json_string_nocheck(time_str(tup->time_first,
+						      iso8601));
+		annoTL = json_string_nocheck(time_str(tup->time_last,
+						      iso8601));
+	}
+
+	/* annotate rdata? */
 	if (json_is_array(tup->obj.rdata)) {
 		size_t index;
 		json_t *rr;
@@ -258,8 +269,8 @@ annotate_json(pdns_tuple_ct tup) {
 			asinfo = annotate_asinfo(tup->rrtype, rdata);
 #endif
 			if (asinfo != NULL)
-				anno = annotate_one(anno, rdata,
-						    "asinfo", asinfo);
+				annoRD = annotate_one(annoRD, rdata,
+						      "asinfo", asinfo);
 		}
 	} else {
 		json_t *asinfo = NULL;
@@ -268,12 +279,24 @@ annotate_json(pdns_tuple_ct tup) {
 		asinfo = annotate_asinfo(tup->rrtype, tup->rdata);
 #endif
 		if (asinfo != NULL)
-			anno = annotate_one(anno, tup->rdata,
-					    "asinfo", asinfo);
+			annoRD = annotate_one(annoRD, tup->rdata,
+					      "asinfo", asinfo);
 	}
-	if (anno != NULL) {
-		copy = json_deep_copy(tup->obj.cof_obj),
-		json_object_set_new_nocheck(copy, "dnsdbq_rdata", anno);
+	/* anything annotated? */
+	if ((annoTF != NULL && annoTL != NULL) ||
+	    annoRD != NULL)
+	{
+		json_t *copy = json_deep_copy(tup->obj.cof_obj);
+
+		if (annoTF != NULL || annoTL != NULL) {
+			json_object_set_new_nocheck(copy, "time_first",
+						    annoTF);
+			json_object_set_new_nocheck(copy, "time_last",
+						    annoTL);
+		}
+		if (annoRD != NULL)
+			json_object_set_new_nocheck(copy, "dnsdbq_rdata",
+						    annoRD);
 		return copy;
 	}
 	return NULL;
@@ -603,6 +626,11 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			msg = "rrname must be a string";
 			goto ouch;
 		}
+		if ((transforms & TRANS_REVERSE) != 0) {
+			char *r = reverse(json_string_value(tup->obj.rrname));
+			tup->obj.rrname = json_string_nocheck(r);
+			DESTROY(r);
+		}
 		tup->rrname = json_string_value(tup->obj.rrname);
 	}
 	tup->obj.rrtype = json_object_get(tup->obj.cof_obj, "rrtype");
@@ -637,7 +665,78 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
  */
 void
 tuple_unmake(pdns_tuple_t tup) {
+	if ((transforms & TRANS_REVERSE) != 0)
+		json_decref(tup->obj.rrname);
 	json_decref(tup->obj.main);
+}
+
+/* countoff -- count each label in a DNS string.
+ */
+struct counted *
+countoff(const char *src, size_t nlabel) {
+	const char *sp = src;
+	bool slash = false;
+	struct counted *ret;
+	char ch;
+
+	/* count the unescaped dots (dns label separators). */
+	while ((ch = *sp++) != '\0') {
+		if (!slash) {
+			if (ch == '\\') {
+				slash = true;
+			} else if (ch == '.') {
+				size_t len = (size_t)(sp - src);
+				ret = countoff(sp, nlabel+1);
+				ret->nchar += len;
+				ret->lens[nlabel] = len;
+				DEBUG(2, true, "countoff[%d] <- %d\n",
+				      nlabel, len);
+				return (ret);
+			}
+		} else {
+			slash = false;
+		}
+	}
+	if (sp - src != 1)
+		nlabel++;
+	ret = (struct counted *)calloc(nlabel+1+1, sizeof(size_t));
+	ret->nlabel = nlabel;
+	if (sp - src != 1) {
+		ret->nchar = (size_t)(sp - src);
+		ret->lens[nlabel-1] = ret->nchar;
+	}
+	DEBUG(2, true, "countoff[%d] <= %d\n", nlabel, ret->nchar);
+	return (ret);
+}
+
+/* reverse -- put a domain name into TLD-first order.
+ *
+ * returns NULL if errno is set, else, a heap string.
+ */
+char *
+reverse(const char *src) {
+	struct counted *c = countoff(src, 0);
+	char *ret = malloc(c->nchar + 1);
+	char *p = ret;
+	size_t nchar = 0;
+	ssize_t i;
+
+	DEBUG(2, true, "reverse(nchar %d, nlabel %d)\n", c->nchar, c->nlabel);
+	for (i = (ssize_t)c->nlabel-1; i >= 0; i--) {
+		DEBUG(2, true, "reverse[%d] == %d (%d)\n",
+		      i, c->lens[i], nchar);
+		DEBUG(2, true, "memcpy(%p, %p, %d)\n",
+		      p, src + c->nchar - nchar - c->lens[i], c->lens[i]);
+		DEBUG(2, true, ":- \"%*.*s\"\n",
+		      c->lens[i], c->lens[i],
+		      src + c->nchar - nchar - c->lens[i]);
+		memcpy(p, src + c->nchar - nchar - c->lens[i], c->lens[i]);
+		p += c->lens[i];
+		nchar += c->lens[i];
+	}
+	*p = '\0';
+	DEBUG(2, true, "reverse(%s)\n", ret);
+	return (ret);
 }
 
 /* data_blob -- process one deblocked json blob as a counted string.

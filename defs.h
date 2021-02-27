@@ -45,6 +45,10 @@
 typedef enum { pres_text, pres_json, pres_csv } present_e;
 typedef enum { batch_none, batch_terse, batch_verbose } batch_e;
 
+#define TRANS_REVERSE	0x01
+#define TRANS_DATEFIX	0x02
+#define TRANS_DELEGPOINT 0x04
+
 /* or_else -- return one pointer or else the other.
  */
 static inline const char *

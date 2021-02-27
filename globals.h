@@ -53,6 +53,7 @@ EXTERN	bool quiet			INIT(false);
 EXTERN	bool iso8601			INIT(false);
 EXTERN	bool multiple			INIT(false);
 EXTERN	bool psys_specified		INIT(false);
+EXTERN	int transforms			INIT(0);
 EXTERN	long max_count			INIT(0L);
 EXTERN	sort_e sorting			INIT(no_sort);
 EXTERN	batch_e batching		INIT(batch_none);

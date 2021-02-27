@@ -141,7 +141,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:"
+			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:"
 			    "adfhIjmqSsUv468" QPARAM_GETOPT))
 	       != -1)
 	{
@@ -380,6 +380,23 @@ main(int argc, char *argv[]) {
 				usage("too many -f options");
 			}
 			break;
+		case 'T': {
+			char *copy, *walker, *token;
+			copy = walker = strdup(optarg);
+			while ((token = strsep(&walker, ",")) != NULL)
+				if (strcasecmp(token, "reverse") == 0)
+					transforms |= TRANS_REVERSE;
+				else if (strcasecmp(token, "datefix") == 0)
+					transforms |= TRANS_DATEFIX;
+				else if (strcasecmp(token, "delegpoint") == 0)
+					transforms |= TRANS_DELEGPOINT;
+				else {
+					DESTROY(copy);
+					usage("unrecognized transform in -T");
+				}
+			DESTROY(copy);
+			break;
+		    }
 		case 'm':
 			multiple = true;
 			break;
