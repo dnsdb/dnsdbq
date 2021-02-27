@@ -37,7 +37,7 @@
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rrset
 .Op Fl r Ar rrset
-.Op Fl T Ar transform[,transform...]
+.Op Fl T Ar transform[,...]
 .Op Fl t Ar rrtype
 .Op Fl u Ar server_sys
 .Op Fl V Ar verb
@@ -358,7 +358,7 @@ been processed, due to store and forward by the sort process.
 sort output in descending key order. See discussion for
 .Fl s
 above.
-.It Fl T Ar transform[,transform...]
+.It Fl T Ar transform[,...]
 specify one or more transforms to be applied to the output:
 .Bl -tag -width datefix
 .It Cm datefix

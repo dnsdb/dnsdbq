@@ -244,7 +244,18 @@ present_json_lookup(pdns_tuple_ct tup,
 
 static json_t *
 annotate_json(pdns_tuple_ct tup) {
-	json_t *annoRD = NULL, *annoTF = NULL, *annoTL = NULL;
+	json_t *annoRD = NULL, *annoTF = NULL, *annoTL = NULL,
+		*annoZF = NULL, *annoZL = NULL;
+
+	/* annotate zone first/last? */
+	if ((transforms & TRANS_DATEFIX) != 0 &&
+	    tup->obj.zone_first != NULL && tup->obj.zone_last != NULL)
+	{
+		annoZF = json_string_nocheck(time_str(tup->zone_first,
+						      iso8601));
+		annoZL = json_string_nocheck(time_str(tup->zone_last,
+						      iso8601));
+	}
 
 	/* annotate time first/last? */
 	if ((transforms & TRANS_DATEFIX) != 0 &&
@@ -283,17 +294,28 @@ annotate_json(pdns_tuple_ct tup) {
 					      "asinfo", asinfo);
 	}
 	/* anything annotated? */
-	if ((annoTF != NULL && annoTL != NULL) ||
+	if ((annoZF != NULL && annoZL != NULL) ||
+	    (annoTF != NULL && annoTL != NULL) ||
+	    (transforms & TRANS_REVERSE) != 0 ||
 	    annoRD != NULL)
 	{
 		json_t *copy = json_deep_copy(tup->obj.cof_obj);
 
+		if (annoZF != NULL || annoZL != NULL) {
+			json_object_set_new_nocheck(copy, "zone_time_first",
+						    annoZF);
+			json_object_set_new_nocheck(copy, "zone_time_last",
+						    annoZL);
+		}
 		if (annoTF != NULL || annoTL != NULL) {
 			json_object_set_new_nocheck(copy, "time_first",
 						    annoTF);
 			json_object_set_new_nocheck(copy, "time_last",
 						    annoTL);
 		}
+		if ((transforms & TRANS_REVERSE) != 0)
+			json_object_set_nocheck(copy, "rrname",
+						tup->obj.rrname);
 		if (annoRD != NULL)
 			json_object_set_new_nocheck(copy, "dnsdbq_rdata",
 						    annoRD);
