@@ -156,6 +156,7 @@ struct counted {
 	size_t nchar;
 	size_t lens[];
 };
+#define COUNTED_SIZE(nlabel) (sizeof(struct counted) + nlabel * sizeof(size_t))
 
 bool pprint_json(const char *, size_t, FILE *);
 void present_json_lookup(pdns_tuple_ct, const char *, size_t, writer_t);

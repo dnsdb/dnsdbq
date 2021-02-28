@@ -388,8 +388,8 @@ main(int argc, char *argv[]) {
 					transforms |= TRANS_REVERSE;
 				else if (strcasecmp(token, "datefix") == 0)
 					transforms |= TRANS_DATEFIX;
-				else if (strcasecmp(token, "delegpoint") == 0)
-					transforms |= TRANS_DELEGPOINT;
+				else if (strcasecmp(token, "truncate") == 0)
+					transforms |= TRANS_TRUNCATE;
 				else {
 					DESTROY(copy);
 					usage("unrecognized transform in -T");
@@ -669,7 +669,7 @@ help(void) {
 	puts("\t[-k (first|last|duration|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
 	     "\t[-u system] [-O offset] [-V verb] [-M max_count]\n"
-	     "\t[-D asinfo_domain] [-T transform[,...] {\n"
+	     "\t[-D asinfo_domain] [-T (datefix,reverse,truncate)[,...] {\n"
 	     "\t\t-f |\n"
 	     "\t\t-J inputfile |\n"
 	     "\t\t[-t rrtype] [-b bailiwick] {\n"
@@ -708,7 +708,7 @@ help(void) {
 	     "use -s to sort in ascending order, "
 	     "or -S for descending order.\n"
 	     "\t-s/-S can be repeated before several -k arguments.\n"
-	     "for -T, transforms are datefix, reverse, and delegpoint.\n"
+	     "for -T, transforms are datefix, reverse, and truncate.\n"
 	     "use -U to turn off SSL certificate verification.\n"
 	     "use -v to show the program version.\n"
 	     "use -4 to force connecting to the server via IPv4.\n"

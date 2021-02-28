@@ -296,7 +296,7 @@ annotate_json(pdns_tuple_ct tup) {
 	/* anything annotated? */
 	if ((annoZF != NULL && annoZL != NULL) ||
 	    (annoTF != NULL && annoTL != NULL) ||
-	    (transforms & TRANS_REVERSE) != 0 ||
+	    (transforms & (TRANS_REVERSE|TRANS_TRUNCATE)) != 0 ||
 	    annoRD != NULL)
 	{
 		json_t *copy = json_deep_copy(tup->obj.cof_obj);
@@ -313,7 +313,7 @@ annotate_json(pdns_tuple_ct tup) {
 			json_object_set_new_nocheck(copy, "time_last",
 						    annoTL);
 		}
-		if ((transforms & TRANS_REVERSE) != 0)
+		if ((transforms & (TRANS_REVERSE|TRANS_TRUNCATE)) != 0)
 			json_object_set_nocheck(copy, "rrname",
 						tup->obj.rrname);
 		if (annoRD != NULL)
@@ -648,8 +648,22 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			msg = "rrname must be a string";
 			goto ouch;
 		}
-		if ((transforms & TRANS_REVERSE) != 0) {
-			char *r = reverse(json_string_value(tup->obj.rrname));
+		if ((transforms & (TRANS_REVERSE|TRANS_TRUNCATE)) != 0) {
+			char *r = strdup(json_string_value(tup->obj.rrname));
+
+			if ((transforms & TRANS_REVERSE) != 0) {
+				char *t = reverse(r);
+				DESTROY(r);
+				r = t;
+				t = NULL;
+			}
+			if ((transforms & TRANS_TRUNCATE) != 0) {
+				/* unescaped trailing dot? */
+				size_t l = strlen(r);
+				if (l > 0 && r[l-1] == '.' &&
+				    (l == 1 || r[l-2] != '\\'))
+					r[l-1] = '\0';
+			}
 			tup->obj.rrname = json_string_nocheck(r);
 			DESTROY(r);
 		}
@@ -698,35 +712,43 @@ struct counted *
 countoff(const char *src, size_t nlabel) {
 	const char *sp = src;
 	bool slash = false;
-	struct counted *ret;
-	char ch;
+	struct counted *c;
+	size_t len;
+	int ch;
 
-	/* count the unescaped dots (dns label separators). */
+	/* count and map the unescaped dots (dns label separators). */
 	while ((ch = *sp++) != '\0') {
 		if (!slash) {
-			if (ch == '\\') {
+			if (ch == '\\')
 				slash = true;
-			} else if (ch == '.') {
-				size_t len = (size_t)(sp - src);
-				ret = countoff(sp, nlabel+1);
-				ret->nchar += len;
-				ret->lens[nlabel] = len;
-				return (ret);
-			}
+			else if (ch == '.')
+				break;
 		} else {
 			slash = false;
 		}
 	}
-	/* if the rightmost label has no dot, append the label here. */
-	if (sp - src != 1)
-		nlabel++;
-	ret = (struct counted *)calloc(nlabel+1+1, sizeof(size_t));
-	ret->nlabel = nlabel;
-	if (sp - src != 1) {
-		ret->nchar = (size_t)(sp - src);
-		ret->lens[nlabel-1] = ret->nchar;
+	len = (size_t)(sp - src);
+	if (ch == '.') {
+		/* end of label, recurse to reach rest of name. */
+		c = countoff(sp, nlabel+1);
+		c->nchar += len;
+		c->lens[nlabel] = len;
+	} else if (ch == '\0') {
+		/* end of name, and perhaps of a unterminated label. */
+		len--; /*'\0'*/
+		if (len != 0)
+			nlabel++;
+		c = (struct counted *)malloc(COUNTED_SIZE(nlabel));
+		memset(c, 0, COUNTED_SIZE(nlabel));
+		c->nlabel = nlabel;
+		if (len != 0) {
+			c->nchar = len;
+			c->lens[nlabel-1] = c->nchar;
+		}
+	} else {
+		abort();
 	}
-	return (ret);
+	return (c);
 }
 
 /* reverse -- put a domain name into TLD-first order.
@@ -736,7 +758,7 @@ countoff(const char *src, size_t nlabel) {
 char *
 reverse(const char *src) {
 	struct counted *c = countoff(src, 0);
-	char *ret = malloc(c->nchar + 1 + 1);
+	char *ret = malloc(c->nchar + 1/*'.'*/ + 1/*'\0'*/);
 	char *p = ret;
 	size_t nchar = 0;
 	ssize_t i;
