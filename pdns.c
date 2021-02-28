@@ -759,12 +759,15 @@ pdns_probe(void) {
 }
 
 /* pick_system -- find a named system descriptor, return t/f as to "found?"
+ *
+ * returns if psys != NULL, or exits fatally otherwise.
  */
 void
 pick_system(const char *name, const char *context) {
 	pdns_system_ct tsys = NULL;
 	char *msg = NULL;
 
+	DEBUG(1, true, "pick_system(%s)\n", name);
 #if WANT_PDNS_DNSDB
 	if (strcmp(name, "dnsdb") == 0)
 		tsys = pdns_dnsdb();
@@ -775,16 +778,15 @@ pick_system(const char *name, const char *context) {
 	if (strcmp(name, "circl") == 0)
 		tsys = pdns_circl();
 #endif
-	if (tsys == psys)
-		return;
-	DEBUG(1, true, "pick_system(%s)\n", name);
-	if (psys != NULL) {
-		psys->destroy();
-		psys = NULL;
-	}
 	if (tsys == NULL) {
 		asprintf(&msg, "unrecognized system name (%s)", name);
+	} else if (tsys == psys) {
+		return;
 	} else {
+		if (psys != NULL) {
+			psys->destroy();
+			psys = NULL;
+		}
 		psys = tsys;
 		tsys = NULL;
 		if (config_file != NULL)
@@ -797,7 +799,7 @@ pick_system(const char *name, const char *context) {
 	}
 
 	if (msg != NULL) {
-		fprintf(stderr, "pick_system: %s (in %s)\n", msg, context);
+		fprintf(stderr, "%s (in %s)\n", msg, context);
 		DESTROY(msg);
 		my_exit(1);
 	}

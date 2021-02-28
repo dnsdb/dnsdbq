@@ -114,6 +114,7 @@ int
 main(int argc, char *argv[]) {
 	struct qdesc qd = { .mode = no_mode };
 	struct qparam qp = qparam_empty;
+	char *picked_system = NULL;
 	bool info = false;
 	int json_fd = -1;
 	const char *msg;
@@ -298,8 +299,7 @@ main(int argc, char *argv[]) {
 				usage("-M must be positive");
 			break;
 		case 'u':
-			pick_system(optarg, "-u option");
-			psys_specified = true;
+			picked_system = strdup(optarg);
 			break;
 		case 'U':
 			donotverify = true;
@@ -464,12 +464,11 @@ main(int argc, char *argv[]) {
 	if (sorting != no_sort)
 		sort_ready();
 	config_file = select_config();
-	if (psys == NULL) {
+	if (picked_system != NULL) {
+		pick_system(picked_system, "-u option");
+		DESTROY(picked_system);
+	} else {
 		pick_system(DEFAULT_SYS, "default");
-		if (psys == NULL)
-			usage("neither " DNSDBQ_SYSTEM
-			      " nor -u were specified,"
-			      " and there is no default.");
 	}
 
 	if (json_fd != -1) {
