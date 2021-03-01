@@ -823,9 +823,9 @@ read_config(const char *cf) {
 		     "echo dnsdbq system ${" DNSDBQ_SYSTEM
 		     	":-" DEFAULT_SYS "};"
 #if WANT_PDNS_DNSDB
-		     "echo dnsdb apikey $APIKEY;"
+		     "echo dnsdb apikey ${DNSDB_API_KEY:-APIKEY};"
 		     "echo dnsdb server $DNSDB_SERVER;"
-		     "echo dnsdb2 apikey $APIKEY;"
+		     "echo dnsdb2 apikey ${DNSDB_API_KEY:-APIKEY};"
 		     "echo dnsdb2 server $DNSDB_SERVER;"
 #endif
 #if WANT_PDNS_CIRCL

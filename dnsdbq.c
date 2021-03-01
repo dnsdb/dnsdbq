@@ -468,7 +468,7 @@ main(int argc, char *argv[]) {
 		pick_system(picked_system, "-u option");
 		DESTROY(picked_system);
 	} else {
-		pick_system(DEFAULT_SYS, "default");
+		pick_system(DEFAULT_SYS, "default system");
 	}
 
 	if (json_fd != -1) {
@@ -689,7 +689,7 @@ help(void) {
 		printf("\t%s\n", v->name);
 	puts("\nGetting Started:\n"
 	     "\tAdd your API key to ~/.dnsdb-query.conf like this:\n"
-	     "\t\tAPIKEY=\"YOURAPIKEYHERE\"");
+	     "\t\tDNSDB_API_KEY=\"YOURAPIKEYHERE\"");
 	printf("\nTry   man %s  for full documentation.\n", program_name);
 }
 
