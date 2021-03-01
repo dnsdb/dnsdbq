@@ -695,7 +695,7 @@ help(void) {
 	     "use -v to show the program version.\n"
 	     "use -4 to force connecting to the server via IPv4.\n"
 	     "use -6 to force connecting to the server via IPv6.\n"
-	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments",
+	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments.\n",
 	     asinfo_domain);
 
 	puts("for -u, system must be one of:");
