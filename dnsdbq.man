@@ -553,7 +553,7 @@ or
 .Ic /etc/dnsdb-query.conf :
 configuration file which should contain the user's apikey and server URL.
 .Bl -tag -width ".Ev DNSDB_API_KEY , APIKEY"
-.It Ev APIKEY
+.It Ev DNSDB_API_KEY , APIKEY
 contains the user's apikey (no default).
 .It Ev DNSDB_SERVER
 contains the URL of the DNSDB API server (default is https://api.dnsdb.info),
@@ -570,10 +570,10 @@ will probe for any configured system.
 .Sh ENVIRONMENT
 The following environment variables affect the execution of
 .Nm :
-.Bl -tag -width ".Ev DNSDB_API_KEY , APIKEY"
-.It Ev DNSDB_API_KEY , APIKEY
-contains the user's apikey. If DNSDB_API_KEY is not present, then APIKEY will
-be used. If neither variable is present, the configuration file is consulted.
+.Bl -tag -width ".Ev DNSDB_API_KEY"
+.It Ev DNSDB_API_KEY
+contains the user's apikey. The older APIKEY variable has been retired from
+the environment, though it can still be used in the configuration file.
 .It Ev DNSDB_SERVER
 contains the URL of the DNSDB API server, and optionally a URI prefix to be
 used (default is "/lookup"). If not set, the configuration file is consulted.
