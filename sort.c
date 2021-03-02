@@ -148,7 +148,7 @@ char *
 sortable_rrname(pdns_tuple_ct tup) {
 	struct sortbuf buf = {NULL, 0};
 
-	sortable_dnsname(&buf, tup->rrname);
+	sortable_dnsname(&buf, json_string_value(tup->obj.rrname));
 	buf.base = realloc(buf.base, buf.size+1);
 	buf.base[buf.size++] = '\0';
 	return (buf.base);

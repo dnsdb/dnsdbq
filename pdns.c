@@ -764,12 +764,11 @@ reverse(const char *src) {
 	ssize_t i;
 
 	for (i = (ssize_t)c->nlabel-1; i >= 0; i--) {
-		memcpy(p, src + c->nchar - nchar - c->lens[i], c->lens[i]);
-		p += c->lens[i];
+		size_t d = (src[c->nchar - nchar - 1] == '.');
+		*p++ = '.';
+		memcpy(p, src + c->nchar - nchar - c->lens[i], c->lens[i] - d);
+		p += c->lens[i] - d;
 		nchar += c->lens[i];
-		/* the rightmost label might not have a dot -- add one? */
-		if (p[-1] != '.')
-			*p++ = '.';
 	}
 	*p = '\0';
 	DESTROY(c);
