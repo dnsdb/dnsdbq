@@ -650,21 +650,24 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		}
 		if ((transforms & (TRANS_REVERSE|TRANS_CHOMP)) != 0) {
 			char *r = strdup(json_string_value(tup->obj.rrname));
+			int dot = 0;
 
 			if ((transforms & TRANS_REVERSE) != 0) {
 				char *t = reverse(r);
 				DESTROY(r);
 				r = t;
 				t = NULL;
-			}
-			if ((transforms & TRANS_CHOMP) != 0) {
+				/* leading dot comes from reverse() */
+				if ((transforms & TRANS_CHOMP) != 0)
+					dot = 1;
+			} else if ((transforms & TRANS_CHOMP) != 0) {
 				/* unescaped trailing dot? */
 				size_t l = strlen(r);
 				if (l > 0 && r[l-1] == '.' &&
 				    (l == 1 || r[l-2] != '\\'))
 					r[l-1] = '\0';
 			}
-			tup->obj.rrname = json_string_nocheck(r);
+			tup->obj.rrname = json_string_nocheck(r + dot);
 			DESTROY(r);
 		}
 		tup->rrname = json_string_value(tup->obj.rrname);
