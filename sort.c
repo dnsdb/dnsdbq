@@ -249,54 +249,34 @@ sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
  */
 void
 sortable_dnsname(sortbuf_t buf, const char *name) {
-	const char hex[] = "0123456789abcdef";
-	size_t len, new_size;
-	unsigned int dots;
-	signed int m, n;
-	char *p;
+	static const char hex[] = "0123456789abcdef";
+	struct counted *c = countoff(name, 0);
+	ssize_t i, j, k, l;
 
-	/* to avoid calling realloc() on every label, count the dots. */
-	for (dots = 0, len = 0; name[len] != '\0'; len++) {
-		if (name[len] == '.')
-			dots++;
-	}
-
-	/* collatable names are TLD-first, all lower case. */
-	new_size = buf->size + len*2 - (size_t)dots;
+	// ensure our result buffer is exactly large enough.
+	size_t new_size = buf->size + c->nchar*2 - (size_t)c->nlabel;
 	assert(new_size != 0);
 	if (new_size != buf->size)
 		buf->base = realloc(buf->base, new_size);
-	p = buf->base + buf->size;
-	for (m = (int)len - 1, n = m; m >= 0; m--) {
-		/* note: actual presentation form names can have \. and \\,
-		 * but we are destructive and lossy, and will ignore that.
-		 */
-		if (name[m] == '.') {
-			int i;
+	char *p = buf->base + buf->size;
 
-			for (i = m+1; i <= n; i++) {
-				int ch = tolower(name[i]);
-				*p++ = hex[ch >> 4];
-				*p++ = hex[ch & 0xf];
-			}
-			*p++ = '.';
-			n = m-1;
+	// collatable names are TLD-first, all lower case, hexified.
+	size_t nchar = 0;
+	for (i = (ssize_t)(c->nlabel-1); i >= 0; i--) {
+		size_t dot = (name[c->nchar - nchar - 1] == '.');
+		j = (ssize_t)(c->lens[i] - dot);
+		k = (ssize_t)(c->nchar - nchar - c->lens[i]);
+		*p++ = '.';
+		for (l = k; l < j+k; l++) {
+			int ch = tolower(name[l]);
+			*p++ = hex[ch >> 4];
+			*p++ = hex[ch & 0xf];
 		}
+		nchar += c->lens[i];
 	}
-	assert(m == -1);
-	/* first label remains after loop. */
-	for (m = 0; m <= n; m++) {
-		int ch = tolower(name[m]);
-		*p++ = hex[ch >> 4];
-		*p++ = hex[ch & 0xf];
-	}
+	DESTROY(c);
+
+	// update our counted-string output.
 	buf->size = (size_t)(p - buf->base);
 	assert(buf->size == new_size);
-	/* if no characters were written, it's the empty string,
-	 * meaning the dns root zone.
-	 */
-	if (len == 0) {
-		buf->base = realloc(buf->base, buf->size + 1);
-		buf->base[buf->size++] = '.';
-	}
 }
