@@ -296,7 +296,7 @@ annotate_json(pdns_tuple_ct tup) {
 	/* anything annotated? */
 	if ((annoZF != NULL && annoZL != NULL) ||
 	    (annoTF != NULL && annoTL != NULL) ||
-	    (transforms & (TRANS_REVERSE|TRANS_TRUNCATE)) != 0 ||
+	    (transforms & (TRANS_REVERSE|TRANS_CHOMP)) != 0 ||
 	    annoRD != NULL)
 	{
 		json_t *copy = json_deep_copy(tup->obj.cof_obj);
@@ -313,7 +313,7 @@ annotate_json(pdns_tuple_ct tup) {
 			json_object_set_new_nocheck(copy, "time_last",
 						    annoTL);
 		}
-		if ((transforms & (TRANS_REVERSE|TRANS_TRUNCATE)) != 0)
+		if ((transforms & (TRANS_REVERSE|TRANS_CHOMP)) != 0)
 			json_object_set_nocheck(copy, "rrname",
 						tup->obj.rrname);
 		if (annoRD != NULL)
@@ -648,7 +648,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			msg = "rrname must be a string";
 			goto ouch;
 		}
-		if ((transforms & (TRANS_REVERSE|TRANS_TRUNCATE)) != 0) {
+		if ((transforms & (TRANS_REVERSE|TRANS_CHOMP)) != 0) {
 			char *r = strdup(json_string_value(tup->obj.rrname));
 
 			if ((transforms & TRANS_REVERSE) != 0) {
@@ -657,7 +657,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 				r = t;
 				t = NULL;
 			}
-			if ((transforms & TRANS_TRUNCATE) != 0) {
+			if ((transforms & TRANS_CHOMP) != 0) {
 				/* unescaped trailing dot? */
 				size_t l = strlen(r);
 				if (l > 0 && r[l-1] == '.' &&

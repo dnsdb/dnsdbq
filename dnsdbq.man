@@ -368,8 +368,8 @@ environment variable, if set.
 .It Cm reverse
 show the DNS owner name (rrname) in TLD-first order (so, COM.EXAMPLE
 rather than EXAMPLE.COM).
-.It Cm truncate
-strip the trailing dot (.) from the DNS owner name (rrname).
+.It Cm chomp
+strip away the trailing dot (.) from the DNS owner name (rrname).
 .El
 .It Fl t Ar rrtype
 specify the resource record type desired.  Default is ANY.

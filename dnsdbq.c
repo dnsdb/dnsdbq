@@ -388,8 +388,8 @@ main(int argc, char *argv[]) {
 					transforms |= TRANS_REVERSE;
 				else if (strcasecmp(token, "datefix") == 0)
 					transforms |= TRANS_DATEFIX;
-				else if (strcasecmp(token, "truncate") == 0)
-					transforms |= TRANS_TRUNCATE;
+				else if (strcasecmp(token, "chomp") == 0)
+					transforms |= TRANS_CHOMP;
 				else {
 					DESTROY(copy);
 					usage("unrecognized transform in -T");
