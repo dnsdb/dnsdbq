@@ -767,10 +767,11 @@ reverse(const char *src) {
 	ssize_t i;
 
 	for (i = (ssize_t)c->nlabel-1; i >= 0; i--) {
-		size_t d = (src[c->nchar - nchar - 1] == '.');
+		size_t dot = (src[c->nchar - nchar - 1] == '.');
 		*p++ = '.';
-		memcpy(p, src + c->nchar - nchar - c->lens[i], c->lens[i] - d);
-		p += c->lens[i] - d;
+		memcpy(p, src + c->nchar - nchar - c->lens[i],
+		       c->lens[i] - dot);
+		p += c->lens[i] - dot;
 		nchar += c->lens[i];
 	}
 	*p = '\0';
