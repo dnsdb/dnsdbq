@@ -470,6 +470,7 @@ main(int argc, char *argv[]) {
 		DESTROY(picked_system);
 	} else {
 		pick_system(DEFAULT_SYS, "default system");
+		psys_specified = true;
 	}
 
 	if (json_fd != -1) {

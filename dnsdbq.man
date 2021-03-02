@@ -551,7 +551,9 @@ information about this can be found online at
 .Ic /etc/isc-dnsdb-query.conf ,
 or
 .Ic /etc/dnsdb-query.conf :
-configuration file which should contain the user's apikey and server URL.
+configuration file which can specify the API key and server URL. The first
+of these which is readable will be used, alone, in its entirety. The variables
+which can be set are as follows:
 .Bl -tag -width ".Ev DNSDB_API_KEY , APIKEY"
 .It Ev DNSDB_API_KEY , APIKEY
 contains the user's apikey (no default).
@@ -562,14 +564,13 @@ and optionally the URI prefix for the database (default is "/lookup").
 enable access to a passive DNS system compatible with the CIRCL.LU system.
 .It Ev DNSDBQ_SYSTEM
 contains the default value for the
-.Ar u
+.Fl u
 option described above. Can be "dnsdb", "dnsdb2", or "circl". If unset,
 .Nm dnsdbq
 will probe for any configured system.
 .El
 .Sh ENVIRONMENT
-The following environment variables affect the execution of
-.Nm :
+The following environment variables override the configuration file:
 .Bl -tag -width ".Ev DNSDB_API_KEY"
 .It Ev DNSDB_API_KEY
 contains the user's apikey. The older APIKEY variable has been retired from
