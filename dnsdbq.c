@@ -465,6 +465,7 @@ main(int argc, char *argv[]) {
 		sort_ready();
 	config_file = select_config();
 	if (picked_system != NULL) {
+		psys_specified = true;
 		pick_system(picked_system, "-u option");
 		DESTROY(picked_system);
 	} else {
