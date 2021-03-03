@@ -220,17 +220,6 @@ sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
 		else
 			sortable_hexify(buf, (const u_char *)rdatum,
 					strlen(rdatum));
-	} else if (strcmp(rrtype, "SOA") == 0) {
-		const char *space = strchr(rdatum, ' ');
-
-		if (space != NULL) {
-			char *dup = strndup(rdatum, (size_t)(space - rdatum));
-			sortable_dnsname(buf, dup);
-			DESTROY(dup);
-		} else {
-			sortable_hexify(buf, (const u_char *)rdatum,
-					strlen(rdatum));
-		}
 	} else {
 		sortable_hexify(buf, (const u_char *)rdatum, strlen(rdatum));
 	}
