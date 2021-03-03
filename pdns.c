@@ -764,9 +764,8 @@ reverse(const char *src) {
 	char *ret = malloc(c->nchar + 1/*'.'*/ + 1/*'\0'*/);
 	char *p = ret;
 	size_t nchar = 0;
-	ssize_t i;
 
-	for (i = (ssize_t)c->nlabel-1; i >= 0; i--) {
+	for (ssize_t i = (ssize_t)c->nlabel-1; i >= 0; i--) {
 		size_t dot = (src[c->nchar - nchar - 1] == '.');
 		*p++ = '.';
 		memcpy(p, src + c->nchar - nchar - c->lens[i],

@@ -206,7 +206,8 @@ sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
 		sortable_hexify(buf, aaaa, sizeof aaaa);
 	} else if (strcmp(rrtype, "NS") == 0 ||
 		   strcmp(rrtype, "PTR") == 0 ||
-		   strcmp(rrtype, "CNAME") == 0)
+		   strcmp(rrtype, "CNAME") == 0 ||
+		   strcmp(rrtype, "DNAME") == 0)
 	{
 		sortable_dnsname(buf, rdatum);
 	} else if (strcmp(rrtype, "MX") == 0 ||
@@ -219,6 +220,17 @@ sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
 		else
 			sortable_hexify(buf, (const u_char *)rdatum,
 					strlen(rdatum));
+	} else if (strcmp(rrtype, "SOA") == 0) {
+		const char *space = strchr(rdatum, ' ');
+
+		if (space != NULL) {
+			char *dup = strndup(rdatum, (size_t)(space - rdatum));
+			sortable_dnsname(buf, dup);
+			DESTROY(dup);
+		} else {
+			sortable_hexify(buf, (const u_char *)rdatum,
+					strlen(rdatum));
+		}
 	} else {
 		sortable_hexify(buf, (const u_char *)rdatum, strlen(rdatum));
 	}
@@ -228,13 +240,10 @@ sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
  */
 void
 sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
-	size_t i;
-
 	buf->base = realloc(buf->base, buf->size + len*2);
-	for (i = 0; i < len; i++) {
-		const char hex[] = "0123456789abcdef";
+	for (size_t i = 0; i < len; i++) {
+		static const char hex[] = "0123456789abcdef";
 		unsigned int ch = src[i];
-
 		buf->base[buf->size++] = hex[ch >> 4];
 		buf->base[buf->size++] = hex[ch & 0xf];
 	}
@@ -249,9 +258,7 @@ sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
  */
 void
 sortable_dnsname(sortbuf_t buf, const char *name) {
-	static const char hex[] = "0123456789abcdef";
 	struct counted *c = countoff(name, 0);
-	ssize_t i, j, k, l;
 
 	// ensure our result buffer is exactly large enough.
 	size_t new_size = buf->size + c->nchar*2 - (size_t)c->nlabel;
@@ -262,12 +269,13 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 
 	// collatable names are TLD-first, all lower case, hexified.
 	size_t nchar = 0;
-	for (i = (ssize_t)(c->nlabel-1); i >= 0; i--) {
+	for (ssize_t i = (ssize_t)(c->nlabel-1); i >= 0; i--) {
 		size_t dot = (name[c->nchar - nchar - 1] == '.');
-		j = (ssize_t)(c->lens[i] - dot);
-		k = (ssize_t)(c->nchar - nchar - c->lens[i]);
+		ssize_t j = (ssize_t)(c->lens[i] - dot);
+		ssize_t k = (ssize_t)(c->nchar - nchar - c->lens[i]);
 		*p++ = '.';
-		for (l = k; l < j+k; l++) {
+		for (ssize_t l = k; l < j+k; l++) {
+			static const char hex[] = "0123456789abcdef";
 			int ch = tolower(name[l]);
 			*p++ = hex[ch >> 4];
 			*p++ = hex[ch & 0xf];
