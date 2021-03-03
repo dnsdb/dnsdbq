@@ -183,9 +183,6 @@ static const char *
 dnsdb_ready(void) {
 	const char *value;
 
-	/* for reentrancy. */
-	DESTROY(dnsdb_base_url);
-
 	if ((value = getenv(env_api_key)) != NULL) {
 		dnsdb_setval("apikey", value);
 		DEBUG(1, true, "conf env api_key was set\n");

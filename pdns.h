@@ -162,10 +162,19 @@ void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 int data_blob(query_t, const char *, size_t);
-bool pdns_probe(void);
+void pdns_probe(void);
+void pick_system(const char *, const char *);
+void read_config(const char *cf);
 
 /* Some HTTP status codes we handle specifically */
 #define HTTP_OK		   200
 #define HTTP_NOT_FOUND	   404
+
+#if WANT_PDNS_DNSDB
+#include "pdns_dnsdb.h"
+#endif
+#if WANT_PDNS_CIRCL
+#include "pdns_circl.h"
+#endif
 
 #endif /*PDNS_H_INCLUDED*/
