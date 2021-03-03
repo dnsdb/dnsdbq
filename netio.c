@@ -392,7 +392,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
  */
 static void
 query_done(query_t query) {
-	DEBUG(2, true, "query_done(%s)\n", query->command);
+	DEBUG(2, true, "query_done(%s), meta=%d\n",
+	      query->command, query->writer->meta_query);
+	if (query->writer->meta_query)
+		return;
 
 	if (batching == batch_none && !quiet) {
 		const char *msg = or_else(query->saf_msg, "");
@@ -402,7 +405,7 @@ query_done(query_t query) {
 		else if (query->saf_cond == sc_failed)
 			fprintf(stderr, "Query failed: %s\n", msg);
 		else if (query->saf_cond == sc_missing)
-			fprintf(stderr, "Query response_missing: %s\n", msg);
+			fprintf(stderr, "Query response missing: %s\n", msg);
 		else if (query->status != NULL)
 			fprintf(stderr, "Query status: %s (%s)\n",
 				query->status, query->message);
@@ -694,6 +697,22 @@ io_drain(void) {
 			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
 			      query->command, fetch->rcode);
 			if (psys->encap == encap_saf)
+				if (query->saf_cond == sc_begin ||
+				    query->saf_cond == sc_ongoing)
+				{
+					/* stream ended without a terminating
+					 * SAF value, so override stale value
+					 * we received before the problem.
+					 */
+					query->saf_cond = sc_missing;
+					query->saf_msg = strdup(
+						"Data transfer failed "
+						"-- No SAF terminator "
+						"at end of stream");
+					query_status(query,
+						     status_error,
+						     query->saf_msg);
+				}
 				DEBUG(2, true, "... saf_cond %d saf_msg %s\n",
 				      query->saf_cond,
 				      or_else(query->saf_msg, ""));

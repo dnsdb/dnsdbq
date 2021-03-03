@@ -18,6 +18,7 @@
 #define _GNU_SOURCE
 
 #include <assert.h>
+#include <errno.h>
 
 #include "asinfo.h"
 #include "defs.h"
@@ -898,23 +899,172 @@ data_blob(query_t query, const char *buf, size_t len) {
 }
 
 /* pdns_probe -- maybe probe and switch to a reachable and functional psys.
- *
- * if an alternate psys is defined and if psys is not
- * reachable/functional, then chain to the alternate.
- * return true if psys was changed.
  */
-bool
+void
 pdns_probe(void) {
-	bool ret = false;	/* use current psys */
-
 	while (psys->next != NULL && !psys->probe()) {
-		psys = psys->next();
+		pick_system(psys->next()->name, "downgrade from probe");
 		if (!quiet)
 			fprintf(stderr,
 				"probe failed, downgrading to '%s', "
 				"consider changing -u or configuration.\n",
 				psys->name);
-		ret = true;
 	}
-	return (ret);
+}
+
+/* pick_system -- find a named system descriptor, return t/f as to "found?"
+ *
+ * returns if psys != NULL, or exits fatally otherwise.
+ */
+void
+pick_system(const char *name, const char *context) {
+	pdns_system_ct tsys = NULL;
+	char *msg = NULL;
+
+	DEBUG(1, true, "pick_system(%s)\n", name);
+#if WANT_PDNS_DNSDB
+	if (strcmp(name, "dnsdb") == 0)
+		tsys = pdns_dnsdb();
+	if (strcmp(name, "dnsdb2") == 0)
+		tsys = pdns_dnsdb2();
+#endif
+#if WANT_PDNS_CIRCL
+	if (strcmp(name, "circl") == 0)
+		tsys = pdns_circl();
+#endif
+	if (tsys == NULL) {
+		asprintf(&msg, "unrecognized system name (%s)", name);
+	} else if (tsys == psys) {
+		return;
+	} else {
+		if (psys != NULL) {
+			psys->destroy();
+			psys = NULL;
+		}
+		psys = tsys;
+		tsys = NULL;
+		if (config_file != NULL)
+			read_config(config_file);
+		const char *tmsg = psys->ready();
+		if (tmsg != NULL) {
+			msg = strdup(tmsg);
+			tmsg = NULL;
+		}
+	}
+
+	if (msg != NULL) {
+		fprintf(stderr, "%s (in %s)\n", msg, context);
+		DESTROY(msg);
+		my_exit(1);
+	}
+}
+
+/* read_config -- parse a given config file.
+ */
+void
+read_config(const char *cf) {
+	char *cmd, *line;
+	size_t n;
+	int x, l;
+	FILE *f;
+
+	/* in the "echo dnsdb server..." lines, the
+	 * first parameter is the pdns system to which to dispatch
+	 * the key and value (i.e. second the third parameters).
+	 */
+	x = asprintf(&cmd,
+		     "set -e; . %s;"
+		     "echo dnsdbq system ${" DNSDBQ_SYSTEM
+		     	":-" DEFAULT_SYS "};"
+#if WANT_PDNS_DNSDB
+		     "echo dnsdb apikey ${DNSDB_API_KEY:-$APIKEY};"
+		     "echo dnsdb server $DNSDB_SERVER;"
+		     "echo dnsdb2 apikey ${DNSDB_API_KEY:-$APIKEY};"
+		     "echo dnsdb2 server $DNSDB_SERVER;"
+#endif
+#if WANT_PDNS_CIRCL
+		     "echo circl apikey $CIRCL_AUTH;"
+		     "echo circl server $CIRCL_SERVER;"
+#endif
+		     "exit", cf);
+	if (x < 0)
+		my_panic(true, "asprintf");
+	// this variable can be set in the config file but not the environ.
+	unsetenv("APIKEY");
+	f = popen(cmd, "r");
+	if (f == NULL) {
+		fprintf(stderr, "%s: [%s]: %s",
+			program_name, cmd, strerror(errno));
+		DESTROY(cmd);
+		my_exit(1);
+	}
+	DEBUG(1, true, "conf cmd = '%s'\n", cmd);
+	DESTROY(cmd);
+	line = NULL;
+	n = 0;
+	l = 0;
+	while (getline(&line, &n, f) > 0) {
+		char *tok1, *tok2, *tok3;
+		char *saveptr = NULL;
+		const char *msg;
+
+		l++;
+		if (strchr(line, '\n') == NULL) {
+			fprintf(stderr, "%s: conf line #%d: too long\n",
+				program_name, l);
+			my_exit(1);
+		}
+		tok1 = strtok_r(line, "\040\012", &saveptr);
+		tok2 = strtok_r(NULL, "\040\012", &saveptr);
+		tok3 = strtok_r(NULL, "\040\012", &saveptr);
+		if (tok1 == NULL || tok2 == NULL) {
+			fprintf(stderr,
+				"%s: conf line #%d: malformed\n",
+				program_name, l);
+			my_exit(1);
+		}
+		if (tok3 == NULL || *tok3 == '\0') {
+			/* variable wasn't set, ignore the line. */
+			continue;
+		}
+
+		/* some env/conf variables are dnsdbq-specific. */
+		if (strcmp(tok1, "dnsdbq") == 0) {
+			/* env/config psys does not override -u. */
+			if (strcmp(tok2, "system") == 0 && !psys_specified) {
+				pick_system(tok3, cf);
+				if (psys == NULL) {
+					fprintf(stderr, "%s: unknown %s %s\n",
+						program_name,
+						DNSDBQ_SYSTEM,
+						tok3);
+					my_exit(1);
+				}
+			}
+			continue;
+		}
+
+		/* if this variable is for this system, consume it. */
+		if (debug_level >= 1) {
+			char *t = NULL;
+
+			if (strcmp(tok2, "apikey") == 0)
+				asprintf(&t, "[%ld]", strlen(tok3));
+			else
+				t = strdup(tok3);
+			fprintf(stderr, "line #%d: sets %s|%s|%s\n",
+				l, tok1, tok2, t);
+			DESTROY(t);
+		}
+		if (strcmp(tok1, psys->name) == 0) {
+			msg = psys->setval(tok2, tok3);
+			if (msg != NULL) {
+				fprintf(stderr, "setval: %s\n", msg);
+				my_exit(1);
+			}
+		}
+	}
+	DESTROY(line);
+	pclose(f);
+	assert(psys != NULL);
 }

@@ -50,12 +50,6 @@
 #include "defs.h"
 #include "netio.h"
 #include "pdns.h"
-#if WANT_PDNS_DNSDB
-#include "pdns_dnsdb.h"
-#endif
-#if WANT_PDNS_CIRCL
-#include "pdns_circl.h"
-#endif
 #include "sort.h"
 #include "time.h"
 #include "globals.h"
@@ -66,7 +60,6 @@
 /* Forward. */
 
 static void help(void);
-static pdns_system_ct pick_system(const char *);
 static void qdesc_debug(const char *, qdesc_ct);
 static void qparam_debug(const char *, qparam_ct);
 static __attribute__((noreturn)) void usage(const char *, ...);
@@ -74,7 +67,7 @@ static bool parse_long(const char *, long *);
 static const char *qparam_ready(qparam_t);
 static const char *qparam_option(int, const char *, qparam_t);
 static verb_ct find_verb(const char *);
-static void read_configs(void);
+static char *select_config(void);
 static void do_batch(FILE *, qparam_ct);
 static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
@@ -121,6 +114,7 @@ int
 main(int argc, char *argv[]) {
 	struct qdesc qd = { .mode = no_mode };
 	struct qparam qp = qparam_empty;
+	char *picked_system = NULL;
 	bool info = false;
 	int json_fd = -1;
 	const char *msg;
@@ -305,9 +299,7 @@ main(int argc, char *argv[]) {
 				usage("-M must be positive");
 			break;
 		case 'u':
-			if ((psys = pick_system(optarg)) == NULL)
-				usage("-u must refer to a pdns system");
-			psys_specified = true;
+			picked_system = strdup(optarg);
 			break;
 		case 'U':
 			donotverify = true;
@@ -495,32 +487,28 @@ main(int argc, char *argv[]) {
 	/* get to final readiness; in particular, get psys set. */
 	if (sorting != no_sort)
 		sort_ready();
-	read_configs();
+	config_file = select_config();
+	if (picked_system != NULL) {
+		psys_specified = true;
+		pick_system(picked_system, "-u option");
+		DESTROY(picked_system);
+	} else {
+		pick_system(DEFAULT_SYS, "default system");
+		psys_specified = true;
+	}
+
 	if (json_fd != -1) {
 #if WANT_PDNS_DNSDB
 		/* the json output files are in COF format, never SAF. */
 		if (strcmp(psys->name, "dnsdb2") == 0)
-			psys = pdns_dnsdb();
+			pick_system("dnsdb", "downgrade for -J");
 #endif
 		NULL;
 	} else {
-		if ((msg = psys->ready()) != NULL)
-			usage(msg);
 		make_curl();
-		if (!psys_specified && pdns_probe()) {
-			/* re-test after psys fallback. */
-			if ((msg = psys->ready()) != NULL)
-				usage(msg);
-		}
+		if (!psys_specified)
+			pdns_probe();
 	}
-
-	/* verify that some of the fields in our psys are set. */
-	assert(psys->base_url != NULL);
-	assert(psys->url != NULL);
-	assert(psys->status != NULL);
-	assert(psys->verb_ok != NULL);
-	assert(psys->ready != NULL);
-	assert(psys->destroy != NULL);
 
 	/* validate some interrelated options. */
 	if (multiple && batching == batch_none)
@@ -626,6 +614,7 @@ my_exit(int code) {
 	unmake_curl();
 
 	/* globals which may have been initialized, are to be freed. */
+	DESTROY(config_file);
 	if (psys != NULL)
 		psys->destroy();
 
@@ -713,7 +702,7 @@ help(void) {
 	     "use -v to show the program version.\n"
 	     "use -4 to force connecting to the server via IPv4.\n"
 	     "use -6 to force connecting to the server via IPv6.\n"
-	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments",
+	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments.\n",
 	     asinfo_domain);
 
 	puts("for -u, system must be one of:");
@@ -729,26 +718,8 @@ help(void) {
 		printf("\t%s\n", v->name);
 	puts("\nGetting Started:\n"
 	     "\tAdd your API key to ~/.dnsdb-query.conf like this:\n"
-	     "\t\tAPIKEY=\"YOURAPIKEYHERE\"");
+	     "\t\tDNSDB_API_KEY=\"YOURAPIKEYHERE\"");
 	printf("\nTry   man %s  for full documentation.\n", program_name);
-}
-
-/* pick_system -- return a named system descriptor, or NULL.
- */
-static pdns_system_ct
-pick_system(const char *name) {
-#if WANT_PDNS_DNSDB
-	if (strcmp(name, "dnsdb") == 0)
-		return pdns_dnsdb();
-	if (strcmp(name, "dnsdb2") == 0) {
-		return pdns_dnsdb2();
-	}
-#endif
-#if WANT_PDNS_CIRCL
-	if (strcmp(name, "circl") == 0)
-		return pdns_circl();
-#endif
-	return NULL;
 }
 
 /* qdesc_debug -- dump a qdesc.
@@ -945,10 +916,10 @@ find_verb(const char *option) {
 	return (NULL);
 }
 
-/* read_configs -- try to find a config file in static path, then parse it.
+/* select_config -- try to find a config file in static path.
  */
-static void
-read_configs(void) {
+static char *
+select_config(void) {
 	const char * const *conf;
 	char *cf = NULL;
 
@@ -960,120 +931,12 @@ read_configs(void) {
 		wordfree(&we);
 		if (access(cf, R_OK) == 0) {
 			DEBUG(1, true, "conf found: '%s'\n", cf);
-			break;
+			return (cf);
 		}
 		DESTROY(cf);
 	}
-	if (cf != NULL) {
-		char *cmd, *line;
-		size_t n;
-		int x, l;
-		FILE *f;
-
-		/* in the "echo dnsdb server..." lines, the
-		 * first parameter is the pdns system to which to dispatch
-		 * the key and value (i.e. second the third parameters).
-		 */
-		x = asprintf(&cmd,
-			     ". %s;"
-			     "echo dnsdbq system $" DNSDBQ_SYSTEM ";"
-#if WANT_PDNS_DNSDB
-			     "echo dnsdb apikey $APIKEY;"
-			     "echo dnsdb server $DNSDB_SERVER;"
-			     "echo dnsdb2 apikey $APIKEY;"
-			     "echo dnsdb2 server $DNSDB_SERVER;"
-#endif
-#if WANT_PDNS_CIRCL
-			     "echo circl apikey $CIRCL_AUTH;"
-			     "echo circl server $CIRCL_SERVER;"
-#endif
-			     "exit", cf);
-		DESTROY(cf);
-		if (x < 0)
-			my_panic(true, "asprintf");
-		f = popen(cmd, "r");
-		if (f == NULL) {
-			fprintf(stderr, "%s: [%s]: %s",
-				program_name, cmd, strerror(errno));
-			DESTROY(cmd);
-			my_exit(1);
-		}
-		DEBUG(1, true, "conf cmd = '%s'\n", cmd);
-		DESTROY(cmd);
-		line = NULL;
-		n = 0;
-		l = 0;
-		while (getline(&line, &n, f) > 0) {
-			char *tok1, *tok2, *tok3;
-			char *saveptr = NULL;
-			const char *msg;
-
-			l++;
-			if (strchr(line, '\n') == NULL) {
-				fprintf(stderr,
-					"%s: conf line #%d: too long\n",
-					program_name, l);
-				my_exit(1);
-			}
-			tok1 = strtok_r(line, "\040\012", &saveptr);
-			tok2 = strtok_r(NULL, "\040\012", &saveptr);
-			tok3 = strtok_r(NULL, "\040\012", &saveptr);
-			if (tok1 == NULL || tok2 == NULL) {
-				fprintf(stderr,
-					"%s: conf line #%d: malformed\n",
-					program_name, l);
-				my_exit(1);
-			}
-			if (tok3 == NULL || *tok3 == '\0') {
-				/* variable wasn't set, ignore the line. */
-				continue;
-			}
-
-			/* some env/conf variables are dnsdbq-specific. */
-			if (strcmp(tok1, "dnsdbq") == 0) {
-				/* env/config psys does not override -u. */
-				if (strcmp(tok2, "system") == 0 && !psys_specified) {
-					psys = pick_system(tok3);
-					if (psys == NULL) {
-						fprintf(stderr,
-							"%s: unknown %s %s\n",
-							program_name,
-							DNSDBQ_SYSTEM,
-							tok3);
-						my_exit(1);
-					}
-					psys_specified = true;
-				}
-				continue;
-			}
-
-			/* this is the last point where psys can be null. */
-			if (psys == NULL) {
-				psys = pick_system(DEFAULT_SYS);
-				if (psys == NULL)
-					usage("neither " DNSDBQ_SYSTEM
-					      " nor -u were specified,"
-					      " and there is no default.");
-				DEBUG(1, true, "picked system %s\n",
-				      psys->name);
-			}
-
-			/* if this variable is for this system, consume it. */
-			if (strcmp(tok1, psys->name) == 0) {
-				DEBUG(1, true, "line #%d: sets %s|%s|%s\n",
-				      l, tok1, tok2,
-				      strcmp(tok2, "apikey") == 0
-					? "..." : tok3);
-				msg = psys->setval(tok2, tok3);
-				if (msg != NULL)
-					usage(msg);
-			}
-		}
-		DESTROY(line);
-		pclose(f);
-	}
+	return (NULL);
 }
-
 
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
  */
