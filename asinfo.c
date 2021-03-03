@@ -1,3 +1,4 @@
+#ifndef CRIPPLED_LIBC
 /*
  * Copyright (c) 2014-2020 by Farsight Security, Inc.
  *
@@ -12,6 +13,12 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ */
+
+/* Note that cygwin has a crippled libresolv that does not
+ * include the not so recent ns_initparse() function, etc.
+ * This AS info functionality is thus not available
+ * in cygwin.
  */
 
 /* external. */
@@ -322,3 +329,4 @@ keep_best(char **asnum, char **cidr, char *new_asnum, char *new_cidr) {
 	}
 	return NULL;
 }
+#endif /*CRIPPLED_LIBC*/

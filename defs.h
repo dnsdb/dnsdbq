@@ -22,6 +22,15 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Note that cygwin has a crippled libresolv that does not
+ * include the not so recent ns_initparse() function, etc.
+ * This AS info functionality is thus not available
+ * in cygwin.
+ */
+#ifdef __CYGWIN__
+#define CRIPPLED_LIBC 1
+#endif /* __CYGWIN__ */
+
 #define DEFAULT_SYS "dnsdb2"
 #define DEFAULT_VERB 0
 #define	MAX_JOBS 8

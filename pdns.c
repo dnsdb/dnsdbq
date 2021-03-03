@@ -32,7 +32,9 @@ static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
 static json_t *annotate_json(pdns_tuple_ct);
 static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
+#ifndef CRIPPLED_LIBC
 static json_t *annotate_asinfo(const char *, const char *);
+#endif
 
 /* present_text_lookup -- render one pdns tuple in "dig" style ascii text.
  */
@@ -123,8 +125,11 @@ present_text_lookup(pdns_tuple_ct tup,
 static void
 present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
 	char *asnum = NULL, *cidr = NULL, *comment = NULL;
-	const char *result = asinfo_from_rr(rrtype, rdata, &asnum, &cidr);
+	const char *result = NULL;
 
+#ifndef CRIPPLED_LIBC
+	result = asinfo_from_rr(rrtype, rdata, &asnum, &cidr);
+#endif
 	if (result != NULL) {
 		comment = strdup(result);
 	} else if (asnum != NULL && cidr != NULL) {
@@ -248,15 +253,21 @@ annotate_json(pdns_tuple_ct tup) {
 
 		json_array_foreach(tup->obj.rdata, index, rr) {
 			const char *rdata = json_string_value(rr);
-			json_t *asinfo = annotate_asinfo(tup->rrtype, rdata);
+			json_t *asinfo = NULL;
 
+#ifndef CRIPPLED_LIBC
+			asinfo = annotate_asinfo(tup->rrtype, rdata);
+#endif
 			if (asinfo != NULL)
 				anno = annotate_one(anno, rdata,
 						    "asinfo", asinfo);
 		}
 	} else {
-		json_t *asinfo = annotate_asinfo(tup->rrtype, tup->rdata);
+		json_t *asinfo = NULL;
 
+#ifndef CRIPPLED_LIBC
+		asinfo = annotate_asinfo(tup->rrtype, tup->rdata);
+#endif
 		if (asinfo != NULL)
 			anno = annotate_one(anno, tup->rdata,
 					    "asinfo", asinfo);
@@ -288,6 +299,7 @@ annotate_one(json_t *anno, const char *rdata, const char *name, json_t *obj) {
 	return anno;
 }
 
+#ifndef CRIPPLED_LIBC
 static json_t *
 annotate_asinfo(const char *rrtype, const char *rdata) {
 	char *asnum = NULL, *cidr = NULL;
@@ -314,6 +326,7 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
 	}
 	return asinfo;
 }
+#endif
 
 /* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
  */
@@ -401,8 +414,11 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 	if (asinfo_lookup && tup->obj.rrtype != NULL &&
 	    tup->obj.rdata != NULL) {
 		char *asnum = NULL, *cidr = NULL;
-		const char *result = asinfo_from_rr(tup->rrtype, rdata,
-						    &asnum, &cidr);
+		const char *result = NULL;
+
+#ifndef CRIPPLED_LIBC
+		result = asinfo_from_rr(tup->rrtype, rdata, &asnum, &cidr);
+#endif
 		if (result != NULL) {
 			asnum = strdup(result);
 			cidr = strdup(result);
