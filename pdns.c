@@ -244,6 +244,8 @@ present_json_lookup(pdns_tuple_ct tup,
 	putchar('\n');
 }
 
+/* annotate_json -- create a temporary copy of a tuple; apply transforms.
+ */
 static json_t *
 annotate_json(pdns_tuple_ct tup) {
 	json_t *annoRD = NULL, *annoTF = NULL, *annoTL = NULL,
@@ -316,8 +318,8 @@ annotate_json(pdns_tuple_ct tup) {
 						    annoTL);
 		}
 		if ((transforms & (TRANS_REVERSE|TRANS_CHOMP)) != 0)
-			json_object_set_nocheck(copy, "rrname",
-						tup->obj.rrname);
+			json_object_set_new_nocheck(copy, "rrname",
+						    json_string(tup->rrname));
 		if (annoRD != NULL)
 			json_object_set_new_nocheck(copy, "dnsdbq_rdata",
 						    annoRD);
@@ -650,29 +652,32 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 			msg = "rrname must be a string";
 			goto ouch;
 		}
-		if ((transforms & (TRANS_REVERSE|TRANS_CHOMP)) != 0) {
-			char *r = strdup(json_string_value(tup->obj.rrname));
-			int dot = 0;
 
-			if ((transforms & TRANS_REVERSE) != 0) {
-				char *t = reverse(r);
-				DESTROY(r);
-				r = t;
-				t = NULL;
-				/* leading dot comes from reverse() */
-				if ((transforms & TRANS_CHOMP) != 0)
-					dot = 1;
-			} else if ((transforms & TRANS_CHOMP) != 0) {
-				/* unescaped trailing dot? */
-				size_t l = strlen(r);
-				if (l > 0 && r[l-1] == '.' &&
-				    (l == 1 || r[l-2] != '\\'))
-					r[l-1] = '\0';
-			}
-			tup->obj.rrname = json_string_nocheck(r + dot);
+		char *r = strdup(json_string_value(tup->obj.rrname));
+		int dot = 0;
+
+		if ((transforms & TRANS_REVERSE) != 0) {
+			char *t = reverse(r);
 			DESTROY(r);
+			r = t;
+			t = NULL;
+			/* leading dot comes from reverse() */
+			if ((transforms & TRANS_CHOMP) != 0)
+				dot = 1;
+		} else if ((transforms & TRANS_CHOMP) != 0) {
+			/* unescaped trailing dot? */
+			size_t l = strlen(r);
+			if (l > 0 && r[l-1] == '.' &&
+			    (l == 1 || r[l-2] != '\\'))
+				r[l-1] = '\0';
 		}
-		tup->rrname = json_string_value(tup->obj.rrname);
+
+		if (dot) {
+			tup->rrname = strdup(r + dot);
+			DESTROY(r);
+		} else {
+			tup->rrname = r;
+		}
 	}
 	tup->obj.rrtype = json_object_get(tup->obj.cof_obj, "rrtype");
 	if (tup->obj.rrtype != NULL) {
@@ -706,8 +711,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
  */
 void
 tuple_unmake(pdns_tuple_t tup) {
-	if ((transforms & TRANS_REVERSE) != 0)
-		json_decref(tup->obj.rrname);
+	DESTROY(tup->rrname);
 	json_decref(tup->obj.main);
 }
 

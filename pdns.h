@@ -29,18 +29,23 @@
  * If not using SAF encapulation, then cof_obj points to main.
  * If using SAF encapulation, then saf_cond, saf_msg, and saf_obj are
  * parsed from main and cof_obj is repointed to saf_obj.
+ *
+ * tup->obj.rrname is always original, tup->rrname is sometimes reversed.
+ * as a result, tup->rrname is always heap-allocated, even if unreversed.
  */
 struct pdns_json {
-	json_t *main, *rrname;
+	json_t *main;
 	const json_t *cof_obj, *saf_obj, *saf_cond, *saf_msg,
 		*time_first, *time_last, *zone_first, *zone_last,
-		*bailiwick, *rrtype, *rdata, *count, *num_results;
+		*bailiwick, *rrname, *rrtype, *rdata,
+		*count, *num_results;
 };
 
 struct pdns_tuple {
 	struct pdns_json  obj;
 	u_long		  time_first, time_last, zone_first, zone_last;
-	const char	 *bailiwick, *rrname, *rrtype, *rdata, *cond, *msg;
+	const char	 *bailiwick, *rrtype, *rdata, *cond, *msg;
+	char		 *rrname;
 	json_int_t	  count, num_results;
 };
 typedef struct pdns_tuple *pdns_tuple_t;

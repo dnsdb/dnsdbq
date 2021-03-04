@@ -151,6 +151,9 @@ sortable_rrname(pdns_tuple_ct tup) {
 	sortable_dnsname(&buf, json_string_value(tup->obj.rrname));
 	buf.base = realloc(buf.base, buf.size+1);
 	buf.base[buf.size++] = '\0';
+	fprintf(stderr, "sortable_rrname(%s) -> %s\n",
+		json_string_value(tup->obj.rrname),
+		buf.base);
 	return (buf.base);
 }
 
@@ -250,13 +253,13 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 	struct counted *c = countoff(name, 0);
 
 	// ensure our result buffer is large enough.
-	size_t new_size = buf->size + c->nalnum*2;
+	size_t new_size = buf->size + c->nalnum;
 	assert(new_size != 0);
 	if (new_size != buf->size)
 		buf->base = realloc(buf->base, new_size);
 	char *p = buf->base + buf->size;
 
-	// collatable names are TLD-first, alphanumeric, lower case, hexified.
+	// collatable names are TLD-first, alphanumeric only, lower case.
 	size_t nchar = 0;
 	for (ssize_t i = (ssize_t)(c->nlabel-1); i >= 0; i--) {
 		size_t dot = (name[c->nchar - nchar - 1] == '.');
@@ -264,12 +267,8 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 		ssize_t k = (ssize_t)(c->nchar - nchar - c->lens[i]);
 		for (ssize_t l = k; l < j+k; l++) {
 			int ch = name[l];
-			if (isalnum(ch)) {
-				static const char hex[] = "0123456789abcdef";
-				ch = tolower(ch);
-				*p++ = hex[ch >> 4];
-				*p++ = hex[ch & 0xf];
-			}
+			if (isalnum(ch))
+				*p++ = (char) tolower(ch);
 		}
 		nchar += c->lens[i];
 	}
