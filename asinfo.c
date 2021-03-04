@@ -1,4 +1,3 @@
-#ifndef CRIPPLED_LIBC
 /*
  * Copyright (c) 2014-2020 by Farsight Security, Inc.
  *
@@ -34,8 +33,11 @@
 #include <resolv.h>
 #include <stdlib.h>
 #include <string.h>
-#include "asinfo.h"
 #include "globals.h"
+
+#ifndef CRIPPLED_LIBC  /* must be after globals.h - which includes defs.h */
+
+#include "asinfo.h"
 
 /* private. */
 
