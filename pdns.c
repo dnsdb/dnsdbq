@@ -933,7 +933,9 @@ pick_system(const char *name, const char *context) {
 		tsys = pdns_circl();
 #endif
 	if (tsys == NULL) {
-		(void) asprintf(&msg, "unrecognized system name (%s)", name);
+		int ignored __attribute__((unused));
+		ignored = asprintf(&msg, "unrecognized system name (%s)",
+				   name);
 	} else if (tsys == psys) {
 		return;
 	} else {
@@ -1048,9 +1050,10 @@ read_config(const char *cf) {
 		if (debug_level >= 1) {
 			char *t = NULL;
 
-			if (strcmp(tok2, "apikey") == 0)
-				(void) asprintf(&t, "[%ld]", strlen(tok3));
-			else
+			if (strcmp(tok2, "apikey") == 0) {
+				int ignored __attribute__((unused));
+				ignored = asprintf(&t, "[%ld]", strlen(tok3));
+			} else
 				t = strdup(tok3);
 			fprintf(stderr, "line #%d: sets %s|%s|%s\n",
 				l, tok1, tok2, t);
