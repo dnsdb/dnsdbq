@@ -154,6 +154,7 @@ typedef const struct qdesc *qdesc_ct;
 struct counted {
 	size_t nlabel;
 	size_t nchar;
+	size_t nalnum;
 	size_t lens[];
 };
 #define COUNTED_SIZE(nlabel) (sizeof(struct counted) + nlabel * sizeof(size_t))

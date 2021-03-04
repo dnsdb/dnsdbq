@@ -18,6 +18,7 @@
 #define _GNU_SOURCE
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 
 #include "asinfo.h"
@@ -717,11 +718,13 @@ countoff(const char *src, size_t nlabel) {
 	const char *sp = src;
 	bool slash = false;
 	struct counted *c;
-	size_t len;
 	int ch;
 
 	/* count and map the unescaped dots (dns label separators). */
+	size_t nalnum = 0;
 	while ((ch = *sp++) != '\0') {
+		if (isalnum(ch))
+			nalnum++;
 		if (!slash) {
 			if (ch == '\\')
 				slash = true;
@@ -731,11 +734,12 @@ countoff(const char *src, size_t nlabel) {
 			slash = false;
 		}
 	}
-	len = (size_t)(sp - src);
+	size_t len = (size_t)(sp - src);
 	if (ch == '.') {
 		/* end of label, recurse to reach rest of name. */
 		c = countoff(sp, nlabel+1);
 		c->nchar += len;
+		c->nalnum += nalnum;
 		c->lens[nlabel] = len;
 	} else if (ch == '\0') {
 		/* end of name, and perhaps of a unterminated label. */
@@ -745,6 +749,7 @@ countoff(const char *src, size_t nlabel) {
 		c = (struct counted *)malloc(COUNTED_SIZE(nlabel));
 		memset(c, 0, COUNTED_SIZE(nlabel));
 		c->nlabel = nlabel;
+		c->nalnum = nalnum;
 		if (len != 0) {
 			c->nchar = len;
 			c->lens[nlabel-1] = c->nchar;
