@@ -1052,7 +1052,7 @@ read_config(const char *cf) {
 
 			if (strcmp(tok2, "apikey") == 0) {
 				int ignored __attribute__((unused));
-				ignored = asprintf(&t, "[%ld]", strlen(tok3));
+				ignored = asprintf(&t, "[%zu]", strlen(tok3));
 			} else
 				t = strdup(tok3);
 			fprintf(stderr, "line #%d: sets %s|%s|%s\n",
