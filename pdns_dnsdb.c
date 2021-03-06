@@ -581,7 +581,11 @@ rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 			error.text, error.source);
 		abort();
 	}
-	DEBUG(4, true, "%s\n", json_dumps(tup->obj.main, JSON_INDENT(2)));
+	if (debug_level >= 4) {
+		char *pretty = json_dumps(tup->obj.main, JSON_INDENT(2));
+		fprintf(stderr, "debug: %s\n", pretty);
+		free(pretty);
+	}
 
 	rate = json_object_get(tup->obj.main, "rate");
 	if (rate == NULL) {
