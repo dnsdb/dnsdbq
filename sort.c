@@ -249,25 +249,23 @@ void
 sortable_dnsname(sortbuf_t buf, const char *name) {
 	struct counted *c = countoff(name, 0);
 
-	// ensure our result buffer is exactly large enough.
-	size_t new_size = buf->size + c->nchar*2 - (size_t)c->nlabel;
+	// ensure our result buffer is large enough.
+	size_t new_size = buf->size + c->nalnum;
 	assert(new_size != 0);
 	if (new_size != buf->size)
 		buf->base = realloc(buf->base, new_size);
 	char *p = buf->base + buf->size;
 
-	// collatable names are TLD-first, all lower case, hexified.
+	// collatable names are TLD-first, alphanumeric only, lower case.
 	size_t nchar = 0;
 	for (ssize_t i = (ssize_t)(c->nlabel-1); i >= 0; i--) {
 		size_t dot = (name[c->nchar - nchar - 1] == '.');
 		ssize_t j = (ssize_t)(c->lens[i] - dot);
 		ssize_t k = (ssize_t)(c->nchar - nchar - c->lens[i]);
-		*p++ = '.';
 		for (ssize_t l = k; l < j+k; l++) {
-			static const char hex[] = "0123456789abcdef";
-			int ch = tolower(name[l]);
-			*p++ = hex[ch >> 4];
-			*p++ = hex[ch & 0xf];
+			int ch = name[l];
+			if (isalnum(ch))
+				*p++ = (char) tolower(ch);
 		}
 		nchar += c->lens[i];
 	}

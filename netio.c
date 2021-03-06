@@ -489,6 +489,7 @@ writer_fini(writer_t writer) {
 			query->fetches = fetch_next;
 		}
 		assert((query->status != NULL) == (query->message != NULL));
+		DESTROY(query->saf_msg);
 		DESTROY(query->status);
 		DESTROY(query->message);
 		DESTROY(query->command);
