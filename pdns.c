@@ -677,6 +677,7 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		}
 
 		if (dot) {
+			/* in chomp+reverse, the dot to chomp is now leading. */
 			tup->rrname = strdup(r + dot);
 			DESTROY(r);
 		} else {

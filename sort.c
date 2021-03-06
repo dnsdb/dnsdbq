@@ -151,9 +151,6 @@ sortable_rrname(pdns_tuple_ct tup) {
 	sortable_dnsname(&buf, json_string_value(tup->obj.rrname));
 	buf.base = realloc(buf.base, buf.size+1);
 	buf.base[buf.size++] = '\0';
-	fprintf(stderr, "sortable_rrname(%s) -> %s\n",
-		json_string_value(tup->obj.rrname),
-		buf.base);
 	return (buf.base);
 }
 
