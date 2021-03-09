@@ -386,7 +386,8 @@ including ANY.  A special-case supported in DNSDB is ANY-DNSSEC, which
 matches on DS, RRSIG, NSEC, DNSKEY, NSEC3, NSEC3PARAM, and DLV
 resource record types.
 .It Fl u Ar server_sys
-specifies the syntax of the RESTful URL, default is "dnsdb".
+specifies the syntax of the RESTful URL.  Note that not all passive
+DNS systems or versions of those system implement the same query features.
 .It Fl V Ar verb
 The verb to perform, i.e. the type of query, either "lookup" or
 "summarize".  The default is the "lookup" verb.  As an option, you can
