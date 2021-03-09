@@ -912,20 +912,6 @@ data_blob(query_t query, const char *buf, size_t len) {
 	return (ret);
 }
 
-/* pdns_probe -- maybe probe and switch to a reachable and functional psys.
- */
-void
-pdns_probe(void) {
-	while (psys->next != NULL && !psys->probe()) {
-		pick_system(psys->next()->name, "downgrade from probe");
-		if (!quiet)
-			fprintf(stderr,
-				"probe failed, downgrading to '%s', "
-				"consider changing -u or configuration.\n",
-				psys->name);
-	}
-}
-
 /* pick_system -- find a named system descriptor, return t/f as to "found?"
  *
  * returns if psys != NULL, or exits fatally otherwise.

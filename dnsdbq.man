@@ -581,7 +581,7 @@ contains the default value for the
 .Fl u
 option described above. Can be "dnsdb", "dnsdb2", or "circl". If unset,
 .Nm dnsdbq
-will probe for any configured system.
+will use a default.
 .El
 .Sh ENVIRONMENT
 The following environment variables override the configuration file:
