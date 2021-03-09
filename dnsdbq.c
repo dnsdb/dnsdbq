@@ -506,9 +506,7 @@ main(int argc, char *argv[]) {
 		NULL;
 	} else {
 		make_curl();
-		if (!psys_specified)
-			usage("No system defined with -u option "
-			      "or config option DNSDBQ_SYSTEM");
+		assert(psys_specified);
 	}
 
 	/* validate some interrelated options. */
