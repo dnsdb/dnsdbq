@@ -923,9 +923,10 @@ pick_system(const char *name, const char *context) {
 
 	DEBUG(1, true, "pick_system(%s)\n", name);
 #if WANT_PDNS_DNSDB
-	if (strcmp(name, "dnsdb") == 0)
-		tsys = pdns_dnsdb();
-	if (strcmp(name, "dnsdb2") == 0)
+	if (strcmp(name, "dnsdb1") == 0)
+		tsys = pdns_dnsdb1();
+	/* "dnsdb" is an alias for "dnsdb2". */
+	if (strcmp(name, "dnsdb2") == 0 || strcmp(name, "dnsdb") == 0)
 		tsys = pdns_dnsdb2();
 #endif
 #if WANT_PDNS_CIRCL
@@ -979,8 +980,8 @@ read_config(const char *cf) {
 		     "echo dnsdbq system ${" DNSDBQ_SYSTEM
 			":-" DEFAULT_SYS "};"
 #if WANT_PDNS_DNSDB
-		     "echo dnsdb apikey ${DNSDB_API_KEY:-$APIKEY};"
-		     "echo dnsdb server $DNSDB_SERVER;"
+		     "echo dnsdb1 apikey ${DNSDB_API_KEY:-$APIKEY};"
+		     "echo dnsdb1 server $DNSDB_SERVER;"
 		     "echo dnsdb2 apikey ${DNSDB_API_KEY:-$APIKEY};"
 		     "echo dnsdb2 server $DNSDB_SERVER;"
 #endif

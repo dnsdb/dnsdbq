@@ -84,8 +84,8 @@ static char *dnsdb_base_url = NULL;
 
 static const char dnsdb2_url_prefix[] = "/dnsdb/v2";
 
-static const struct pdns_system dnsdb = {
-	"dnsdb", "https://api.dnsdb.info", encap_cof,
+static const struct pdns_system dnsdb1 = {
+	"dnsdb1", "https://api.dnsdb.info", encap_cof,
 	dnsdb_url, dnsdb_info, dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
 	dnsdb_setval, dnsdb_ready, dnsdb_destroy
 };
@@ -100,8 +100,8 @@ static const struct pdns_system dnsdb2 = {
  */
 
 pdns_system_ct
-pdns_dnsdb(void) {
-	return &dnsdb;
+pdns_dnsdb1(void) {
+	return &dnsdb1;
 }
 
 pdns_system_ct

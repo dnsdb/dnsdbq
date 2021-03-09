@@ -18,7 +18,7 @@
 #define PDNS_DNSDB_H_INCLUDED 1
 
 #if WANT_PDNS_DNSDB
-pdns_system_ct pdns_dnsdb(void);
+pdns_system_ct pdns_dnsdb1(void);
 pdns_system_ct pdns_dnsdb2(void);
 #endif
 

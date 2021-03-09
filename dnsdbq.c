@@ -501,7 +501,7 @@ main(int argc, char *argv[]) {
 #if WANT_PDNS_DNSDB
 		/* the json output files are in COF format, never SAF. */
 		if (strcmp(psys->name, "dnsdb2") == 0)
-			pick_system("dnsdb", "downgrade for -J");
+			pick_system("dnsdb1", "downgrade for -J");
 #endif
 		NULL;
 	} else {
