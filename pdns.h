@@ -67,17 +67,6 @@ struct pdns_system {
 	/* what encapsulation does this system speak? */
 	encap_e		encap;
 
-	/* what's our downgrade path if this system doesn't function
-	 * (respond positively to a probe)?  may be NULL if there is no
-	 * downgrade available.
-	 */
-	const struct pdns_system *  (*next)(void);
-
-	/* to probe if this system reachable and functional. will be
-	 * NULL whenever "next" (see above) is NULL.
-	 */
-	bool		(*probe)(void);
-
 	/* start creating a URL corresponding to a command-path string.
 	 * first argument is the input URL path.
 	 * second is an output parameter pointing to the separator character
@@ -176,7 +165,6 @@ void tuple_unmake(pdns_tuple_t);
 struct counted *countoff(const char *, size_t);
 char *reverse(const char *);
 int data_blob(query_t, const char *, size_t);
-void pdns_probe(void);
 void pick_system(const char *, const char *);
 void read_config(const char *cf);
 

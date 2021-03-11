@@ -59,7 +59,6 @@ typedef struct rate_tuple *rate_tuple_t;
 
 /* forwards. */
 
-static bool dnsdb2_probe(void);
 static const char *dnsdb_setval(const char *, const char *);
 static const char *dnsdb_ready(void);
 static void dnsdb_destroy(void);
@@ -85,17 +84,15 @@ static char *dnsdb_base_url = NULL;
 
 static const char dnsdb2_url_prefix[] = "/dnsdb/v2";
 
-static const struct pdns_system dnsdb = {
-	"dnsdb", "https://api.dnsdb.info", encap_cof,
-	NULL, NULL, dnsdb_url, dnsdb_info,
-	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
+static const struct pdns_system dnsdb1 = {
+	"dnsdb1", "https://api.dnsdb.info", encap_cof,
+	dnsdb_url, dnsdb_info, dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
 	dnsdb_setval, dnsdb_ready, dnsdb_destroy
 };
 
 static const struct pdns_system dnsdb2 = {
 	"dnsdb2", "https://api.dnsdb.info/dnsdb/v2", encap_saf,
-	pdns_dnsdb, dnsdb2_probe, dnsdb_url, dnsdb_info,
-	dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
+	dnsdb_url, dnsdb_info, dnsdb_auth, dnsdb_status, dnsdb_verb_ok,
 	dnsdb_setval, dnsdb_ready, dnsdb_destroy
 };
 
@@ -103,8 +100,8 @@ static const struct pdns_system dnsdb2 = {
  */
 
 pdns_system_ct
-pdns_dnsdb(void) {
-	return &dnsdb;
+pdns_dnsdb1(void) {
+	return &dnsdb1;
 }
 
 pdns_system_ct
@@ -114,52 +111,6 @@ pdns_dnsdb2(void) {
 
 /*---------------------------------------------------------------- private
  */
-
-static void
-dnsdb2_pingback(writer_t writer) {
-	DEBUG(1, true, "dnsdb2_pingback: %*.*s",
-	      writer->ps_len, writer->ps_len, writer->ps_buf);
-}
-
-/* dnsdb2_probe() -- check that this server understands APIv2
- */
-static bool
-dnsdb2_probe(void) {
-	query_t query = NULL;
-	writer_t writer;
-	fetch_t fetch;
-	bool ret;
-
-	DEBUG(1, true, "dnsdb2_probe()\n");
-
-	/* start a meta_query writer. */
-	writer = writer_init(qparam_empty.output_limit, dnsdb2_pingback, true);
-
-	/* create a rump query. */
-	CREATE(query, sizeof(struct query));
-	query->writer = writer;
-	query->command = strdup("ping");
-	writer->queries = query;
-
-	/* start a ping. */
-	fetch = create_fetch(query,
-			     dnsdb_url(query->command, NULL, &qparam_empty,
-				       &(struct pdns_fence){}, true));
-
-	/* run all jobs to completion. */
-	io_engine(0);
-
-	/* probe success? */
-	ret = (fetch->rcode == HTTP_OK);
-	if (ret) {
-		DEBUG(1, true, "Test shows this is a DNSDB APIv2 endpoint\n");
-	}
-
-	/* stop the writer. */
-	writer_fini(writer);
-
-	return (ret);
-}
 
 /* dnsdb_setval() -- install configuration element
  */

@@ -31,7 +31,13 @@
 #define CRIPPLED_LIBC 1
 #endif /* __CYGWIN__ */
 
+#if WANT_PDNS_DNSDB
 #define DEFAULT_SYS "dnsdb2"
+#elif WANT_PDNS_CIRL
+#define DEFAULT_SYS "circl"
+#else
+#error "No passive DNS system defined"
+#endif
 #define DEFAULT_VERB 0
 #define	MAX_JOBS 8
 #define DNSDBQ_SYSTEM "DNSDBQ_SYSTEM"

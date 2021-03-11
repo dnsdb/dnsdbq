@@ -43,19 +43,20 @@
 .Op Fl V Ar verb
 .Sh DESCRIPTION
 .Nm dnsdbq
-constructs and issues queries to Passive DNS systems which return
-data in the IETF Passive DNS Common Output Format. Farsight Security's
-DNSDB is one such system.
+constructs and issues queries to Passive DNS systems which return data
+in the IETF Passive DNS Common Output Format.  It is commonly used as
+a production command line interface to such systems.
+.Pp
 .Nm dnsdbq
-displays responses in various formats.  It is commonly used as a
-production command line interface to such systems.
-.Pp
-Its default query type is a "lookup" query.  As an option, it can
-issue a "summarize" query type.
-.Pp
-Farsight Security's DNSDB system implements both APIv1 and APIv2 interfaces.
-APIv1 is accessed by specifying system "dnsdb."  APIv2 is accessed by
-specifying system "dnsdb2".
+displays responses in various formats.  Its default query type is a
+"lookup" query.  As an option, it can issue a "summarize" query type.
+Different Passive DNS systems or versions of those systems may
+implement different query features.
+.Sh FARSIGHT SECURITY'S "DNSDB"
+Farsight Security's "DNSDB" is one such Passive DNS system.  DNSDB
+implements both APIv1 and APIv2 interfaces.  APIv1 is accessed by
+specifying system "dnsdb1".  APIv2 is accessed by specifying system
+"dnsdb2".
 .Pp
 You'll need to get an API key from Farsight to use
 .Ic dnsdbq
@@ -386,7 +387,11 @@ including ANY.  A special-case supported in DNSDB is ANY-DNSSEC, which
 matches on DS, RRSIG, NSEC, DNSKEY, NSEC3, NSEC3PARAM, and DLV
 resource record types.
 .It Fl u Ar server_sys
-specifies the syntax of the RESTful URL, default is "dnsdb".
+specifies the Passive DNS system and thus its syntax for RESTful URLs.
+Can be "dnsdb", "dnsdb1", "dnsdb2", or "circl".  "dnsdb" is an alias
+for "dnsdb2".  If unset,
+.Nm dnsdbq
+will use a default.
 .It Fl V Ar verb
 The verb to perform, i.e. the type of query, either "lookup" or
 "summarize".  The default is the "lookup" verb.  As an option, you can
@@ -569,19 +574,19 @@ configuration file which can specify the API key and server URL. The first
 of these which is readable will be used, alone, in its entirety. The variables
 which can be set are as follows:
 .Bl -tag -width ".Ev DNSDB_API_KEY , APIKEY"
-.It Ev DNSDB_API_KEY , APIKEY
-contains the user's apikey (no default).
-.It Ev DNSDB_SERVER
-contains the URL of the DNSDB API server (default is https://api.dnsdb.info),
-and optionally the URI prefix for the database (default is "/lookup").
-.It Ev CIRCL_AUTH , CIRCL_SERVER
-enable access to a passive DNS system compatible with the CIRCL.LU system.
 .It Ev DNSDBQ_SYSTEM
 contains the default value for the
 .Fl u
-option described above. Can be "dnsdb", "dnsdb2", or "circl". If unset,
-.Nm dnsdbq
-will probe for any configured system.
+option described above.
+.It Ev DNSDB_API_KEY , APIKEY
+contains the user's DNSDB apikey (no default).
+.It Ev DNSDB_SERVER
+contains the URL of the DNSDB API server (default is
+https://api.dnsdb.info), and optionally the URI prefix for the
+database.  The default URI prefix for system "dnsdb2" is
+"/dnsdb/v2/lookup"; the default for "dnsdb1" is "/lookup".
+.It Ev CIRCL_AUTH , CIRCL_SERVER
+enable access to a passive DNS system compatible with the CIRCL.LU system.
 .El
 .Sh ENVIRONMENT
 The following environment variables override the configuration file:

@@ -912,20 +912,6 @@ data_blob(query_t query, const char *buf, size_t len) {
 	return (ret);
 }
 
-/* pdns_probe -- maybe probe and switch to a reachable and functional psys.
- */
-void
-pdns_probe(void) {
-	while (psys->next != NULL && !psys->probe()) {
-		pick_system(psys->next()->name, "downgrade from probe");
-		if (!quiet)
-			fprintf(stderr,
-				"probe failed, downgrading to '%s', "
-				"consider changing -u or configuration.\n",
-				psys->name);
-	}
-}
-
 /* pick_system -- find a named system descriptor, return t/f as to "found?"
  *
  * returns if psys != NULL, or exits fatally otherwise.
@@ -937,9 +923,10 @@ pick_system(const char *name, const char *context) {
 
 	DEBUG(1, true, "pick_system(%s)\n", name);
 #if WANT_PDNS_DNSDB
-	if (strcmp(name, "dnsdb") == 0)
-		tsys = pdns_dnsdb();
-	if (strcmp(name, "dnsdb2") == 0)
+	if (strcmp(name, "dnsdb1") == 0)
+		tsys = pdns_dnsdb1();
+	/* "dnsdb" is an alias for "dnsdb2". */
+	if (strcmp(name, "dnsdb2") == 0 || strcmp(name, "dnsdb") == 0)
 		tsys = pdns_dnsdb2();
 #endif
 #if WANT_PDNS_CIRCL
@@ -993,8 +980,8 @@ read_config(const char *cf) {
 		     "echo dnsdbq system ${" DNSDBQ_SYSTEM
 			":-" DEFAULT_SYS "};"
 #if WANT_PDNS_DNSDB
-		     "echo dnsdb apikey ${DNSDB_API_KEY:-$APIKEY};"
-		     "echo dnsdb server $DNSDB_SERVER;"
+		     "echo dnsdb1 apikey ${DNSDB_API_KEY:-$APIKEY};"
+		     "echo dnsdb1 server $DNSDB_SERVER;"
 		     "echo dnsdb2 apikey ${DNSDB_API_KEY:-$APIKEY};"
 		     "echo dnsdb2 server $DNSDB_SERVER;"
 #endif
