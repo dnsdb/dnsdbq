@@ -32,7 +32,7 @@
 .Op Fl l Ar query_limit
 .Op Fl M Ar max_count
 .Op Fl N Ar raw_name
-.Op Fl n Ar name`
+.Op Fl n Ar name
 .Op Fl O Ar offset
 .Op Fl p Ar output_type
 .Op Fl R Ar raw_rrset
