@@ -123,6 +123,12 @@ Getting Started:
     If you don't have an API key, you may qualify for a free one:
     https://www.farsightsecurity.com/dnsdb-community-edition/
 
+    Here's an example query and output after dnsdbq is compiled: 
+
+    $ ./dnsdbq -r farsightsecurity.com/A -l 1 
+    ;; record times: 2013-09-25 15:37:03 .. 2015-04-01 06:17:25 (~1y ~187d)
+    ;; count: 6350; bailiwick: farsightsecurity.com.
+    farsightsecurity.com.  A  66.160.140.81
 
 Background on ASINFO/CIDR lookups and annotations:
 
