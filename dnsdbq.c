@@ -132,9 +132,9 @@ main(int argc, char *argv[]) {
 	if (value != NULL && strcasecmp(value, "iso") == 0)
 		iso8601 = true;
 
-        value = getenv(env_config_file);
-        if (value != NULL)
-                config_file = strdup(value);
+	value = getenv(env_config_file);
+	if (value != NULL)
+		config_file = strdup(value);
 
 	pverb = &verbs[DEFAULT_VERB];
 
@@ -658,15 +658,17 @@ static void
 help(void) {
 	verb_ct v;
 
-	printf("usage: %s [-acdfgGhIjmqSsUv468] [-p dns|json|csv]\n",
+	printf("usage: %s [-acdfGghIjmqSsUv468] [-p dns|json|csv]\n",
 	       program_name);
-	puts("\t[-k (first|last|duration|count|name|data)[,...]]\n"
-	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT] [-A after] [-B before]\n"
-	     "\t[-u system] [-O offset] [-V verb] [-M max_count]\n"
-	     "\t[-D asinfo_domain] [-T (datefix,reverse,chomp)[,...] {\n"
+	puts("\t[-u SYSTEM] [-V VERB]\n"
+	     "\t[-k (first|last|duration|count|name|data)[,...]]\n"
+	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT]\n"
+	     "\t[-O OFFSET] [-M MAX_COUNT]\n"
+	     "\t[-A AFTER] [-B BEFORE]\n"
+	     "\t[-D ASINFO_DOMAIN] [-T (datefix,reverse,chomp)[,...] {\n"
 	     "\t\t-f |\n"
-	     "\t\t-J inputfile |\n"
-	     "\t\t[-t rrtype] [-b bailiwick] {\n"
+	     "\t\t-J INPUTFILE |\n"
+	     "\t\t[-t RRTYPE] [-b BAILIWICK] {\n"
 	     "\t\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
 	     "\t\t\t-n NAME[/TYPE] |\n"
 	     "\t\t\t-i IP[/PFXLEN] |\n"
