@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020 by Farsight Security, Inc.
+ * Copyright (c) 2014-2021 by Farsight Security, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -166,7 +166,7 @@ struct counted *countoff(const char *, size_t);
 char *reverse(const char *);
 int data_blob(query_t, const char *, size_t);
 void pick_system(const char *, const char *);
-void read_config(const char *cf);
+void read_config(void);
 
 /* Some HTTP status codes we handle specifically */
 #define HTTP_OK		   200

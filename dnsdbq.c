@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020 by Farsight Security, Inc.
+ * Copyright (c) 2014-2021 by Farsight Security, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,6 +131,11 @@ main(int argc, char *argv[]) {
 	value = getenv(env_time_fmt);
 	if (value != NULL && strcasecmp(value, "iso") == 0)
 		iso8601 = true;
+
+        value = getenv(env_config_file);
+        if (value != NULL)
+                config_file = strdup(value);
+
 	pverb = &verbs[DEFAULT_VERB];
 
 	/* process the command line options. */
@@ -487,7 +492,8 @@ main(int argc, char *argv[]) {
 	/* get to final readiness; in particular, get psys set. */
 	if (sorting != no_sort)
 		sort_ready();
-	config_file = select_config();
+	if (config_file == NULL)
+		config_file = select_config();
 	if (picked_system != NULL) {
 		psys_specified = true;
 		pick_system(picked_system, "-u option");
