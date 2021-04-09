@@ -326,7 +326,7 @@ it cannot express multiple resource records that are in a single RRset.
 Instead, each resource record is expressed in a separate line of output.
 See the
 .Ic DNSDBQ_TIME_FORMAT
-environment variable below for controlling how
+environment variable for controlling how
 timestamps are formatted for this option.
 .El
 .It Fl q
@@ -574,7 +574,7 @@ configuration file which can specify the API key, etc. variables. The
 first of these which is readable will be used, alone, in its
 entirety. See the
 .Ic DNSDBQ_CONFIG_FILE
-environment variable below which can specify a different configuration
+environment variable which can specify a different configuration
 file to use.
 .Pp
 The variables which can be set in the configuration file are as
