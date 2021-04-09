@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020 by Farsight Security, Inc.
+ * Copyright (c) 2014-2021 by Farsight Security, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -934,10 +934,11 @@ pick_system(const char *name, const char *context) {
 		tsys = pdns_circl();
 #endif
 	if (tsys == NULL) {
-		int ignored __attribute__((unused));
-		ignored = asprintf(&msg, "unrecognized system name (%s)",
-				   name);
+		if (asprintf(&msg,
+			     "unrecognized system name (%s)", name) < 0)
+			my_panic(true, "asprintf");
 	} else if (tsys == psys) {
+		/* likely recursion via read_config due to DNSDBQ_SYSTEM. */
 		return;
 	} else {
 		if (psys != NULL) {
@@ -947,7 +948,7 @@ pick_system(const char *name, const char *context) {
 		psys = tsys;
 		tsys = NULL;
 		if (config_file != NULL)
-			read_config(config_file);
+			read_config();
 		const char *tmsg = psys->ready();
 		if (tmsg != NULL) {
 			msg = strdup(tmsg);
@@ -965,7 +966,7 @@ pick_system(const char *name, const char *context) {
 /* read_config -- parse a given config file.
  */
 void
-read_config(const char *cf) {
+read_config(void) {
 	char *cmd, *line;
 	size_t n;
 	int x, l;
@@ -976,7 +977,7 @@ read_config(const char *cf) {
 	 * the key and value (i.e. second the third parameters).
 	 */
 	x = asprintf(&cmd,
-		     "set -e; . %s;"
+		     "set -e; . '%s';"
 		     "echo dnsdbq system ${" DNSDBQ_SYSTEM
 			":-" DEFAULT_SYS "};"
 #if WANT_PDNS_DNSDB
@@ -989,7 +990,7 @@ read_config(const char *cf) {
 		     "echo circl apikey $CIRCL_AUTH;"
 		     "echo circl server $CIRCL_SERVER;"
 #endif
-		     "exit", cf);
+		     "exit", config_file);
 	if (x < 0)
 		my_panic(true, "asprintf");
 	// this variable can be set in the config file but not the environ.
@@ -1035,7 +1036,7 @@ read_config(const char *cf) {
 		if (strcmp(tok1, "dnsdbq") == 0) {
 			/* env/config psys does not override -u. */
 			if (strcmp(tok2, "system") == 0 && !psys_specified) {
-				pick_system(tok3, cf);
+				pick_system(tok3, config_file);
 				if (psys == NULL) {
 					fprintf(stderr, "%s: unknown %s %s\n",
 						program_name,
@@ -1069,6 +1070,8 @@ read_config(const char *cf) {
 		}
 	}
 	DESTROY(line);
-	pclose(f);
+	x = pclose(f);
+	if (!WIFEXITED(x) || WEXITSTATUS(x) != 0)
+		my_exit(1);
 	assert(psys != NULL);
 }

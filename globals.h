@@ -33,12 +33,13 @@ extern const struct verb verbs[];
 #endif
 
 EXTERN	const char id_swclient[]	INIT("dnsdbq");
-EXTERN	const char id_version[]		INIT("2.5.3");
+EXTERN	const char id_version[]		INIT("2.5.4");
 EXTERN	const char *program_name	INIT(NULL);
 EXTERN	const char path_sort[]		INIT("/usr/bin/sort");
 EXTERN	const char json_header[]	INIT("Accept: application/json");
 EXTERN	const char jsonl_header[]	INIT("Accept: application/x-ndjson");
 EXTERN	const char env_time_fmt[]	INIT("DNSDBQ_TIME_FORMAT");
+EXTERN	const char env_config_file[]	INIT("DNSDBQ_CONFIG_FILE");
 EXTERN	const char status_noerror[]	INIT("NOERROR");
 EXTERN	const char status_error[]	INIT("ERROR");
 EXTERN	const char *asinfo_domain	INIT("asn.routeviews.org");
