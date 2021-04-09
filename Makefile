@@ -34,8 +34,8 @@ CDEBUG = -g -O3
 CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)
 INCL= $(CURLINCL) $(JANSINCL)
 # freebsd requires that -lresolv _not_ be used here
-LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
-#LIBS= $(CURLLIBS) $(JANSLIBS)
+#LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
+LIBS= $(CURLLIBS) $(JANSLIBS)
 
 TOOL = dnsdbq
 TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o \

@@ -17,6 +17,8 @@
 /* asprintf() does not appear on linux without this */
 #define _GNU_SOURCE
 
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
