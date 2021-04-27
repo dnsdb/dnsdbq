@@ -33,7 +33,7 @@
 
 static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
-static json_t *annotate_json(pdns_tuple_ct);
+static json_t *annotate_json(pdns_tuple_ct, bool);
 static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
 #ifndef CRIPPLED_LIBC
 static json_t *annotate_asinfo(const char *, const char *);
@@ -234,7 +234,25 @@ present_json_lookup(pdns_tuple_ct tup,
 		    size_t jsonlen __attribute__ ((unused)),
 		    writer_t writer __attribute__ ((unused)))
 {
-	json_t *copy = annotate_json(tup);
+	present_json(tup, true);
+}
+
+/* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
+ */
+void
+present_json_summarize(pdns_tuple_ct tup,
+		       const char *jsonbuf __attribute__ ((unused)),
+		       size_t jsonlen __attribute__ ((unused)),
+		       writer_t writer __attribute__ ((unused)))
+{
+	present_json(tup, false);
+}
+
+/* present_json -- shared renderer for DNSDB JSON tuples (lookup and summarize)
+ */
+void
+present_json(pdns_tuple_ct tup, bool rd) {
+	json_t *copy = annotate_json(tup, rd);
 
 	if (copy != NULL) {
 		json_dumpf(copy, stdout, JSON_INDENT(0) | JSON_COMPACT);
@@ -249,7 +267,7 @@ present_json_lookup(pdns_tuple_ct tup,
 /* annotate_json -- create a temporary copy of a tuple; apply transforms.
  */
 static json_t *
-annotate_json(pdns_tuple_ct tup) {
+annotate_json(pdns_tuple_ct tup, bool rd) {
 	json_t *annoRD = NULL, *annoTF = NULL, *annoTL = NULL,
 		*annoZF = NULL, *annoZL = NULL;
 
@@ -274,31 +292,32 @@ annotate_json(pdns_tuple_ct tup) {
 	}
 
 	/* annotate rdata? */
-	if (json_is_array(tup->obj.rdata)) {
-		size_t index;
-		json_t *rr;
+	if (rd) {
+		if (json_is_array(tup->obj.rdata)) {
+			size_t index;
+			json_t *rr;
 
-		json_array_foreach(tup->obj.rdata, index, rr) {
-			const char *rdata = json_string_value(rr);
-			json_t *asinfo = NULL;
-
+			json_array_foreach(tup->obj.rdata, index, rr) {
+				const char *rdata = json_string_value(rr);
+				json_t *asinfo = NULL;
 #ifndef CRIPPLED_LIBC
-			asinfo = annotate_asinfo(tup->rrtype, rdata);
+				asinfo = annotate_asinfo(tup->rrtype, rdata);
+#endif
+				if (asinfo != NULL)
+					annoRD = annotate_one(annoRD, rdata,
+							      "asinfo", asinfo);
+			}
+		} else {
+			json_t *asinfo = NULL;
+#ifndef CRIPPLED_LIBC
+			asinfo = annotate_asinfo(tup->rrtype, tup->rdata);
 #endif
 			if (asinfo != NULL)
-				annoRD = annotate_one(annoRD, rdata,
+				annoRD = annotate_one(annoRD, tup->rdata,
 						      "asinfo", asinfo);
 		}
-	} else {
-		json_t *asinfo = NULL;
+	} //rd?
 
-#ifndef CRIPPLED_LIBC
-		asinfo = annotate_asinfo(tup->rrtype, tup->rdata);
-#endif
-		if (asinfo != NULL)
-			annoRD = annotate_one(annoRD, tup->rdata,
-					      "asinfo", asinfo);
-	}
 	/* anything annotated? */
 	if ((annoZF != NULL && annoZL != NULL) ||
 	    (annoTF != NULL && annoTL != NULL) ||
@@ -377,18 +396,6 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
 	return asinfo;
 }
 #endif
-
-/* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
- */
-void
-present_json_summarize(pdns_tuple_ct tup,
-		       const char *jsonbuf __attribute__ ((unused)),
-		       size_t jsonlen __attribute__ ((unused)),
-		       writer_t writer __attribute__ ((unused)))
-{
-	json_dumpf(tup->obj.cof_obj, stdout, JSON_INDENT(0) | JSON_COMPACT);
-	putchar('\n');
-}
 
 /* present_csv_lookup -- render one DNSDB tuple as comma-separated values (CSV)
  */
