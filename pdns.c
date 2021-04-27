@@ -237,7 +237,7 @@ present_json_lookup(pdns_tuple_ct tup,
 	present_json(tup, true);
 }
 
-/* present_json_lookup -- render one DNSDB tuple as newline-separated JSON.
+/* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
  */
 void
 present_json_summarize(pdns_tuple_ct tup,
