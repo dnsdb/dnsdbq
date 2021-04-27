@@ -665,7 +665,7 @@ help(void) {
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT]\n"
 	     "\t[-O OFFSET] [-M MAX_COUNT]\n"
 	     "\t[-A AFTER] [-B BEFORE]\n"
-	     "\t[-D ASINFO_DOMAIN] [-T (datefix,reverse,chomp)[,...] {\n"
+	     "\t[-D ASINFO_DOMAIN] [-T (datefix|reverse|chomp)[,...] {\n"
 	     "\t\t-f |\n"
 	     "\t\t-J INPUTFILE |\n"
 	     "\t\t[-t RRTYPE] [-b BAILIWICK] {\n"

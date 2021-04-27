@@ -156,6 +156,7 @@ struct counted {
 bool pprint_json(const char *, size_t, FILE *);
 void present_json_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_json_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_json(pdns_tuple_ct, bool);
 void present_text_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_csv_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_text_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
