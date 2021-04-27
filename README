@@ -37,6 +37,13 @@ Introduction:
     of "time fencing" and a desire for new features such as CSV output
     and JSON reprocessing.
 
+    NOTE: Prior to version 2.5.3, the default pDNS system supported
+    was Farsight Security APIv1, and it was called "dnsdb".  As of
+    version 2.5.3, the default system is Farsight Security APIv2 and
+    system "dnsdb2" is synonymous with "dnsdb".  For APIv1, specify
+    "dnsdb1" using the command line -u option or the DNSDBQ_SYSTEM
+    variable.
+
 
 Dependencies needed:
     jansson (2.5 or later)
