@@ -34,10 +34,10 @@
 int
 time_cmp(u_long a, u_long b) {
 	if (a < b)
-		return (-1);
+		return -1;
 	if (a > b)
-		return (1);
-	return (0);
+		return 1;
+	return 0;
 }
 
 /* time_str -- format one (possibly zero) timestamp (returns static string)
@@ -71,7 +71,7 @@ time_get(const char *src, u_long *dst) {
 	    ((ep = strptime(src, "%F", &tt)) != NULL && *ep == '\0'))
 	{
 		*dst = (u_long)(timegm(&tt));
-		return (1);
+		return 1;
 	}
 	ll = strtoll(src, &ep, 10);
 	if (*src != '\0' && *ep == '\0') {
@@ -80,12 +80,12 @@ time_get(const char *src, u_long *dst) {
 				(u_long)imaxabs(ll);
 		else
 			*dst = (u_long)ll;
-		return (1);
+		return 1;
 	}
 	if (ns_parse_ttl(src, &t) == 0) {
 		*dst = (u_long)startup_time.tv_sec - t;
-		return (1);
+		return 1;
 	}
-	return (0);
+	return 0;
 }
 

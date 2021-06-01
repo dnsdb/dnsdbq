@@ -62,7 +62,7 @@ add_sort_key(const char *key_name) {
 	int x;
 
 	if (nkeys == MAX_KEYS)
-		return ("too many sort keys given.");
+		return "too many sort keys given.";
 	if (strcasecmp(key_name, "first") == 0)
 		key = "-k1n";
 	else if (strcasecmp(key_name, "last") == 0)
@@ -82,7 +82,7 @@ add_sort_key(const char *key_name) {
 	if (x < 0)
 		my_panic(true, "asprintf");
 	keys[nkeys++] = (struct sortkey){strdup(key_name), computed};
-	return (NULL);
+	return NULL;
 }
 
 /* find_sort_key -- return pointer to a sort key, or NULL if it's not specified
@@ -93,9 +93,9 @@ find_sort_key(const char *key_name) {
 
 	for (n = 0; n < nkeys; n++) {
 		if (strcmp(keys[n].specified, key_name) == 0)
-			return (&keys[n]);
+			return &keys[n];
 	}
-	return (NULL);
+	return NULL;
 }
 
 /* sort_destroy -- drop sort metadata from heap.
@@ -151,7 +151,7 @@ sortable_rrname(pdns_tuple_ct tup) {
 	sortable_dnsname(&buf, json_string_value(tup->obj.rrname));
 	buf.base = realloc(buf.base, buf.size+1);
 	buf.base[buf.size++] = '\0';
-	return (buf.base);
+	return buf.base;
 }
 
 /* sortable_rdata -- return a POSIX-sort-collatable rendition of RR data set.
@@ -179,7 +179,7 @@ sortable_rdata(pdns_tuple_ct tup) {
 	}
 	buf.base = realloc(buf.base, buf.size+1);
 	buf.base[buf.size++] = '\0';
-	return (buf.base);
+	return buf.base;
 }
 
 /* sortable_rdatum -- called only by sortable_rdata(), realloc and normalize.

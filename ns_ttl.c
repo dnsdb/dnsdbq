@@ -32,8 +32,8 @@ static int fmt1(u_long t, char s, char **buf, size_t *buflen);
 
 /* Macros. */
 
-#define T(x) {if ((x) < 0) return (-1); else (void)NULL;}
-#define A(c) {if (dstlen < 2) return (-1); else *dst++ = c, *dst = '\0';}
+#define T(x) {if ((x) < 0) return -1; else (void)NULL;}
+#define A(c) {if (dstlen < 2) return -1; else *dst++ = c, *dst = '\0';}
 
 /* Public. */
 
@@ -126,11 +126,11 @@ ns_parse_ttl(const char *src, u_long *dst) {
 	} else if (!dirty)
 		goto einval;
 	*dst = ttl;
-	return (0);
+	return 0;
 
  einval:
 	errno = EINVAL;
-	return (-1);
+	return -1;
 }
 
 /* Private. */
@@ -142,9 +142,9 @@ fmt1(u_long t, char s, char **buf, size_t *buflen) {
 
 	len = (size_t) sprintf(tmp, "%lu%c", t, s);
 	if (len + 1 > *buflen)
-		return (-1);
+		return -1;
 	strcpy(*buf, tmp);
 	*buf += len;
 	*buflen -= len;
-	return (0);
+	return 0;
 }

@@ -134,7 +134,7 @@ circl_url(const char *path, char *sep,
 	if (sep != NULL)
 		*sep = '?';
 
-	return (ret);
+	return ret;
 }
 
 static void
@@ -156,8 +156,8 @@ static const char *
 circl_verb_ok(const char *verb_name, qparam_ct qpp __attribute__((unused))) {
 	/* Only "lookup" is valid */
 	if (strcasecmp(verb_name, "lookup") != 0)
-		return ("the CIRCL system only understands 'lookup'");
-	return (NULL);
+		return "the CIRCL system only understands 'lookup'";
+	return NULL;
 }
 
 #endif /*WANT_PDNS_CIRCL*/

@@ -713,12 +713,12 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	}
 
 	assert(msg == NULL);
-	return (NULL);
+	return NULL;
 
  ouch:
 	assert(msg != NULL);
 	tuple_unmake(tup);
-	return (msg);
+	return msg;
 }
 
 /* tuple_unmake -- deallocate the heap storage associated with one tuple.
@@ -775,7 +775,7 @@ countoff(const char *src, size_t nlabel) {
 	} else {
 		abort();
 	}
-	return (c);
+	return c;
 }
 
 /* reverse -- put a domain name into TLD-first order.
@@ -799,7 +799,7 @@ reverse(const char *src) {
 	}
 	*p = '\0';
 	DESTROY(c);
-	return (ret);
+	return ret;
 }
 
 /* data_blob -- process one deblocked json blob as a counted string.
@@ -918,7 +918,7 @@ data_blob(query_t query, const char *buf, size_t len) {
  next:
 	tuple_unmake(&tup);
  more:
-	return (ret);
+	return ret;
 }
 
 /* pick_system -- find a named system descriptor, return t/f as to "found?"
