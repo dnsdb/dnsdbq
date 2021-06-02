@@ -54,7 +54,6 @@ typedef const struct pdns_tuple *pdns_tuple_ct;
 struct pdns_fence {
 	u_long	first_after, first_before, last_after, last_before;
 };
-typedef struct pdns_fence *pdns_fence_t;
 typedef const struct pdns_fence *pdns_fence_ct;
 
 struct pdns_system {
