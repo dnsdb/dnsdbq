@@ -313,7 +313,7 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp,
 	DESTROY(first_before_str);
 	DESTROY(last_after_str);
 	DESTROY(last_before_str);
-	return (ret);
+	return ret;
 }
 
 static void
@@ -409,7 +409,7 @@ dnsdb_verb_ok(const char *verb_name, qparam_ct qpp __attribute__((unused))) {
 		if (qpp->explicit_output_limit != -1)
 			return "only 'lookup' understands output limits";
 	}
-	return (NULL);
+	return NULL;
 }
 
 /*---------------------------------------------------------------- private
@@ -507,12 +507,12 @@ rateval_make(rateval_t tp, const json_t *obj, const char *key) {
 				}
 			}
 			if (!ok)
-				return ("value must be an integer "
-					"or \"n/a\" or \"unlimited\"");
+				return "value must be an integer "
+					"or \"n/a\" or \"unlimited\"";
 		}
 	}
 	*tp = rvalue;
-	return (NULL);
+	return NULL;
 }
 
 /* rate_tuple_make -- create one rate tuple object out of a JSON object.
@@ -577,12 +577,12 @@ rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 		goto ouch;
 
 	assert(msg == NULL);
-	return (NULL);
+	return NULL;
 
  ouch:
 	assert(msg != NULL);
 	rate_tuple_unmake(tup);
-	return (msg);
+	return msg;
 }
 
 /* rate_tuple_unmake -- deallocate heap storage associated with a rate tuple.

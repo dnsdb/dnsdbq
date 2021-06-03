@@ -54,7 +54,6 @@ typedef const struct pdns_tuple *pdns_tuple_ct;
 struct pdns_fence {
 	u_long	first_after, first_before, last_after, last_before;
 };
-typedef struct pdns_fence pdns_fence_t;
 typedef const struct pdns_fence *pdns_fence_ct;
 
 struct pdns_system {
@@ -68,11 +67,15 @@ struct pdns_system {
 	encap_e		encap;
 
 	/* start creating a URL corresponding to a command-path string.
-	 * first argument is the input URL path.
-	 * second is an output parameter pointing to the separator character
-	 * (? or &) that the caller should use between any further URL
-	 * parameters.  May be NULL if the caller doesn't care.
-	 * the third argument is search parameters.
+	 * First argument is the input URL path.
+	 * Second argument is an output parameter pointing to the
+	 * separator character (? or &) that the caller should use
+	 * between any further URL parameters.	May be NULL if the
+	 * caller doesn't care.
+	 * Third argument is search parameters.
+	 * Fourth argument is time fencing parameters.
+	 * Fifth argument is true if the query is a meta query, which
+	 * doesn't get regular result processing.
 	 */
 	char *		(*url)(const char *, char *, qparam_ct,
 			       pdns_fence_ct, bool);
@@ -92,11 +95,15 @@ struct pdns_system {
 
 	/* verify that the specified verb is supported by this pdns system.
 	 * Returns NULL if supported; otherwise returns a static error message.
+	 * First argument is the verb.
+	 * Second argument is search parameters.
 	 */
 	const char *	(*verb_ok)(const char *, qparam_ct);
 
-	/* set a configuration key-value pair.  Returns NULL if ok;
-	 * otherwise returns a static error message.
+	/* set a configuration key-value pair.
+	 * Returns NULL if ok; otherwise returns a static error message.
+	 * First argument is the key.
+	 * Second argument is the value.
 	 */
 	const char *	(*setval)(const char *, const char *);
 

@@ -919,8 +919,8 @@ find_verb(const char *option) {
 
 	for (v = verbs; v->name != NULL; v++)
 		if (strcasecmp(option, v->name) == 0)
-			return (v);
-	return (NULL);
+			return v;
+	return NULL;
 }
 
 /* select_config -- try to find a config file in static path.
@@ -938,11 +938,11 @@ select_config(void) {
 		wordfree(&we);
 		if (access(cf, R_OK) == 0) {
 			DEBUG(1, true, "conf found: '%s'\n", cf);
-			return (cf);
+			return cf;
 		}
 		DESTROY(cf);
 	}
-	return (NULL);
+	return NULL;
 }
 
 /* do_batch -- implement "filter" mode, reading commands from a batch file.
@@ -1282,7 +1282,7 @@ makepath(mode_e mode, const char *name, const char *rrtype,
 	default:
 		abort();
 	}
-	return (command);
+	return command;
 }
 
 /* query_launcher -- fork off some curl jobs via launch() for this query.

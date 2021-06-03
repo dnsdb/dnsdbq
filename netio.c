@@ -143,7 +143,7 @@ create_fetch(query_t query, char *url) {
 			program_name, curl_multi_strerror(res));
 		my_exit(1);
 	}
-	return (fetch);
+	return fetch;
 }
 
 /* fetch_reap -- reap one fetch.
@@ -228,7 +228,7 @@ writer_init(long output_limit, ps_user_t ps_user, bool meta_query) {
 
 	writer->next = writers;
 	writers = writer;
-	return (writer);
+	return writer;
 }
 
 void
@@ -333,7 +333,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			DESTROY(message);
 			fetch->buf[0] = '\0';
 			fetch->len = 0;
-			return (bytes);
+			return bytes;
 		}
 	}
 
@@ -385,7 +385,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		fetch->len = post_len;
 	}
 
-	return (bytes);
+	return bytes;
 }
 
 /* query_done -- do something with leftover buffer data when a query ends.
