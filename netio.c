@@ -697,7 +697,7 @@ io_drain(void) {
 
 			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
 			      query->command, fetch->rcode);
-			if (psys->encap == encap_saf)
+			if (psys->encap == encap_saf) {
 				if (query->saf_cond == sc_begin ||
 				    query->saf_cond == sc_ongoing)
 				{
@@ -717,7 +717,7 @@ io_drain(void) {
 				DEBUG(2, true, "... saf_cond %d saf_msg %s\n",
 				      query->saf_cond,
 				      or_else(query->saf_msg, ""));
-
+			}
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
 				fprintf(stderr,
 					"%s: warning: libcurl failed since "
