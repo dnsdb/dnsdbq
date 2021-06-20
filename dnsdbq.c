@@ -140,7 +140,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:"
+			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:0:"
 			    "adfhIjmqSsUv468" QPARAM_GETOPT))
 	       != -1)
 	{
@@ -153,6 +153,19 @@ main(int argc, char *argv[]) {
 			if ((msg = qparam_option(ch, optarg, &qp)) != NULL)
 				usage(msg);
 			break;
+		case '0': {
+			struct counted *c = countoff(optarg);
+			printf("\"%s\" -> "
+			       "{nlabel %d, nchar %zd, nalnum %zd, lens [",
+			       optarg, c->nlabel, c->nchar, c->nalnum);
+			const char *sep = "";
+			for (int i = 0; i < c->nlabel; i++) {
+				printf("%s%zd", sep, c->lens[i]);
+				sep = ", ";
+			}
+			puts("]}");
+			break;
+		}
 		case 'a':
 			asinfo_lookup = true;
 			break;
