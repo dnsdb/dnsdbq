@@ -38,6 +38,7 @@ static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
 #ifndef CRIPPLED_LIBC
 static json_t *annotate_asinfo(const char *, const char *);
 #endif
+static struct counted *countoff_r(const char *, int);
 
 /* present_text_lookup -- render one pdns tuple in "dig" style ascii text.
  */
@@ -729,16 +730,16 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-/* countoff -- count each label in a DNS string.
+/* countoff -- count and map the labels in a DNS name.
  */
-struct counted *
-countoff(const char *src, size_t nlabel) {
+static struct counted *
+countoff_r(const char *src, int nlabel) {
 	const char *sp = src;
 	bool slash = false;
 	struct counted *c;
 	int ch;
 
-	/* count and map the unescaped dots (dns label separators). */
+	/* count and map the alnums in the facing dns label. */
 	size_t nalnum = 0;
 	while ((ch = *sp++) != '\0') {
 		if (isalnum(ch))
@@ -752,10 +753,11 @@ countoff(const char *src, size_t nlabel) {
 			slash = false;
 		}
 	}
-	size_t len = (size_t)(sp - src);
+	size_t len = (size_t) (sp - src);
 	if (ch == '.') {
 		/* end of label, recurse to reach rest of name. */
-		c = countoff(sp, nlabel+1);
+		c = countoff_r(sp, nlabel+1);
+		/* fill in output structure on the way back up. */
 		c->nchar += len;
 		c->nalnum += nalnum;
 		c->lens[nlabel] = len;
@@ -778,13 +780,18 @@ countoff(const char *src, size_t nlabel) {
 	return c;
 }
 
+struct counted *
+countoff(const char *src) {
+	return countoff_r(src, 0);
+}
+
 /* reverse -- put a domain name into TLD-first order.
  *
  * returns NULL if errno is set, else, a heap string.
  */
 char *
 reverse(const char *src) {
-	struct counted *c = countoff(src, 0);
+	struct counted *c = countoff(src);
 	char *ret = malloc(c->nchar + 1/*'.'*/ + 1/*'\0'*/);
 	char *p = ret;
 	size_t nchar = 0;
