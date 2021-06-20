@@ -484,7 +484,7 @@ print_burstrate(const char *key,
  */
 static const char *
 rateval_make(rateval_t tp, const json_t *obj, const char *key) {
-	struct rateval rvalue = {rk_naught, 0UL};
+	struct rateval rvalue = {.rk = rk_naught};
 	const json_t *jvalue = json_object_get(obj, key);
 
 	if (jvalue != NULL) {
