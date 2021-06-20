@@ -146,7 +146,7 @@ exec_sort(int p1[], int p2[]) {
  */
 char *
 sortable_rrname(pdns_tuple_ct tup) {
-	struct sortbuf buf = {NULL, 0};
+	struct sortbuf buf = {};
 
 	sortable_dnsname(&buf, json_string_value(tup->obj.rrname));
 	buf.base = realloc(buf.base, buf.size+1);
@@ -158,7 +158,7 @@ sortable_rrname(pdns_tuple_ct tup) {
  */
 char *
 sortable_rdata(pdns_tuple_ct tup) {
-	struct sortbuf buf = {NULL, 0};
+	struct sortbuf buf = {};
 
 	if (json_is_array(tup->obj.rdata)) {
 		size_t index;
@@ -247,11 +247,16 @@ sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
  */
 void
 sortable_dnsname(sortbuf_t buf, const char *name) {
-	struct counted *c = countoff(name, 0);
+	struct counted *c = countoff(name);
 
 	// ensure our result buffer is large enough.
 	size_t new_size = buf->size + c->nalnum;
-	assert(new_size != 0);
+	if (new_size == 0) {
+		buf->base = realloc(buf->base, 1);
+		buf->base[0] = '.';
+		buf->size = 1;
+		return;
+	}
 	if (new_size != buf->size)
 		buf->base = realloc(buf->base, new_size);
 	char *p = buf->base + buf->size;
