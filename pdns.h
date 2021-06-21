@@ -153,12 +153,13 @@ typedef struct qdesc *qdesc_t;
 typedef const struct qdesc *qdesc_ct;
 
 struct counted {
-	size_t nlabel;
+	int nlabel;
 	size_t nchar;
 	size_t nalnum;
 	size_t lens[];
 };
-#define COUNTED_SIZE(nlabel) (sizeof(struct counted) + nlabel * sizeof(size_t))
+#define COUNTED_SIZE(nlabel) \
+	(sizeof(struct counted) + (unsigned int) nlabel * sizeof(size_t))
 
 bool pprint_json(const char *, size_t, FILE *);
 void present_json_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
@@ -170,7 +171,8 @@ void present_text_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
-struct counted *countoff(const char *, size_t);
+struct counted *countoff(const char *);
+void countoff_debug(const char *, const char *, const struct counted *);
 char *reverse(const char *);
 int data_blob(query_t, const char *, size_t);
 void pick_system(const char *, const char *);
