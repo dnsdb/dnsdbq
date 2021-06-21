@@ -154,18 +154,20 @@ main(int argc, char *argv[]) {
 				usage(msg);
 			break;
 		case '0': {
-			struct counted *c = countoff(optarg);
-			printf("\"%s\" -> "
-			       "{nlabel %d, nchar %zd, nalnum %zd, lens [",
-			       optarg, c->nlabel, c->nchar, c->nalnum);
-			const char *sep = "";
-			for (int i = 0; i < c->nlabel; i++) {
-				printf("%s%zd", sep, c->lens[i]);
-				sep = ", ";
+			const char *equal = strchr(optarg, '=');
+			if (equal == NULL)
+				usage("-0 requires 'function='");
+			size_t length = (size_t) (equal - optarg);
+			const char *thing = optarg + length + 1;
+			if (strncmp(optarg, "countoff", length) == 0) {
+				struct counted *c = countoff(thing);
+				countoff_debug("main", thing, c);
+				DESTROY(c);
+			} else {
+				usage("-0 function unrecognized");
 			}
-			puts("]}");
-			break;
-		}
+			my_exit(0);
+		    }
 		case 'a':
 			asinfo_lookup = true;
 			break;
@@ -673,7 +675,7 @@ help(void) {
 
 	printf("usage: %s [-acdfGghIjmqSsUv468] [-p dns|json|csv]\n",
 	       program_name);
-	puts("\t[-u SYSTEM] [-V VERB]\n"
+	puts("\t[-u SYSTEM] [-V VERB] [-0 FUNCTION=INPUT]\n"
 	     "\t[-k (first|last|duration|count|name|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT]\n"
 	     "\t[-O OFFSET] [-M MAX_COUNT]\n"
@@ -695,6 +697,7 @@ help(void) {
 	     "use -c to get complete (strict) time matching for -A and -B.\n"
 	     "for -D, the default is \"%s\"\n"
 	     "use -d one or more times to ramp up the diagnostic output.\n"
+	     "for -0, the function must be \"countoff\"\n"
 	     "for -f, stdin must contain lines of the following forms:\n"
 	     "\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
 	     "\trrset/raw/HEX-PAIRS[/RRTYPE[/BAILIWICK]]\n"

@@ -172,6 +172,7 @@ void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 struct counted *countoff(const char *);
+void countoff_debug(const char *, const char *, const struct counted *);
 char *reverse(const char *);
 int data_blob(query_t, const char *, size_t);
 void pick_system(const char *, const char *);

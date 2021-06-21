@@ -730,7 +730,7 @@ tuple_unmake(pdns_tuple_t tup) {
 	json_decref(tup->obj.main);
 }
 
-/* countoff -- count and map the labels in a DNS name.
+/* countoff{_r,_debug} -- count and map the labels in a DNS name.
  */
 static struct counted *
 countoff_r(const char *src, int nlabel) {
@@ -783,6 +783,18 @@ countoff_r(const char *src, int nlabel) {
 struct counted *
 countoff(const char *src) {
 	return countoff_r(src, 0);
+}
+
+void
+countoff_debug(const char *place, const char *thing, const struct counted *c) {
+	printf("\"%s\" -> {nlabel %d, nchar %zd, nalnum %zd, lens [",
+	       thing, c->nlabel, c->nchar, c->nalnum);
+	const char *sep = "";
+	for (int i = 0; i < c->nlabel; i++) {
+		printf("%s%zd", sep, c->lens[i]);
+		sep = ", ";
+	}
+	printf("]} (%s)\n", place);
 }
 
 /* reverse -- put a domain name into TLD-first order.
