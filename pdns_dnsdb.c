@@ -33,8 +33,8 @@
 struct rate_json {
 	json_t	*main,
 		*reset, *expires, *limit, *remaining,
-		*burst_size, *burst_window, *results_max,
-		*offset_max;
+		*burst_size, *burst_window, *burst_used,
+		*results_max, *offset_max;
 };
 
 struct rateval {
@@ -52,8 +52,8 @@ typedef const struct rateval *rateval_ct;
 struct rate_tuple {
 	struct rate_json  obj;
 	struct rateval	reset, expires, limit, remaining,
-			burst_size, burst_window, results_max,
-			offset_max;
+			burst_size, burst_window, burst_used,
+			results_max, offset_max;
 };
 typedef struct rate_tuple *rate_tuple_t;
 
@@ -69,7 +69,8 @@ static const char *dnsdb_status(fetch_t);
 static const char *dnsdb_verb_ok(const char *, qparam_ct);
 
 static void print_rateval(const char *, rateval_ct, FILE *);
-static void print_burstrate(const char *, rateval_ct, rateval_ct, FILE *);
+static void print_burstrate(const char *, rateval_ct, rateval_ct, rateval_ct,
+			    FILE *);
 static const char *rateval_make(rateval_t, const json_t *, const char *);
 static const char *rate_tuple_make(rate_tuple_t, const char *, size_t);
 static void rate_tuple_unmake(rate_tuple_t);
@@ -336,7 +337,7 @@ dnsdb_infoback(writer_t writer) {
 			print_rateval("offset_max", &tup.offset_max, stdout);
 			print_burstrate("burst rate",
 					&tup.burst_size, &tup.burst_window,
-					stdout);
+					&tup.burst_used, stdout);
 			rate_tuple_unmake(&tup);
 		}
 		break;
@@ -444,12 +445,14 @@ print_rateval(const char *key, rateval_ct tp, FILE *outf) {
 	fputc('\n', outf);
 }
 
-/* print_burstrate -- output formatter for burst_size, burst_window ratevals.
+/* print_burstrate -- output formatter for burst_* ratevals.
+ * tp_used may not be present.
  */
 static void
 print_burstrate(const char *key,
 		rateval_ct tp_size,
 		rateval_ct tp_window,
+		rateval_ct tp_used,
 		FILE *outf)
 {
 	/* if unspecified, output nothing, not even the key name. */
@@ -474,6 +477,9 @@ print_burstrate(const char *key,
 		fprintf(outf, "%lu per %lu minutes", b_s, b_w / 60);
 	else
 		fprintf(outf, "%lu per %lu seconds", b_s, b_w);
+	if (tp_used->rk != rk_naught)
+		fprintf(outf, ", %lu used in this window",
+			(u_long)tp_used->as_int);
 
 	fputc('\n', outf);
 }
@@ -573,6 +579,10 @@ rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 		goto ouch;
 
 	msg = rateval_make(&tup->burst_window, rate, "burst_window");
+	if (msg != NULL)
+		goto ouch;
+
+	msg = rateval_make(&tup->burst_used, rate, "burst_used");
 	if (msg != NULL)
 		goto ouch;
 
