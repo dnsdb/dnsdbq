@@ -128,12 +128,10 @@ Getting Started:
     APIKEY="YOURAPIKEYHERE"
 
     If you're interested in purchasing a Farsight DNSDB subscription,
-    please contact sales@farsightsecurity.com. Farsight also has a
+    please contact sales@farsightsecurity.com.  Farsight also has a
     grant program for selected researchers, investigative journalists,
     and cybersecurity workers at some public benefit non-profits.
-
-    If you don't have an API key, you may qualify for a free one:
-    https://www.farsightsecurity.com/dnsdb-community-edition/
+    See https://www.farsightsecurity.com/grant-access/
 
     Here's an example query and output after dnsdbq is compiled: 
 
