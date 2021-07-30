@@ -41,7 +41,6 @@
 .Op Fl t Ar rrtype
 .Op Fl u Ar server_sys
 .Op Fl V Ar verb
-.Op Fl 0 Ar function=thing
 .Sh DESCRIPTION
 .Nm dnsdbq
 constructs and issues queries to Passive DNS systems which return data
@@ -406,8 +405,6 @@ result size.  At-a-glance, it provides information on when a given
 domain name, IP address or other DNS asset was first-seen and
 last-seen by the global sensor network, as well as the total
 observation count.
-.It Fl 0 Ar function=thing
-This is a developer tool meant to feed automated testing systems.
 .It Fl U
 turns off TLS certificate verification (unsafe).
 .It Fl v
