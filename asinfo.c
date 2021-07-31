@@ -195,12 +195,11 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	an = ns_msg_count(msg, ns_s_an);
 	if (an == 0)
 		return "ANCOUNT == 0";
-	result = NULL;
 	/* some ASINFO data sources return multiple TXT RR's, each having
 	 * a prefix length measured in bits. we will select the best
 	 * (longest match) prefix offered.
 	 */
-	for (rrn = 0; result == NULL && rrn < an; rrn++) {
+	for (result = NULL, rrn = 0; result == NULL && rrn < an; rrn++) {
 		const u_char *rdata;
 		int rdlen, ntxt;
 		char *txt[3];
