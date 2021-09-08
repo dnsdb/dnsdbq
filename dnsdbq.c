@@ -95,12 +95,14 @@ const struct verb verbs[] = {
 	{ "lookup", "/lookup", lookup_ok,
 	  present_text_lookup,
 	  present_json_lookup,
-	  present_csv_lookup },
+	  present_csv_lookup,
+	  present_rdata_lookup },
 	{ "summarize", "/summarize", summarize_ok,
 	  present_text_summarize,
 	  present_json_summarize,
-	  present_csv_summarize },
-	{ NULL, NULL, NULL, NULL, NULL, NULL }
+	  present_csv_summarize,
+	  NULL },
+	{ NULL, NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 /* Private. */
@@ -332,6 +334,8 @@ main(int argc, char *argv[]) {
 			else if (strcasecmp(optarg, "text") == 0 ||
 				 strcasecmp(optarg, "dns") == 0)
 				presentation = pres_text;
+			else if (strcasecmp(optarg, "rdata") == 0)
+				presentation = pres_rdata;
 			else
 				usage("-p must specify json, text, or csv");
 			break;
@@ -499,6 +503,9 @@ main(int argc, char *argv[]) {
 		break;
 	case pres_csv:
 		presenter = pverb->csv;
+		break;
+	case pres_rdata:
+		presenter = pverb->rdata;
 		break;
 	default:
 		abort();

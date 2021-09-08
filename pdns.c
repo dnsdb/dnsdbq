@@ -495,6 +495,32 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 	putchar('\n');
 }
 
+/* present_rdata_lookup -- render one DNSDB tuple as an rdata-only "line" (RDATA)
+ */
+void
+present_rdata_lookup(pdns_tuple_ct tup,
+		     const char *jsonbuf __attribute__ ((unused)),
+		     size_t jsonlen __attribute__ ((unused)),
+		     writer_t writer __attribute__ ((unused)))
+{
+	if (json_is_array(tup->obj.rdata)) {
+		size_t index;
+		json_t *rr;
+
+		json_array_foreach(tup->obj.rdata, index, rr) {
+			const char *rdata = NULL;
+
+			if (json_is_string(rr))
+				rdata = json_string_value(rr);
+			else
+				rdata = "[bad value]";
+			puts(rdata);
+		}
+	} else {
+		puts(tup->rdata);
+	}
+}
+
 /* present_csv_summ -- render a summarize result as CSV.
  */
 void

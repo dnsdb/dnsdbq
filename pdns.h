@@ -133,7 +133,7 @@ struct verb {
 	const char *	(*ok)(void);
 
 	/* formatter function for each presentation format */
-	present_t	text, json, csv;
+	present_t	text, json, csv, rdata;
 };
 typedef const struct verb *verb_ct;
 
@@ -167,6 +167,7 @@ void present_json_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_json(pdns_tuple_ct, bool);
 void present_text_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_csv_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_rdata_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_text_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
