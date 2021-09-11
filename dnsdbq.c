@@ -71,8 +71,7 @@ static char *select_config(void);
 static void do_batch(FILE *, qparam_ct);
 static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
-static char *makepath(mode_e, const char *, const char *,
-		      const char *, const char *);
+static char *makepath(qdesc_ct);
 static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
 static void launch(query_t, pdns_fence_ct);
 static void ruminate_json(int, qparam_ct);
@@ -96,7 +95,7 @@ const struct verb verbs[] = {
 	  present_text_lookup,
 	  present_json_lookup,
 	  present_csv_lookup,
-	  present_rdata_lookup },
+	  present_minimal_lookup },
 	{ "summarize", "/summarize", summarize_ok,
 	  present_text_summarize,
 	  present_json_summarize,
@@ -334,8 +333,8 @@ main(int argc, char *argv[]) {
 			else if (strcasecmp(optarg, "text") == 0 ||
 				 strcasecmp(optarg, "dns") == 0)
 				presentation = pres_text;
-			else if (strcasecmp(optarg, "rdata") == 0)
-				presentation = pres_rdata;
+			else if (strcasecmp(optarg, "minimal") == 0)
+				presentation = pres_minimal;
 			else
 				usage("-p must specify json, text, or csv");
 			break;
@@ -504,8 +503,8 @@ main(int argc, char *argv[]) {
 	case pres_csv:
 		presenter = pverb->csv;
 		break;
-	case pres_rdata:
-		presenter = pverb->rdata;
+	case pres_minimal:
+		presenter = pverb->minimal;
 		break;
 	default:
 		abort();
@@ -759,6 +758,10 @@ qdesc_debug(const char *where, qdesc_ct qdp) {
 	debug(true, "qdesc(%s)[", where);
 
 	const char *sep = "\040";
+	if (qdp->mode != no_mode) {
+		debug(false, "%smo %d", sep, (int)qdp->mode);
+		sep = ",\040";
+	}
 	if (qdp->thing != NULL) {
 		debug(false, "%sth '%s'", sep, qdp->thing);
 		sep = ",\040";
@@ -1232,71 +1235,69 @@ batch_parse(char *line, qdesc_t qdp) {
 	return NULL;
 }
 
-/* makepath -- make a RESTful URI that describes these search parameters.
+/* makepath -- make a RESTful URI that describes these query parameters.
  *
  * Returns a string that must be free()d.
  */
 static char *
-makepath(mode_e mode, const char *name, const char *rrtype,
-	 const char *bailiwick, const char *pfxlen)
-{
+makepath(qdesc_ct qdp) {
 	char *command;
 	int x;
 
-	switch (mode) {
+	switch (qdp->mode) {
 	case rrset_mode:
-		if (rrtype != NULL && bailiwick != NULL)
+		if (qdp->rrtype != NULL && qdp->bailiwick != NULL)
 			x = asprintf(&command, "rrset/name/%s/%s/%s",
-				     name, rrtype, bailiwick);
-		else if (rrtype != NULL)
+				     qdp->thing, qdp->rrtype, qdp->bailiwick);
+		else if (qdp->rrtype != NULL)
 			x = asprintf(&command, "rrset/name/%s/%s",
-				     name, rrtype);
-		else if (bailiwick != NULL)
+				     qdp->thing, qdp->rrtype);
+		else if (qdp->bailiwick != NULL)
 			x = asprintf(&command, "rrset/name/%s/ANY/%s",
-				     name, bailiwick);
+				     qdp->thing, qdp->bailiwick);
 		else
 			x = asprintf(&command, "rrset/name/%s",
-				     name);
+				     qdp->thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case name_mode:
-		if (rrtype != NULL)
+		if (qdp->rrtype != NULL)
 			x = asprintf(&command, "rdata/name/%s/%s",
-				     name, rrtype);
+				     qdp->thing, qdp->rrtype);
 		else
 			x = asprintf(&command, "rdata/name/%s",
-				     name);
+				     qdp->thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case ip_mode:
-		if (pfxlen != NULL)
+		if (qdp->pfxlen != NULL)
 			x = asprintf(&command, "rdata/ip/%s,%s",
-				     name, pfxlen);
+				     qdp->thing, qdp->pfxlen);
 		else
 			x = asprintf(&command, "rdata/ip/%s",
-				     name);
+				     qdp->thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case raw_rrset_mode:
-		if (rrtype != NULL)
+		if (qdp->rrtype != NULL)
 			x = asprintf(&command, "rrset/raw/%s/%s",
-				     name, rrtype);
+				     qdp->thing, qdp->rrtype);
 		else
 			x = asprintf(&command, "rrset/raw/%s",
-				     name);
+				     qdp->thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case raw_name_mode:
-		if (rrtype != NULL)
+		if (qdp->rrtype != NULL)
 			x = asprintf(&command, "rdata/raw/%s/%s",
-				     name, rrtype);
+				     qdp->thing, qdp->rrtype);
 		else
 			x = asprintf(&command, "rdata/raw/%s",
-				     name);
+				     qdp->thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
@@ -1321,8 +1322,8 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	query->params = *qpp;
 	query->next = query->writer->queries;
 	query->writer->queries = query;
-	query->command = makepath(qdp->mode, qdp->thing, qdp->rrtype,
-				  qdp->bailiwick, qdp->pfxlen);
+	query->command = makepath(qdp);
+	query->mode = qdp->mode;
 
 	/* figure out from time fencing which job(s) we'll be starting.
 	 *

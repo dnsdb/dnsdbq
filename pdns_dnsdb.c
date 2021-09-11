@@ -347,7 +347,7 @@ dnsdb_infoback(writer_t writer) {
 		break;
 	case pres_csv:
 		/* FALLTHROUGH */
-	case pres_rdata:
+	case pres_minimal:
 		abort();
 	}
 }
