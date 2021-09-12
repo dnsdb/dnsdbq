@@ -40,10 +40,10 @@ LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
 TOOL = dnsdbq
 TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o \
 	pdns.o pdns_circl.o pdns_dnsdb.o \
-	sort.o time.o asinfo.o
+	sort.o time.o asinfo.o deduper.o
 TOOL_SRC = $(TOOL).c ns_ttl.c netio.c \
 	pdns.c pdns_circl.c pdns_dnsdb.c \
-	sort.c time.c asinfo.c
+	sort.c time.c asinfo.c deduper.c
 
 all: $(TOOL)
 
@@ -72,6 +72,7 @@ depend:
 	mkdep $(CURLINCL) $(JANSINCL) $(CDEFS) $(TOOL_SRC)
 
 # these were made by mkdep on BSD but are now staticly edited
+deduper.o: deduper.c deduper.h
 asinfo.o: asinfo.c \
   asinfo.h globals.h defs.h sort.h pdns.h netio.h
 dnsdbq.o: dnsdbq.c \

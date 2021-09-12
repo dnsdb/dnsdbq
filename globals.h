@@ -18,6 +18,7 @@
 #define GLOBALS_H_INCLUDED 1
 
 #include "defs.h"
+#include "deduper.h"
 #include "sort.h"
 
 #ifdef MAIN_PROGRAM
@@ -64,6 +65,7 @@ EXTERN	present_t presenter		INIT(NULL);
 EXTERN	struct timeval startup_time	INIT({});
 EXTERN	int exit_code			INIT(0);
 EXTERN	long curl_ipresolve		INIT(CURL_IPRESOLVE_WHATEVER);
+EXTERN	deduper_t minimal_deduper	INIT(NULL);
 
 #undef INIT
 #undef EXTERN

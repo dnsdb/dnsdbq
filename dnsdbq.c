@@ -472,6 +472,9 @@ main(int argc, char *argv[]) {
 #endif
 	}
 
+	if (presentation == pres_minimal)
+		minimal_deduper = deduper_new(10000);
+
 	/* recondition various options for HTML use. */
 	CURL *easy = curl_easy_init();
 	escape(easy, &qd.thing);
@@ -633,6 +636,10 @@ main(int argc, char *argv[]) {
  */
 __attribute__((noreturn)) void
 my_exit(int code) {
+	/* deduper state if any can be trashed. */
+	if (presentation == pres_minimal)
+		deduper_destroy(&minimal_deduper);
+
 	/* writers and readers which are still known, must be freed. */
 	unmake_writers();
 

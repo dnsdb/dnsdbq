@@ -33,6 +33,7 @@
 
 static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
+static void present_minimal_thing(const char *thing);
 static json_t *annotate_json(pdns_tuple_ct, bool);
 static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
 #ifndef CRIPPLED_LIBC
@@ -516,7 +517,7 @@ present_minimal_lookup(pdns_tuple_ct tup,
 
 	/* for RHS queries, output the LHS once, and exit. */
 	if (!left) {
-		puts(tup->rrname);
+		present_minimal_thing(tup->rrname);
 		return;
 	}
 
@@ -532,11 +533,17 @@ present_minimal_lookup(pdns_tuple_ct tup,
 				rdata = json_string_value(rr);
 			else
 				rdata = "[bad value]";
-			puts(rdata);
+			present_minimal_thing(rdata);
 		}
 	} else {
-		puts(tup->rdata);
+		present_minimal_thing(tup->rdata);
 	}
+}
+
+static void
+present_minimal_thing(const char *thing) {
+	if (!deduper_tas(minimal_deduper, thing))
+		puts(thing);
 }
 
 /* present_csv_summ -- render a summarize result as CSV.
