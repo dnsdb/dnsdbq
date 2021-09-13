@@ -401,9 +401,9 @@ query_done(query_t query) {
 		const char *msg = or_else(query->saf_msg, "");
 
 		if (query->saf_cond == sc_limited)
-			fprintf(stderr, "Query limited: %s\n", msg);
+			fprintf(stderr, "Database limit: %s\n", msg);
 		else if (query->saf_cond == sc_failed)
-			fprintf(stderr, "Query failed: %s\n", msg);
+			fprintf(stderr, "Database failure: %s\n", msg);
 		else if (query->saf_cond == sc_missing)
 			fprintf(stderr, "Query response missing: %s\n", msg);
 		else if (query->status != NULL)
