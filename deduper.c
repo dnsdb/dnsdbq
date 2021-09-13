@@ -59,14 +59,13 @@ deduper_new(size_t buckets) {
 bool
 deduper_tas(deduper_t me, const char *str) {
 	size_t bucket = hash_djb2(str) % me->buckets;
-	chainlink_t chainlink;
-	for (chainlink = me->chains[bucket];
+	for (chainlink_t chainlink = me->chains[bucket];
 	     chainlink != NULL;
 	     chainlink = chainlink->next)
 		if (strcmp(str, chainlink->str) == 0)
 			return true;
 	size_t len = strlen(str);
-	chainlink = malloc(chainlink_size(len));
+	chainlink_t chainlink = malloc(chainlink_size(len));
 	if (chainlink == NULL)
 		abort();
 	memset(chainlink, 0, chainlink_size(len));
@@ -98,14 +97,15 @@ deduper_destroy(deduper_t *me) {
 	for (size_t bucket = 0; bucket < (*me)->buckets; bucket++) {
 		chainlink_t next = (*me)->chains[bucket];
 		if (next != NULL) {
+		       (*me)->chains[bucket] = NULL;
 			for (chainlink_t chainlink = next;
 			     chainlink != NULL;
 			     chainlink = next) {
 				next = chainlink->next;
 				chainlink->next = NULL;
+				chainlink->str[0] = '\0';
 				free(chainlink);
 			}
-			(*me)->chains[bucket] = NULL;
 		}
 	}
 	memset(*me, 0, deduper_size((*me)->buckets));
