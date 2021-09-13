@@ -334,7 +334,8 @@ See the
 environment variable for controlling how
 timestamps are formatted for this option.
 .It Cm minimal
-outputs only the owner name or rdata, one per line, for use by shell scripts.
+outputs only the owner name or rdata, one per line and deduplicated,
+for use by shell scripts.
 .El
 .It Fl q
 makes the program reticent about warnings.
