@@ -48,7 +48,8 @@
 #define DESTROY(p) { if ((p) != NULL) { free(p); (p) = NULL; } }
 #define DEBUG(ge, ...) { if (debug_level >= (ge)) debug(__VA_ARGS__); }
 
-typedef enum { pres_text, pres_json, pres_csv, pres_minimal } present_e;
+typedef enum { pres_none, pres_text, pres_json, pres_csv, pres_minimal }
+	present_e;
 typedef enum { batch_none, batch_terse, batch_verbose } batch_e;
 
 #define TRANS_REVERSE	0x01

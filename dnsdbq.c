@@ -336,7 +336,10 @@ main(int argc, char *argv[]) {
 			else if (strcasecmp(optarg, "minimal") == 0)
 				presentation = pres_minimal;
 			else
-				usage("-p must specify json, text, or csv");
+				usage("-p must specify "
+				      "json, text, csv, or minimal");
+			DESTROY(presentation_name);
+			presentation_name = strdup(optarg);
 			break;
 		case 't':
 			if (qd.rrtype != NULL)
@@ -380,6 +383,8 @@ main(int argc, char *argv[]) {
 			break;
 		case 'j':
 			presentation = pres_json;
+			DESTROY(presentation_name);
+			presentation_name = strdup("json");
 			break;
 		case 'f':
 			switch (batching) {
@@ -472,8 +477,13 @@ main(int argc, char *argv[]) {
 #endif
 	}
 
+	if (presentation == pres_none) {
+		presentation = pres_text;
+		assert(presentation_name == NULL);
+		presentation_name = strdup("text");
+	}
 	if (presentation == pres_minimal)
-		minimal_deduper = deduper_new(10000);
+		minimal_deduper = deduper_new(minimal_modulus);
 
 	/* recondition various options for HTML use. */
 	CURL *easy = curl_easy_init();
@@ -509,8 +519,18 @@ main(int argc, char *argv[]) {
 	case pres_minimal:
 		presenter = pverb->minimal;
 		break;
+	case pres_none:
+		/* FALLTHROUGH */
 	default:
 		abort();
+	}
+	assert(presentation != pres_none);
+	assert(presentation_name != NULL);
+	if (presenter == NULL) {
+		char *errmsg = NULL;
+		asprintf(&errmsg, "that verb (%s) has no presenter for \"%s\"",
+			 pverb->name, presentation_name);
+		usage(errmsg);
 	}
 
 	/* get to final readiness; in particular, get psys set. */
@@ -636,8 +656,10 @@ main(int argc, char *argv[]) {
  */
 __attribute__((noreturn)) void
 my_exit(int code) {
+	DESTROY(presentation_name);
+
 	/* deduper state if any can be trashed. */
-	if (presentation == pres_minimal)
+	if (minimal_deduper != NULL)
 		deduper_destroy(&minimal_deduper);
 
 	/* writers and readers which are still known, must be freed. */

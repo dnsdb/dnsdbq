@@ -60,12 +60,19 @@ EXTERN	int transforms			INIT(0);
 EXTERN	long max_count			INIT(0L);
 EXTERN	sort_e sorting			INIT(no_sort);
 EXTERN	batch_e batching		INIT(batch_none);
-EXTERN	present_e presentation		INIT(pres_text);
+EXTERN	present_e presentation		INIT(pres_none);
+EXTERN	char *presentation_name		INIT(NULL);
 EXTERN	present_t presenter		INIT(NULL);
 EXTERN	struct timeval startup_time	INIT({});
 EXTERN	int exit_code			INIT(0);
 EXTERN	long curl_ipresolve		INIT(CURL_IPRESOLVE_WHATEVER);
 EXTERN	deduper_t minimal_deduper	INIT(NULL);
+
+/* deduplication table size. trades memory efficiency (an array of this many
+ * pointers will be allocated under '-p minimal' conditions) against run time
+ * efficiency (the string's hash will be modulo this size).
+ */
+EXTERN	const size_t minimal_modulus	INIT(10000);
 
 #undef INIT
 #undef EXTERN

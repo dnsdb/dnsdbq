@@ -28,7 +28,10 @@ struct chainlink {
 	chainlink_t next;
 	char str[];
 };
-static inline size_t chainlink_size(size_t length) {
+
+/* keep this adjacent to the related 'struct' (chainlink). */
+static inline size_t
+chainlink_size(size_t length) {
 	return sizeof(struct chainlink) + length + 1;
 }
 
@@ -36,7 +39,10 @@ struct deduper {
 	size_t buckets;
 	chainlink_t chains[];
 };
-static inline size_t deduper_size(size_t buckets) {
+
+/* keep this adjacent to the related 'struct' (deduper). */
+static inline size_t
+deduper_size(size_t buckets) {
 	return sizeof(struct deduper) + buckets * sizeof(chainlink_t);
 }
 

@@ -403,7 +403,7 @@ query_done(query_t query) {
 		if (query->saf_cond == sc_limited)
 			fprintf(stderr, "Database limit: %s\n", msg);
 		else if (query->saf_cond == sc_failed)
-			fprintf(stderr, "Database failure: %s\n", msg);
+			fprintf(stderr, "Database result: %s\n", msg);
 		else if (query->saf_cond == sc_missing)
 			fprintf(stderr, "Query response missing: %s\n", msg);
 		else if (query->status != NULL)
