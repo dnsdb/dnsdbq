@@ -20,12 +20,12 @@
 #include <jansson.h>
 #include "netio.h"
 
-/* main is the primary jansson library object from a json_loadb().
+/* ".main" is the primary jansson library object from a json_loadb().
  * all the other fields in this structure will point inside main, as
  * borrowed references, so const.  main must be deallocated
  * by json_decref() which then invalidates all the other fields.
  *
- * cof_obj points to the object that contains time_first...num_results.
+ * ".cof_obj" points to the object that contains time_first...num_results.
  * If not using SAF encapulation, then cof_obj points to main.
  * If using SAF encapulation, then saf_cond, saf_msg, and saf_obj are
  * parsed from main and cof_obj is repointed to saf_obj.
@@ -117,7 +117,7 @@ struct pdns_system {
 };
 typedef const struct pdns_system *pdns_system_ct;
 
-typedef void (*present_t)(pdns_tuple_ct, const char *, size_t, writer_t);
+typedef void (*present_t)(pdns_tuple_ct, mode_e, writer_t);
 
 /* a verb is a specific type of request.  See struct pdns_system
  * verb_ok() for that function that verifies if the verb and the options
@@ -133,13 +133,9 @@ struct verb {
 	const char *	(*ok)(void);
 
 	/* formatter function for each presentation format */
-	present_t	text, json, csv;
+	present_t	text, json, csv, minimal;
 };
 typedef const struct verb *verb_ct;
-
-/* a query mode. not all pdns systems support all of these. */
-typedef enum { no_mode = 0, rrset_mode, name_mode, ip_mode,
-	       raw_rrset_mode, raw_name_mode } mode_e;
 
 /* query parameters descriptor. */
 struct qdesc {
@@ -162,13 +158,14 @@ struct counted {
 	(sizeof(struct counted) + (unsigned int) nlabel * sizeof(size_t))
 
 bool pprint_json(const char *, size_t, FILE *);
-void present_json_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
-void present_json_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_json_lookup(pdns_tuple_ct, mode_e, writer_t);
+void present_json_summarize(pdns_tuple_ct, mode_e, writer_t);
 void present_json(pdns_tuple_ct, bool);
-void present_text_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
-void present_csv_lookup(pdns_tuple_ct, const char *, size_t, writer_t);
-void present_text_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
-void present_csv_summarize(pdns_tuple_ct, const char *, size_t, writer_t);
+void present_text_lookup(pdns_tuple_ct, mode_e, writer_t);
+void present_csv_lookup(pdns_tuple_ct, mode_e, writer_t);
+void present_minimal_lookup(pdns_tuple_ct, mode_e, writer_t);
+void present_text_summarize(pdns_tuple_ct, mode_e, writer_t);
+void present_csv_summarize(pdns_tuple_ct, mode_e, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 struct counted *countoff(const char *);

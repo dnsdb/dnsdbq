@@ -48,7 +48,8 @@
 #define DESTROY(p) { if ((p) != NULL) { free(p); (p) = NULL; } }
 #define DEBUG(ge, ...) { if (debug_level >= (ge)) debug(__VA_ARGS__); }
 
-typedef enum { pres_text, pres_json, pres_csv } present_e;
+typedef enum { pres_none, pres_text, pres_json, pres_csv, pres_minimal }
+	present_e;
 typedef enum { batch_none, batch_terse, batch_verbose } batch_e;
 
 #define TRANS_REVERSE	0x01
@@ -76,5 +77,9 @@ debug(bool want_header, const char *fmtstr, ...) {
 	vfprintf(stderr, fmtstr, ap);
 	va_end(ap);
 }
+
+/* a query mode. not all pdns systems support all of these. */
+typedef enum { no_mode = 0, rrset_mode, name_mode, ip_mode,
+	       raw_rrset_mode, raw_name_mode } mode_e;
 
 #endif /*DEFS_H_INCLUDED*/

@@ -49,7 +49,7 @@ struct qparam {
 typedef struct qparam *qparam_t;
 typedef const struct qparam *qparam_ct;
 
-/* one API fetch; several may be needed for some kinds of time fencing. */
+/* one API fetch; several may be needed for complex kinds of query. */
 struct fetch {
 	struct fetch	*next;
 	struct query	*query;
@@ -70,6 +70,7 @@ struct query {
 	struct writer	*writer;
 	struct qparam	params;
 	char		*command;
+	mode_e		mode;
 	/* invariant: (status == NULL) == (writer == NULL) */
 	char		*status;
 	char		*message;

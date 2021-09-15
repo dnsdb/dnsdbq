@@ -346,6 +346,10 @@ dnsdb_infoback(writer_t writer) {
 		(void) pprint_json(writer->ps_buf, writer->ps_len, stdout);
 		break;
 	case pres_csv:
+		/* FALLTHROUGH */
+	case pres_none:
+		/* FALLTHROUGH */
+	case pres_minimal:
 		abort();
 	}
 }

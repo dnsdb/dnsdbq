@@ -326,14 +326,16 @@ is a synonym, for compatibility with older programmatic callers.
 .It Cm json
 for newline delimited JSON output.
 .It Cm csv
-for comma separated value output. This format is information losing,
-since
+for comma separated value output. This format is information losing, since
 it cannot express multiple resource records that are in a single RRset.
 Instead, each resource record is expressed in a separate line of output.
 See the
 .Ic DNSDBQ_TIME_FORMAT
 environment variable for controlling how
 timestamps are formatted for this option.
+.It Cm minimal
+outputs only the owner name or rdata, one per line and deduplicated;
+for use by shell scripts.
 .El
 .It Fl q
 makes the program reticent about warnings.

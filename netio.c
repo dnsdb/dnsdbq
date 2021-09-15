@@ -401,9 +401,9 @@ query_done(query_t query) {
 		const char *msg = or_else(query->saf_msg, "");
 
 		if (query->saf_cond == sc_limited)
-			fprintf(stderr, "Query limited: %s\n", msg);
+			fprintf(stderr, "Database limit: %s\n", msg);
 		else if (query->saf_cond == sc_failed)
-			fprintf(stderr, "Query failed: %s\n", msg);
+			fprintf(stderr, "Database result: %s\n", msg);
 		else if (query->saf_cond == sc_missing)
 			fprintf(stderr, "Query response missing: %s\n", msg);
 		else if (query->status != NULL)
@@ -585,6 +585,20 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			mode_e mode = (mode_e) (int) strtol(linep, NULL, 10);
+			if (mode == no_mode) {
+				fprintf(stderr,
+					"%s: invalid mode from sort in '%s'\n",
+					program_name, line);
+				continue;
+			}
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr,
+					"%s: warning: no seventh SP in '%s'\n",
+					program_name, line);
+				continue;
+			}
+			linep += strspn(linep, " ");
 			DEBUG(2, true, "sort2: '%*.*s'\n",
 				 (int)(nl - linep),
 				 (int)(nl - linep),
@@ -597,7 +611,7 @@ writer_fini(writer_t writer) {
 					program_name, msg);
 				continue;
 			}
-			(*presenter)(&tup, linep, len, writer);
+			(*presenter)(&tup, mode, writer);
 			tuple_unmake(&tup);
 			count++;
 		}

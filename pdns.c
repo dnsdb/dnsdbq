@@ -33,6 +33,7 @@
 
 static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
+static void present_minimal_thing(const char *thing);
 static json_t *annotate_json(pdns_tuple_ct, bool);
 static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
 #ifndef CRIPPLED_LIBC
@@ -44,8 +45,7 @@ static struct counted *countoff_r(const char *, int);
  */
 void
 present_text_lookup(pdns_tuple_ct tup,
-		    const char *jsonbuf __attribute__ ((unused)),
-		    size_t jsonlen __attribute__ ((unused)),
+		    mode_e mode __attribute__ ((unused)),
 		    writer_t writer __attribute__ ((unused)))
 {
 	bool pflag, ppflag;
@@ -167,8 +167,7 @@ present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
  */
 void
 present_text_summarize(pdns_tuple_ct tup,
-		       const char *jsonbuf __attribute__ ((unused)),
-		       size_t jsonlen __attribute__ ((unused)),
+		       mode_e mode __attribute__ ((unused)),
 		       writer_t writer __attribute__ ((unused)))
 {
 	const char *prefix;
@@ -231,8 +230,7 @@ pprint_json(const char *buf, size_t len, FILE *outf) {
  */
 void
 present_json_lookup(pdns_tuple_ct tup,
-		    const char *jsonbuf __attribute__ ((unused)),
-		    size_t jsonlen __attribute__ ((unused)),
+		    mode_e mode __attribute__ ((unused)),
 		    writer_t writer __attribute__ ((unused)))
 {
 	present_json(tup, true);
@@ -242,8 +240,7 @@ present_json_lookup(pdns_tuple_ct tup,
  */
 void
 present_json_summarize(pdns_tuple_ct tup,
-		       const char *jsonbuf __attribute__ ((unused)),
-		       size_t jsonlen __attribute__ ((unused)),
+		       mode_e mode __attribute__ ((unused)),
 		       writer_t writer __attribute__ ((unused)))
 {
 	present_json(tup, false);
@@ -402,8 +399,7 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
  */
 void
 present_csv_lookup(pdns_tuple_ct tup,
-		   const char *jsonbuf __attribute__ ((unused)),
-		   size_t jsonlen __attribute__ ((unused)),
+		   mode_e mode __attribute__ ((unused)),
 		   writer_t writer)
 {
 	if (!writer->csv_headerp) {
@@ -495,12 +491,66 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 	putchar('\n');
 }
 
+/* present_rdata_lookup -- render one DNSDB tuple as a "line" (MINIMAL)
+ */
+void
+present_minimal_lookup(pdns_tuple_ct tup,
+		       mode_e mode __attribute__ ((unused)),
+		       writer_t writer __attribute__ ((unused)))
+{
+	/* did this tuple come from a left hand or right hand query? */
+	bool left = true;
+	switch (mode) {
+	case no_mode:
+		abort();
+	case rrset_mode:
+		/* FALLTHROUGH */
+	case raw_rrset_mode:
+		break;
+	case name_mode:
+		/* FALLTHROUGH */
+	case ip_mode:
+		/* FALLTHROUGH */
+	case raw_name_mode:
+		left = false;
+	}
+
+	/* for RHS queries, output the LHS once, and exit. */
+	if (!left) {
+		present_minimal_thing(tup->rrname);
+		return;
+	}
+
+	/* for LHS queries, output each RHS found. */
+	if (json_is_array(tup->obj.rdata)) {
+		size_t index;
+		json_t *rr;
+
+		json_array_foreach(tup->obj.rdata, index, rr) {
+			const char *rdata = NULL;
+
+			if (json_is_string(rr))
+				rdata = json_string_value(rr);
+			else
+				rdata = "[bad value]";
+			present_minimal_thing(rdata);
+		}
+	} else {
+		present_minimal_thing(tup->rdata);
+	}
+}
+
+static void
+present_minimal_thing(const char *thing) {
+	if (!deduper_tas(minimal_deduper, thing))
+		puts(thing);
+}
+
 /* present_csv_summ -- render a summarize result as CSV.
  */
 void
 present_csv_summarize(pdns_tuple_ct tup,
-		      const char *jsonbuf __attribute__ ((unused)),
-		      size_t jsonlen __attribute__ ((unused)),
+		      mode_e mode __attribute__ ((unused)),
 		      writer_t writer __attribute__ ((unused)))
 {
 	printf("time_first,time_last,zone_first,zone_last,"
@@ -823,7 +873,7 @@ reverse(const char *src) {
 
 /* data_blob -- process one deblocked json blob as a counted string.
  *
- * presents each blob and then frees it.
+ * presents, or outputs to POSIX sort(1), each blob and then frees it.
  * returns number of tuples processed (for now, 1 or 0).
  */
 int
@@ -911,26 +961,28 @@ data_blob(query_t query, const char *buf, size_t len) {
 
 		DEBUG(3, true, "dyn_rrname = '%s'\n", dyn_rrname);
 		DEBUG(3, true, "dyn_rdata = '%s'\n", dyn_rdata);
-		fprintf(writer->sort_stdin, "%lu %lu %lu %lu %s %s %*.*s\n",
+		fprintf(writer->sort_stdin, "%lu %lu %lu %lu %s %s %d %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,
 			(unsigned long)(last - first),
 			(unsigned long)tup.count,
 			or_else(dyn_rrname, "n/a"),
 			or_else(dyn_rdata, "n/a"),
+			(int)query->mode,
 			(int)len, (int)len, buf);
-		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %*.*s'\n",
+		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %d %*.*s'\n",
 			 (unsigned long)first,
 			 (unsigned long)last,
 			 (unsigned long)(last - first),
 			 (unsigned long)tup.count,
 			 or_else(dyn_rrname, "n/a"),
 			 or_else(dyn_rdata, "n/a"),
+			 (int)query->mode,
 			 (int)len, (int)len, buf);
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {
-		(*presenter)(&tup, buf, len, writer);
+		(*presenter)(&tup, query->mode, writer);
 	}
 
 	ret = 1;
