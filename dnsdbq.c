@@ -73,7 +73,7 @@ static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(qdesc_ct);
 static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
-static void launch(query_t, pdns_fence_ct);
+static void launch(query_t, const char *, pdns_fence_ct);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
@@ -485,15 +485,6 @@ main(int argc, char *argv[]) {
 	if (presentation == pres_minimal)
 		minimal_deduper = deduper_new(minimal_modulus);
 
-	/* recondition various options for HTML use. */
-	CURL *easy = curl_easy_init();
-	escape(easy, &qd.thing);
-	escape(easy, &qd.rrtype);
-	escape(easy, &qd.bailiwick);
-	escape(easy, &qd.pfxlen);
-	curl_easy_cleanup(easy);
-	easy = NULL;
-
 	if ((msg = qparam_ready(&qp)) != NULL)
 		usage(msg);
 
@@ -760,7 +751,7 @@ help(void) {
 	     "use -v to show the program version.\n"
 	     "use -4 to force connecting to the server via IPv4.\n"
 	     "use -6 to force connecting to the server via IPv6.\n"
-	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments.\n",
+	     "use -8 to allow 8-bit values in -r and -n arguments.\n",
 	     asinfo_domain);
 
 	puts("for -u, system must be one of:");
@@ -1043,7 +1034,8 @@ do_batch(FILE *f, qparam_ct qpp) {
 
 		/* if not parallelizing, start a writer here instead. */
 		if (!one_writer)
-			writer = writer_init(qp.output_limit, ps_stdout, false);
+			writer = writer_init(qp.output_limit,
+					     ps_stdout, false);
 
 		/* crack the batch line if possible. */
 		msg = batch_parse(command, &qd);
@@ -1270,63 +1262,69 @@ batch_parse(char *line, qdesc_t qdp) {
  */
 static char *
 makepath(qdesc_ct qdp) {
-	char *command;
+	char *path, *thing, *rrtype, *bailiwick, *pfxlen;
 	int x;
+
+	/* recondition various options for HTML use. */
+	thing = escape(qdp->thing);
+	rrtype = escape(qdp->rrtype);
+	bailiwick = escape(qdp->bailiwick);
+	pfxlen = escape(qdp->pfxlen);
 
 	switch (qdp->mode) {
 	case rrset_mode:
-		if (qdp->rrtype != NULL && qdp->bailiwick != NULL)
-			x = asprintf(&command, "rrset/name/%s/%s/%s",
-				     qdp->thing, qdp->rrtype, qdp->bailiwick);
-		else if (qdp->rrtype != NULL)
-			x = asprintf(&command, "rrset/name/%s/%s",
-				     qdp->thing, qdp->rrtype);
-		else if (qdp->bailiwick != NULL)
-			x = asprintf(&command, "rrset/name/%s/ANY/%s",
-				     qdp->thing, qdp->bailiwick);
+		if (rrtype != NULL && bailiwick != NULL)
+			x = asprintf(&path, "rrset/name/%s/%s/%s",
+				     thing, rrtype, bailiwick);
+		else if (rrtype != NULL)
+			x = asprintf(&path, "rrset/name/%s/%s",
+				     thing, rrtype);
+		else if (bailiwick != NULL)
+			x = asprintf(&path, "rrset/name/%s/ANY/%s",
+				     thing, bailiwick);
 		else
-			x = asprintf(&command, "rrset/name/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rrset/name/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case name_mode:
-		if (qdp->rrtype != NULL)
-			x = asprintf(&command, "rdata/name/%s/%s",
-				     qdp->thing, qdp->rrtype);
+		if (rrtype != NULL)
+			x = asprintf(&path, "rdata/name/%s/%s",
+				     thing, rrtype);
 		else
-			x = asprintf(&command, "rdata/name/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rdata/name/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case ip_mode:
-		if (qdp->pfxlen != NULL)
-			x = asprintf(&command, "rdata/ip/%s,%s",
-				     qdp->thing, qdp->pfxlen);
+		if (pfxlen != NULL)
+			x = asprintf(&path, "rdata/ip/%s,%s",
+				     thing, pfxlen);
 		else
-			x = asprintf(&command, "rdata/ip/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rdata/ip/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case raw_rrset_mode:
-		if (qdp->rrtype != NULL)
-			x = asprintf(&command, "rrset/raw/%s/%s",
-				     qdp->thing, qdp->rrtype);
+		if (rrtype != NULL)
+			x = asprintf(&path, "rrset/raw/%s/%s",
+				     thing, rrtype);
 		else
-			x = asprintf(&command, "rrset/raw/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rrset/raw/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case raw_name_mode:
-		if (qdp->rrtype != NULL)
-			x = asprintf(&command, "rdata/raw/%s/%s",
-				     qdp->thing, qdp->rrtype);
+		if (rrtype != NULL)
+			x = asprintf(&path, "rdata/raw/%s/%s",
+				     thing, rrtype);
 		else
-			x = asprintf(&command, "rdata/raw/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rdata/raw/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
@@ -1335,7 +1333,7 @@ makepath(qdesc_ct qdp) {
 	default:
 		abort();
 	}
-	return command;
+	return path;
 }
 
 /* query_launcher -- fork off some curl jobs via launch() for this query.
@@ -1343,6 +1341,7 @@ makepath(qdesc_ct qdp) {
 static query_t
 query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	struct pdns_fence fence = {};
+	char *saveptr, *rrtype;
 	query_t query = NULL;
 
 	CREATE(query, sizeof(struct query));
@@ -1351,13 +1350,9 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	query->params = *qpp;
 	query->next = query->writer->queries;
 	query->writer->queries = query;
-	query->command = makepath(qdp);
+	query->descrip = makepath(qdp);
 	query->mode = qdp->mode;
 
-	/* figure out from time fencing which job(s) we'll be starting.
-	 *
-	 * the 4-tuple is: first_after, first_before, last_after, last_before
-	 */
 	if (qpp->after != 0) {
 		if (qpp->complete) {
 			/* each db tuple must begin after the fence-start. */
@@ -1376,18 +1371,36 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 			fence.first_before = qpp->before;
 		}
 	}
-	launch(query, &fence);
+
+	char *rrtypes = strdup(qdp->rrtype);
+	for (rrtype = strtok_r(rrtypes, ",", &saveptr);
+	     rrtype != NULL;
+	     rrtype = strtok_r(NULL, ",", &saveptr))
+	{
+		struct qdesc qd = {
+			.mode = qdp->mode,
+			.thing = qdp->thing,
+			.rrtype = rrtype,
+			.bailiwick = qdp->bailiwick,
+			.pfxlen = qdp->pfxlen
+		};
+		char *path = makepath(&qd);
+		launch(query, path, &fence);
+		free(path);
+		path = NULL;
+	}
+	free(rrtypes);
 	return query;
 }
 
-/* launch -- actually launch a query job, given a command and time fences.
+/* launch -- actually launch a query job, given a path and time fences.
  */
 static void
-launch(query_t query, pdns_fence_ct fp) {
+launch(query_t query, const char *path, pdns_fence_ct fp) {
 	qparam_ct qpp = &query->params;
 	char *url;
 
-	url = psys->url(query->command, NULL, qpp, fp, false);
+	url = psys->url(path, NULL, qpp, fp, false);
 	if (url == NULL)
 		my_exit(1);
 

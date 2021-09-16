@@ -69,7 +69,7 @@ struct query {
 	struct fetch	*fetches;
 	struct writer	*writer;
 	struct qparam	params;
-	char		*command;
+	char		*descrip;
 	mode_e		mode;
 	/* invariant: (status == NULL) == (writer == NULL) */
 	char		*status;
@@ -111,6 +111,6 @@ size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 void writer_fini(writer_t);
 void unmake_writers(void);
 void io_engine(int);
-void escape(CURL *, char **);
+char *escape(const char *);
 
 #endif /*NETIO_H_INCLUDED*/
