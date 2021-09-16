@@ -274,17 +274,17 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				/* grab the token. */
 				writer->active = query;
 				DEBUG(2, true, "active (%d) %s\n",
-				      npaused, query->command);
+				      npaused, query->descrip);
 			} else if (writer->active != query) {
 				/* pause the query. */
 				paused[npaused++] = query;
 				DEBUG(2, true, "pause (%d) %s\n",
-				      npaused, query->command);
+				      npaused, query->descrip);
 				return CURL_WRITEFUNC_PAUSE;
 			}
 		}
 		if (!query->hdr_sent) {
-			printf("++ %s\n", query->command);
+			printf("++ %s\n", query->descrip);
 			query->hdr_sent = true;
 		}
 	}
@@ -393,7 +393,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 static void
 query_done(query_t query) {
 	DEBUG(2, true, "query_done(%s), meta=%d\n",
-	      query->command, query->writer->meta_query);
+	      query->descrip, query->writer->meta_query);
 	if (query->writer->meta_query)
 		return;
 
@@ -437,7 +437,7 @@ query_done(query_t query) {
 			     fetch != NULL;
 			     fetch = fetch->next) {
 				DEBUG(2, true, "unpause (%d) %s\n",
-				      npaused, unpause->command);
+				      npaused, unpause->descrip);
 				curl_easy_pause(fetch->easy, CURLPAUSE_CONT);
 			}
 		}
@@ -492,7 +492,7 @@ writer_fini(writer_t writer) {
 		DESTROY(query->saf_msg);
 		DESTROY(query->status);
 		DESTROY(query->message);
-		DESTROY(query->command);
+		DESTROY(query->descrip);
 		DESTROY(query);
 		writer->queries = query_next;
 	}
@@ -710,7 +710,7 @@ io_drain(void) {
 						  &fetch->rcode);
 
 			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
-			      query->command, fetch->rcode);
+			      query->descrip, fetch->rcode);
 			if (psys->encap == encap_saf) {
 				if (query->saf_cond == sc_begin ||
 				    query->saf_cond == sc_ongoing)
@@ -775,22 +775,22 @@ io_drain(void) {
 	}
 }
 
-/* escape -- HTML-encode a string, in place.
+/* escape -- HTML-encode a string, returns a string which must be free()'d.
  */
-void
-escape(CURL *easy, char **str) {
-	char *escaped;
+char *
+escape(const char *str) {
+	char *escaped, *ret;
 
-	if (*str == NULL)
-		return;
-	escaped = curl_easy_escape(easy, *str, (int)strlen(*str));
+	if (str == NULL)
+		return NULL;
+	escaped = curl_escape(str, (int)strlen(str));
 	if (escaped == NULL) {
 		fprintf(stderr, "%s: curl_escape(%s) failed\n",
-			program_name, *str);
+			program_name, str);
 		my_exit(1);
 	}
-	DESTROY(*str);
-	*str = strdup(escaped);
+	ret = strdup(escaped);
 	curl_free(escaped);
 	escaped = NULL;
+	return ret;
 }
