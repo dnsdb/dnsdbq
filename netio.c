@@ -542,7 +542,7 @@ writer_fini(writer_t writer) {
 				 (int)(nl - linep),
 				 (int)(nl - linep),
 				 linep);
-			/* skip sort keys (first, last, count, name, data). */
+			/* skip sort key: first */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no SP found in '%s'\n",
@@ -550,6 +550,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: last */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no second SP in '%s'\n",
@@ -557,6 +558,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: duration */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no third SP in '%s'\n",
@@ -564,6 +566,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: count */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no fourth SP in '%s'\n",
@@ -571,6 +574,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: rrname */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no fifth SP in '%s'\n",
@@ -578,6 +582,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: rrtype */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no sixth SP in '%s'\n",
@@ -585,6 +590,15 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: rdata */
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr,
+					"%s: warning: no seventh SP in '%s'\n",
+					program_name, line);
+				continue;
+			}
+			linep += strspn(linep, " ");
+			/* recover the mode */
 			mode_e mode = (mode_e) (int) strtol(linep, NULL, 10);
 			if (mode == no_mode) {
 				fprintf(stderr,
@@ -594,11 +608,12 @@ writer_fini(writer_t writer) {
 			}
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
-					"%s: warning: no seventh SP in '%s'\n",
+					"%s: warning: no eigth SP in '%s'\n",
 					program_name, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* recover the json */
 			DEBUG(2, true, "sort2: '%*.*s'\n",
 				 (int)(nl - linep),
 				 (int)(nl - linep),

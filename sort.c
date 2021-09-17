@@ -28,7 +28,19 @@
 #include "sort.h"
 #include "globals.h"
 
-#define	MAX_KEYS 5
+/* in the POSIX sort(1) intermediate format, the fields are:
+ * #1 first
+ * #2 last
+ * #3 duration
+ * #4 count
+ * #5 rrname
+ * #7 rrtype
+ * #6 rdata
+ * #8 mode
+ * #9 json
+ */
+
+#define	MAX_KEYS 7
 
 extern char **environ;
 
@@ -48,6 +60,7 @@ sort_ready(void) {
 	(void) add_sort_key("duration");
 	(void) add_sort_key("count");
 	(void) add_sort_key("name");
+	(void) add_sort_key("type");
 	(void) add_sort_key("data");
 }
 
@@ -73,10 +86,13 @@ add_sort_key(const char *key_name) {
 		key = "-k4n";
 	else if (strcasecmp(key_name, "name") == 0)
 		key = "-k5";
-	else if (strcasecmp(key_name, "data") == 0)
+	else if (strcasecmp(key_name, "type") == 0)
 		key = "-k6";
+	else if (strcasecmp(key_name, "data") == 0)
+		key = "-k7";
 	else
-		return "key must be in first|last|duration|count|name|data";
+		return "key must be in "
+		        "first|last|duration|count|name|type|data";
 	x = asprintf(&computed, "%s%s", key,
 		     sorting == reverse_sort ? "r" : "");
 	if (x < 0)
