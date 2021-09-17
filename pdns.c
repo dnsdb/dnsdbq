@@ -950,7 +950,7 @@ data_blob(query_t query, const char *buf, size_t len) {
 	if (sorting != no_sort) {
 		/* POSIX sort(1) is given six extra fields at the front
 		 * of each line (first,last,duration,count,name,data)
-		 * which are accessed as -k1 .. -k6 on the
+		 * which are accessed as -k1 .. -k7 on the
 		 * sort command line. we strip them off later
 		 * when reading the result back. the reason
 		 * for all this PDP11-era logic is to avoid
@@ -961,24 +961,27 @@ data_blob(query_t query, const char *buf, size_t len) {
 
 		DEBUG(3, true, "dyn_rrname = '%s'\n", dyn_rrname);
 		DEBUG(3, true, "dyn_rdata = '%s'\n", dyn_rdata);
-		fprintf(writer->sort_stdin, "%lu %lu %lu %lu %s %s %d %*.*s\n",
+		fprintf(writer->sort_stdin,
+			"%lu %lu %lu %lu %s %s %s %d %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,
 			(unsigned long)(last - first),
 			(unsigned long)tup.count,
 			or_else(dyn_rrname, "n/a"),
+			tup.rrtype,
 			or_else(dyn_rdata, "n/a"),
 			(int)query->mode,
 			(int)len, (int)len, buf);
-		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %d %*.*s'\n",
-			 (unsigned long)first,
-			 (unsigned long)last,
-			 (unsigned long)(last - first),
-			 (unsigned long)tup.count,
-			 or_else(dyn_rrname, "n/a"),
-			 or_else(dyn_rdata, "n/a"),
-			 (int)query->mode,
-			 (int)len, (int)len, buf);
+		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %s %d %*.*s'\n",
+		      (unsigned long)first,
+		      (unsigned long)last,
+		      (unsigned long)(last - first),
+		      (unsigned long)tup.count,
+		      or_else(dyn_rrname, "n/a"),
+		      tup.rrtype,
+		      or_else(dyn_rdata, "n/a"),
+		      (int)query->mode,
+		      (int)len, (int)len, buf);
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {

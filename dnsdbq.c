@@ -705,7 +705,7 @@ help(void) {
 	printf("usage: %s [-acdfGghIjmqSsUv468] [-p dns|json|csv|minimal]\n",
 	       program_name);
 	puts("\t[-u SYSTEM] [-V VERB] [-0 FUNCTION=INPUT]\n"
-	     "\t[-k (first|last|duration|count|name|data)[,...]]\n"
+	     "\t[-k (first|last|duration|count|name|type|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT]\n"
 	     "\t[-O OFFSET] [-M MAX_COUNT]\n"
 	     "\t[-A AFTER] [-B BEFORE]\n"

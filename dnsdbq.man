@@ -246,8 +246,8 @@ If input_file is "-" then standard input (stdin) will be read.
 specify newline delimited json output mode.
 .It Fl k Ar sort_keys
 when sorting with -s or -S, selects one or more comma separated sort keys,
-among "first", "last", "duration", "count", "name", and/or "data".
-The default order is be "first,last,duration,count,name,data"
+among "first", "last", "duration", "count", "name", "type", and/or "data".
+The default order is be "first,last,duration,count,name,type,data"
 (if sorting is requested.)
 Names are sorted right to left (by TLD then 2LD etc). Data is sorted either
 by name if present, or else by numeric value (e.g., for A and AAAA RRsets.)
