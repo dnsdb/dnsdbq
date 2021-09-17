@@ -1375,24 +1375,31 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 		}
 	}
 
-	char *rrtypes = strdup(qdp->rrtype);
-	for (rrtype = strtok_r(rrtypes, ",", &saveptr);
-	     rrtype != NULL;
-	     rrtype = strtok_r(NULL, ",", &saveptr))
-	{
-		struct qdesc qd = {
-			.mode = qdp->mode,
-			.thing = qdp->thing,
-			.rrtype = rrtype,
-			.bailiwick = qdp->bailiwick,
-			.pfxlen = qdp->pfxlen
-		};
-		char *path = makepath(&qd);
+	if (qdp->rrtype == NULL) {
+		/* no rrtype string given, let makepath set it to "any". */
+		char *path = makepath(qdp);
 		launch(query, path, &fence);
 		free(path);
-		path = NULL;
+	} else {
+		/* rrtype string was given, parse comma separated list. */
+		char *rrtypes = strdup(qdp->rrtype);
+		for (rrtype = strtok_r(rrtypes, ",", &saveptr);
+		     rrtype != NULL;
+		     rrtype = strtok_r(NULL, ",", &saveptr))
+		{
+			struct qdesc qd = {
+				.mode = qdp->mode,
+				.thing = qdp->thing,
+				.rrtype = rrtype,
+				.bailiwick = qdp->bailiwick,
+				.pfxlen = qdp->pfxlen
+			};
+			char *path = makepath(&qd);
+			launch(query, path, &fence);
+			free(path);
+		}
+		free(rrtypes);
 	}
-	free(rrtypes);
 	return query;
 }
 
