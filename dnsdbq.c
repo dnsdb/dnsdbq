@@ -73,7 +73,7 @@ static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(qdesc_ct);
 static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
-static void launch(query_t, const char *, pdns_fence_ct);
+static void launch_fetch(query_t, const char *, pdns_fence_ct);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
@@ -1043,7 +1043,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 			fprintf(stderr, "%s: batch entry parse error: %s\n",
 				program_name, msg);
 		} else {
-			/* start one or two curl jobs based on this search. */
+			/* start one or more curl jobs based on this search. */
 			query_t query = query_launcher(&qd, &qp, writer);
 
 			/* if merging, drain some jobs; else, drain all jobs.
@@ -1375,11 +1375,12 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	if (qdp->rrtype == NULL) {
 		/* no rrtype string given, let makepath set it to "any". */
 		char *path = makepath(qdp);
-		launch(query, path, &fence);
+		launch_fetch(query, path, &fence);
 		free(path);
 	} else {
 		/* rrtype string was given, parse comma separated list. */
 		char *rrtypes = strdup(qdp->rrtype);
+		int nfetches = 0;
 		for (rrtype = strtok_r(rrtypes, ",", &saveptr);
 		     rrtype != NULL;
 		     rrtype = strtok_r(NULL, ",", &saveptr))
@@ -1392,18 +1393,21 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 				.pfxlen = qdp->pfxlen
 			};
 			char *path = makepath(&qd);
-			launch(query, path, &fence);
+			launch_fetch(query, path, &fence);
+			nfetches++;
 			free(path);
 		}
+		if (nfetches > 1)
+			query->multitype = true;
 		free(rrtypes);
 	}
 	return query;
 }
 
-/* launch -- actually launch a query job, given a path and time fences.
+/* launch_fetch -- actually launch a query job, given a path and time fences.
  */
 static void
-launch(query_t query, const char *path, pdns_fence_ct fp) {
+launch_fetch(query_t query, const char *path, pdns_fence_ct fp) {
 	qparam_ct qpp = &query->params;
 	char *url;
 
