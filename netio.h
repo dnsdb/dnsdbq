@@ -49,7 +49,7 @@ struct qparam {
 typedef struct qparam *qparam_t;
 typedef const struct qparam *qparam_ct;
 
-/* one API fetch; several may be needed for complex kinds of query. */
+/* one API fetch; several may be needed for complex (multitype) queries. */
 struct fetch {
 	struct fetch	*next;
 	struct query	*query;
@@ -63,7 +63,7 @@ struct fetch {
 };
 typedef struct fetch *fetch_t;
 
-/* one query; one per invocation (or per batch line if parallel.) */
+/* one query; one per invocation (or per batch line.) */
 struct query {
 	struct query	*next;
 	struct fetch	*fetches;
@@ -71,6 +71,7 @@ struct query {
 	struct qparam	params;
 	char		*descrip;
 	mode_e		mode;
+	bool		multitype;
 	/* invariant: (status == NULL) == (writer == NULL) */
 	char		*status;
 	char		*message;

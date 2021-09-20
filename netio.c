@@ -241,7 +241,12 @@ ps_stdout(writer_t writer) {
 void
 query_status(query_t query, const char *status, const char *message) {
 	assert((query->status == NULL) == (query->message == NULL));
-	assert(query->status == NULL);
+	if (query->multitype && query->status != NULL) {
+		DESTROY(query->status);
+		DESTROY(query->message);
+	} else {
+		assert(query->status == NULL);
+	}
 	query->status = strdup(status);
 	query->message = strdup(message);
 }
@@ -406,7 +411,7 @@ query_done(query_t query) {
 			fprintf(stderr, "Database result: %s\n", msg);
 		else if (query->saf_cond == sc_missing)
 			fprintf(stderr, "Query response missing: %s\n", msg);
-		else if (query->status != NULL)
+		else if (query->status != NULL && !query->multitype)
 			fprintf(stderr, "Query status: %s (%s)\n",
 				query->status, query->message);
 	} else if (batching == batch_verbose) {
