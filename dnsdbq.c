@@ -528,8 +528,11 @@ main(int argc, char *argv[]) {
 	assert(presentation_name != NULL);
 	if (presenter == NULL) {
 		char *errmsg = NULL;
-		asprintf(&errmsg, "that verb (%s) has no presenter for \"%s\"",
-			 pverb->name, presentation_name);
+		int x = asprintf(&errmsg,
+				 "that verb (%s) has no presenter for \"%s\"",
+				 pverb->name, presentation_name);
+		if (x < 0)
+			my_panic(true, "asprintf");
 		usage(errmsg);
 	}
 
