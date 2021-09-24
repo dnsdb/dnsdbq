@@ -314,27 +314,22 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			if (eol != NULL)
 				*eol = '\0';
 
-			/* only report the first response status (vs. -m). */
-			if (query->status == NULL) {
+			/* only remember the first response status. */
+			if (query->status == NULL)
 				query_status(query,
 					     psys->status(fetch),
 					     message);
-				if (!quiet) {
-					char *url;
+			if (!quiet) {
+				char *url;
 
-					curl_easy_getinfo(fetch->easy,
-							CURLINFO_EFFECTIVE_URL,
-							  &url);
-					fprintf(stderr,
-						"%s: warning: "
-						"libcurl %ld [%s]\n",
-						program_name, fetch->rcode,
-						url);
-				}
+				curl_easy_getinfo(fetch->easy,
+						  CURLINFO_EFFECTIVE_URL,
+						  &url);
+				fprintf(stderr,
+					"%s: warning: libcurl %ld [%s] %s\n",
+					program_name, fetch->rcode,
+					url, message);
 			}
-			if (!quiet)
-				fprintf(stderr, "%s: warning: libcurl: [%s]\n",
-					program_name, message);
 			DESTROY(message);
 			fetch->buf[0] = '\0';
 			fetch->len = 0;
