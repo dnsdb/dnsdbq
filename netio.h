@@ -60,6 +60,8 @@ struct fetch {
 	size_t		len;
 	long		rcode;
 	bool		stopped;
+	saf_cond_e	saf_cond;
+	char		*saf_msg;
 };
 typedef struct fetch *fetch_t;
 
@@ -76,8 +78,6 @@ struct query {
 	char		*status;
 	char		*message;
 	bool		hdr_sent;
-	saf_cond_e	saf_cond;
-	char		*saf_msg;
 };
 typedef struct query *query_t;
 

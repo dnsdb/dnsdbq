@@ -35,7 +35,7 @@ static void io_drain(void);
 static void fetch_reap(fetch_t);
 static void fetch_done(fetch_t);
 static void fetch_unlink(fetch_t);
-static void query_done(query_t);
+static void last_fetch(fetch_t);
 
 static writer_t writers = NULL;
 static CURLM *multi = NULL;
@@ -172,7 +172,7 @@ fetch_done(fetch_t fetch) {
 
 	/* if this was the last fetch on some query, signal. */
 	if (query->fetches == fetch && fetch->next == NULL)
-		query_done(query);
+		last_fetch(fetch);
 }
 
 /* fetch_unlink -- disconnect a fetch from its writer.
@@ -355,7 +355,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			/* cause CURLE_WRITE_ERROR for this transfer. */
 			bytes = 0;
 			if (psys->encap == encap_saf)
-				query->saf_cond = sc_we_limited;
+				fetch->saf_cond = sc_we_limited;
 			/* inform io_engine() that the abort is intentional. */
 			fetch->stopped = true;
 		} else if (writer->meta_query) {
@@ -366,11 +366,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			       fetch->buf, pre_len + 1);
 			writer->ps_len += pre_len + 1;
 		} else {
-			query->writer->count +=
-				data_blob(query, fetch->buf, pre_len);
+			query->writer->count += data_blob(fetch, pre_len);
 
 			if (psys->encap == encap_saf)
-				switch (query->saf_cond) {
+				switch (fetch->saf_cond) {
 				case sc_init:
 				case sc_begin:
 				case sc_ongoing:
@@ -393,23 +392,26 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	return bytes;
 }
 
-/* query_done -- do something with leftover buffer data when a query ends.
+/* last_fetch -- do something with leftover buffer data when a query ends.
  */
 static void
-query_done(query_t query) {
+last_fetch(fetch_t fetch) {
+	query_t query = fetch->query;
+
+	assert(query->fetches == fetch && fetch->next == NULL);
 	DEBUG(2, true, "query_done(%s), meta=%d\n",
 	      query->descrip, query->writer->meta_query);
 	if (query->writer->meta_query)
 		return;
 
 	if (batching == batch_none && !quiet) {
-		const char *msg = or_else(query->saf_msg, "");
+		const char *msg = or_else(fetch->saf_msg, "");
 
-		if (query->saf_cond == sc_limited)
+		if (fetch->saf_cond == sc_limited)
 			fprintf(stderr, "Database limit: %s\n", msg);
-		else if (query->saf_cond == sc_failed)
+		else if (fetch->saf_cond == sc_failed)
 			fprintf(stderr, "Database result: %s\n", msg);
-		else if (query->saf_cond == sc_missing)
+		else if (fetch->saf_cond == sc_missing)
 			fprintf(stderr, "Query response missing: %s\n", msg);
 		else if (query->status != NULL && !query->multitype)
 			fprintf(stderr, "Query status: %s (%s)\n",
@@ -427,10 +429,10 @@ query_done(query_t query) {
 			asprintf(&writer->ps_buf, "-- %s (%s)\n",
 				 or_else(query->status, status_noerror),
 				 or_else(query->message,
-					 or_else(query->saf_msg, "no error")));
+					 or_else(fetch->saf_msg, "no error")));
 		if (npaused > 0) {
 			query_t unpause;
-			fetch_t fetch;
+			fetch_t ufetch;
 			int i;
 
 			/* unpause the next query's fetches. */
@@ -438,12 +440,12 @@ query_done(query_t query) {
 			npaused--;
 			for (i = 0; i < npaused; i++)
 				paused[i] = paused[i + 1];
-			for (fetch = unpause->fetches;
-			     fetch != NULL;
-			     fetch = fetch->next) {
+			for (ufetch = unpause->fetches;
+			     ufetch != NULL;
+			     ufetch = ufetch->next) {
 				DEBUG(2, true, "unpause (%d) %s\n",
 				      npaused, unpause->descrip);
-				curl_easy_pause(fetch->easy, CURLPAUSE_CONT);
+				curl_easy_pause(ufetch->easy, CURLPAUSE_CONT);
 			}
 		}
 	}
@@ -488,13 +490,15 @@ writer_fini(writer_t writer) {
 				fetch->len = 0;
 			}
 
+			/* release any fetch-specific data. */
+			DESTROY(fetch->saf_msg);
+
 			/* tear down any curl infrastructure on the fetch. */
 			fetch_reap(fetch);
 			fetch = NULL;
 			query->fetches = fetch_next;
 		}
 		assert((query->status != NULL) == (query->message != NULL));
-		DESTROY(query->saf_msg);
 		DESTROY(query->status);
 		DESTROY(query->message);
 		DESTROY(query->descrip);
@@ -732,25 +736,25 @@ io_drain(void) {
 			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
 			      query->descrip, fetch->rcode);
 			if (psys->encap == encap_saf) {
-				if (query->saf_cond == sc_begin ||
-				    query->saf_cond == sc_ongoing)
+				if (fetch->saf_cond == sc_begin ||
+				    fetch->saf_cond == sc_ongoing)
 				{
 					/* stream ended without a terminating
 					 * SAF value, so override stale value
 					 * we received before the problem.
 					 */
-					query->saf_cond = sc_missing;
-					query->saf_msg = strdup(
+					fetch->saf_cond = sc_missing;
+					fetch->saf_msg = strdup(
 						"Data transfer failed "
 						"-- No SAF terminator "
 						"at end of stream");
 					query_status(query,
 						     status_error,
-						     query->saf_msg);
+						     fetch->saf_msg);
 				}
 				DEBUG(2, true, "... saf_cond %d saf_msg %s\n",
-				      query->saf_cond,
-				      or_else(query->saf_msg, ""));
+				      fetch->saf_cond,
+				      or_else(fetch->saf_msg, ""));
 			}
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
 				fprintf(stderr,
