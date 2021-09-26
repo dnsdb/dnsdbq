@@ -73,6 +73,7 @@ static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(qdesc_ct);
 static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
+static const char *multitype_coherency(const char *);
 static void launch_fetch(query_t, const char *, pdns_fence_ct);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
@@ -343,7 +344,7 @@ main(int argc, char *argv[]) {
 			break;
 		case 't':
 			if (qd.rrtype != NULL)
-				usage("can only specify rrtype one way");
+				usage("can only specify rrtype(s) once");
 			qd.rrtype = strdup(optarg);
 			break;
 		case 'b':
@@ -1046,7 +1047,8 @@ do_batch(FILE *f, qparam_ct qpp) {
 			fprintf(stderr, "%s: batch entry parse error: %s\n",
 				program_name, msg);
 		} else {
-			/* start one or more curl jobs based on this search. */
+			/* start one or more curl fetches based on this entry.
+			 */
 			query_t query = query_launcher(&qd, &qp, writer);
 
 			/* if merging, drain some jobs; else, drain all jobs.
@@ -1055,7 +1057,12 @@ do_batch(FILE *f, qparam_ct qpp) {
 				io_engine(MAX_JOBS);
 			else
 				io_engine(0);
-			if (query->status != NULL && batching != batch_verbose)
+
+			/* if one of our fetches already failed, say so now.
+			 */
+			if (query != NULL &&
+			    query->status != NULL &&
+			    batching != batch_verbose)
 			{
 				assert(query->message != NULL);
 				fprintf(stderr,
@@ -1141,7 +1148,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 		optind = 0;
 #else
 		/* 1 is the value that optind should be initialized to,
-		 * accorinng to IEEE Std 1003.1.
+		 * according to IEEE Std 1003.1.
 		 */
 		optind = 1;
 #if defined __FreeBSD__ || defined __OpenBSD__ || defined __NetBSD__ || \
@@ -1340,22 +1347,19 @@ makepath(qdesc_ct qdp) {
 }
 
 /* query_launcher -- fork off some curl jobs via launch() for this query.
+ *
+ * can write to STDERR and return NULL if a query cannot be launched.
  */
 static query_t
 query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	struct pdns_fence fence = {};
-	char *saveptr, *rrtype;
 	query_t query = NULL;
+	const char *msg;
 
+	/* ready player one. */
 	CREATE(query, sizeof(struct query));
-	query->writer = writer;
-	writer = NULL;
-	query->params = *qpp;
-	query->next = query->writer->queries;
-	query->writer->queries = query;
-	query->descrip = makepath(qdp);
-	query->mode = qdp->mode;
 
+	/* define the fence. */
 	if (qpp->after != 0) {
 		if (qpp->complete) {
 			/* each db tuple must begin after the fence-start. */
@@ -1375,16 +1379,23 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 		}
 	}
 
+	/* branch on rrtype. */
 	if (qdp->rrtype == NULL) {
 		/* no rrtype string given, let makepath set it to "any". */
 		char *path = makepath(qdp);
 		launch_fetch(query, path, &fence);
-		free(path);
+		DESTROY(path);
+	} else if ((msg = multitype_coherency(qdp->rrtype)) != NULL) {
+		fprintf(stderr, "%s: multitype_coherency failed: %s\n",
+			program_name, msg);
+		DESTROY(query);
+		return NULL;
 	} else {
 		/* rrtype string was given, parse comma separated list. */
 		char *rrtypes = strdup(qdp->rrtype);
+		char *saveptr = NULL;
 		int nfetches = 0;
-		for (rrtype = strtok_r(rrtypes, ",", &saveptr);
+		for (char *rrtype = strtok_r(rrtypes, ",", &saveptr);
 		     rrtype != NULL;
 		     rrtype = strtok_r(NULL, ",", &saveptr))
 		{
@@ -1398,13 +1409,60 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 			char *path = makepath(&qd);
 			launch_fetch(query, path, &fence);
 			nfetches++;
-			free(path);
+			DESTROY(path);
 		}
 		if (nfetches > 1)
 			query->multitype = true;
-		free(rrtypes);
+		DESTROY(rrtypes);
 	}
+
+	/* finish query initialization, link it up, and return it. */
+	query->writer = writer;
+	writer = NULL;
+	query->params = *qpp;
+	query->next = query->writer->queries;
+	query->writer->queries = query;
+	query->descrip = makepath(qdp);
+	query->mode = qdp->mode;
 	return query;
+}
+
+/* multitype_coherency -- return an error text if these rrtypes don't mix.
+ */
+static const char *
+multitype_coherency(const char *input) {
+	char *rrtypes = strdup(input);
+	char *saveptr = NULL;
+	bool some = false, any = false,
+		some_dnssec = false, any_dnssec = false;
+	for (char *rrtype = strtok_r(rrtypes, ",", &saveptr);
+	     rrtype != NULL;
+	     rrtype = strtok_r(NULL, ",", &saveptr))
+	{
+		for (char *p = rrtype; *p != '\0'; p++)
+			if (isupper(*p))
+				*p = (char) tolower(*p);
+		if (strcmp(rrtype, "any") == 0)
+			any = true;
+		else if (strcmp(rrtype, "any-dnssec") == 0)
+			any_dnssec = true;
+		else if (strcmp(rrtype, "ds") == 0 ||
+			 strcmp(rrtype, "rrsig") == 0 ||
+			 strcmp(rrtype, "nsec") == 0 ||
+			 strcmp(rrtype, "dnskey") == 0 ||
+			 strcmp(rrtype, "nsec3") == 0 ||
+			 strcmp(rrtype, "nsec3param") == 0 ||
+			 strcmp(rrtype, "dlv") == 0)
+			some_dnssec = true;
+		else
+			some = true;
+		if (any && some)
+			return "ANY is redundant when mixed like this";
+		if (any_dnssec && some_dnssec)
+			return "ANY-DNSSEC is redundant when mixed like this";
+	}
+	DESTROY(rrtypes);
+	return NULL;
 }
 
 /* launch_fetch -- actually launch a query job, given a path and time fences.
