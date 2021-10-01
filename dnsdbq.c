@@ -1272,16 +1272,15 @@ batch_parse(char *line, qdesc_t qdp) {
  */
 static char *
 makepath(qdesc_ct qdp) {
-	char *path, *thing, *rrtype, *bailiwick, *pfxlen;
-	int x;
-
 	/* recondition various options for HTML use. */
-	thing = escape(qdp->thing);
-	rrtype = escape(qdp->rrtype);
-	bailiwick = escape(qdp->bailiwick);
-	pfxlen = escape(qdp->pfxlen);
+	char *thing = escape(qdp->thing);
+	char *rrtype = escape(qdp->rrtype);
+	char *bailiwick = escape(qdp->bailiwick);
+	char *pfxlen = escape(qdp->pfxlen);
 
+	char *path = NULL;
 	switch (qdp->mode) {
+		int x;
 	case rrset_mode:
 		if (rrtype != NULL && bailiwick != NULL)
 			x = asprintf(&path, "rrset/name/%s/%s/%s",
@@ -1343,6 +1342,12 @@ makepath(qdesc_ct qdp) {
 	default:
 		abort();
 	}
+
+	DESTROY(thing);
+	DESTROY(rrtype);
+	DESTROY(bailiwick);
+	DESTROY(pfxlen);
+
 	return path;
 }
 
