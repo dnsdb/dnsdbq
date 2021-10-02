@@ -132,7 +132,7 @@ Queries will be read from standard input and are expected to be in
 one of the following formats:
 .Bl -dash -offset indent
 .It
-RRset (raw) query:
+RRset (name) query:
 .Ic rrset/name/NAME[/RRTYPE[,...][/BAILIWICK]]
 .It
 RRset (raw) query:
