@@ -39,7 +39,7 @@
 #error "No passive DNS system defined"
 #endif
 #define DEFAULT_VERB 0
-#define	MAX_JOBS 8
+#define	MAX_FETCHES 8
 #define DNSDBQ_SYSTEM "DNSDBQ_SYSTEM"
 
 #define CREATE(p, s) if ((p) != NULL) { my_panic(false, "non-NULL ptr"); } \

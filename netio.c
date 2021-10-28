@@ -40,7 +40,7 @@ static void last_fetch(fetch_t);
 static writer_t writers = NULL;
 static CURLM *multi = NULL;
 static bool curl_cleanup_needed = false;
-static query_t paused[MAX_JOBS];
+static query_t paused[MAX_FETCHES];
 static int npaused = 0;
 
 const char saf_begin[] = "begin";
@@ -612,7 +612,7 @@ writer_fini(writer_t writer) {
 			}
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
-					"%s: warning: no eigth SP in '%s'\n",
+					"%s: warning: no eighth SP in '%s'\n",
 					program_name, line);
 				continue;
 			}

@@ -1054,7 +1054,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 			/* if merging, drain some jobs; else, drain all jobs.
 			 */
 			if (one_writer)
-				io_engine(MAX_JOBS);
+				io_engine(MAX_FETCHES);
 			else
 				io_engine(0);
 
@@ -1455,6 +1455,9 @@ multitype_coherency(const char *input) {
 			 strcmp(rrtype, "rrsig") == 0 ||
 			 strcmp(rrtype, "nsec") == 0 ||
 			 strcmp(rrtype, "dnskey") == 0 ||
+			 strcmp(rrtype, "cdnskey") == 0 ||
+			 strcmp(rrtype, "cds") == 0 ||
+			 strcmp(rrtype, "ta") == 0 ||
 			 strcmp(rrtype, "nsec3") == 0 ||
 			 strcmp(rrtype, "nsec3param") == 0 ||
 			 strcmp(rrtype, "dlv") == 0)
