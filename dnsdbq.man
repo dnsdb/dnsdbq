@@ -225,7 +225,7 @@ the information in a more understandable textual form, including converting
 any epoch integer times into UTC formatted times.
 .It Fl i Ar ip
 specify rdata ip ("right-hand side") query.  The value is one of an
- therefoIPv4 address, an IPv6 address, an IPv4 network with prefix length, an
+IPv4 address, an IPv6 address, an IPv4 network with prefix length, an
 IPv4 address range, or an IPv6 network with prefix length. If a
 network lookup is being performed, the delimiter between network
 address and prefix length is a single comma (",") character rather
