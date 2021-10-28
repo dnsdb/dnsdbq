@@ -174,7 +174,7 @@ standardized. The embedding of these in dnstable is documented in the
 manual page. This topic is explained in detail at
 <https://www.farsightsecurity.com/blog/txt-record/dnsdb-rawhex-20161125>.
 .Pp
-In batch lookup mode, each answer will be followed by a -- marker, so that
+In batch lookup mode, each answer will be followed by a '--' marker, so that
 programmatic users will know when it is safe to send the next lookup, or if
 lookups are pipelined, to know when one answer has ended and another begun.
 This option cannot be mixed with
@@ -188,21 +188,21 @@ See the EXAMPLES section for more information on how to use
 .Pp
 If two
 .Fl f
-options are given, then each answer will also be preceded by a ++ marker
+options are given, then each answer will also be preceded by a '++' marker
 giving the query string (as read from the batch input) in order to identify
-each answer when a very large batch input is given, and the -- marker will
+each answer when a very large batch input is given, and the '--' marker will
 include an error/noerror indicator and a short message describing the outcome.
 With two
 .Fl f
 options and also
 .Fl m ,
 answers can appear in a different order than the batched questions, and the
-++/-- markers, which are not valid JSON, are therefore suppressed.
+'--' and '++' markers, which are not valid JSON, are therefore suppressed.
 .It Fl g
-return graveled results if available. The default is to return aggregated
-results ("rocks"). Gravel is a feature for providing Volume Across Time. Note
-that not all database APIs support this feature, and not all time ranges
-contain granular results ("gravel").
+return graveled results if available. The default is to return
+aggregated results ("rocks"). Gravel is a feature for providing Volume
+Across Time. Note that not all Passive DNS system APIs support this
+feature, and not all time ranges contain granular results ("gravel").
 .It Fl G
 undo the effect of
 .Fl g ,
@@ -300,7 +300,7 @@ all queries is what will be subject to sorting, if any. If two
 flags are specified with
 .Fl m ,
 the output will not be merged, can appear in any order, will be sorted
-separately for each response, and will have normal '--' / '++' markers.
+separately for each response, and will have normal '--' and '++' markers.
 (See
 .Fl f
 option above.)
