@@ -877,14 +877,15 @@ reverse(const char *src) {
  * returns number of tuples processed (for now, 1 or 0).
  */
 int
-data_blob(query_t query, const char *buf, size_t len) {
+data_blob(fetch_t fetch, size_t len) {
+	query_t query = fetch->query;
 	writer_t writer = query->writer;
 	struct pdns_tuple tup;
 	u_long first, last;
 	const char *msg;
 	int ret = 0;
 
-	msg = tuple_make(&tup, buf, len);
+	msg = tuple_make(&tup, fetch->buf, len);
 	if (msg != NULL) {
 		fputs(msg, stderr);
 		fputc('\n', stderr);
@@ -894,7 +895,7 @@ data_blob(query_t query, const char *buf, size_t len) {
 	if (psys->encap == encap_saf) {
 		if (tup.msg != NULL) {
 			DEBUG(5, true, "data_blob tup.msg = %s\n", tup.msg);
-			query->saf_msg = strdup(tup.msg);
+			fetch->saf_msg = strdup(tup.msg);
 		}
 
 		if (tup.cond != NULL) {
@@ -902,24 +903,24 @@ data_blob(query_t query, const char *buf, size_t len) {
 			/* if we goto next now, this line will not be counted.
 			 */
 			if (strcmp(tup.cond, "begin") == 0) {
-				query->saf_cond = sc_begin;
+				fetch->saf_cond = sc_begin;
 				goto next;
 			} else if (strcmp(tup.cond, "ongoing") == 0) {
 				/* "cond":"ongoing" key vals should
 				 * be ignored but the rest of line used. */
-				query->saf_cond = sc_ongoing;
+				fetch->saf_cond = sc_ongoing;
 			} else if (strcmp(tup.cond, "succeeded") == 0) {
-				query->saf_cond = sc_succeeded;
+				fetch->saf_cond = sc_succeeded;
 				goto next;
 			} else if (strcmp(tup.cond, "limited") == 0) {
-				query->saf_cond = sc_limited;
+				fetch->saf_cond = sc_limited;
 				goto next;
 			} else if (strcmp(tup.cond, "failed") == 0) {
-				query->saf_cond = sc_failed;
+				fetch->saf_cond = sc_failed;
 				goto next;
 			} else {
 				/* use sc_missing for an invalid cond value */
-				query->saf_cond = sc_missing;
+				fetch->saf_cond = sc_missing;
 				fprintf(stderr,
 					"%s: Unknown value for \"cond\": %s\n",
 					program_name, tup.cond);
@@ -950,7 +951,7 @@ data_blob(query_t query, const char *buf, size_t len) {
 	if (sorting != no_sort) {
 		/* POSIX sort(1) is given six extra fields at the front
 		 * of each line (first,last,duration,count,name,data)
-		 * which are accessed as -k1 .. -k6 on the
+		 * which are accessed as -k1 .. -k7 on the
 		 * sort command line. we strip them off later
 		 * when reading the result back. the reason
 		 * for all this PDP11-era logic is to avoid
@@ -961,24 +962,27 @@ data_blob(query_t query, const char *buf, size_t len) {
 
 		DEBUG(3, true, "dyn_rrname = '%s'\n", dyn_rrname);
 		DEBUG(3, true, "dyn_rdata = '%s'\n", dyn_rdata);
-		fprintf(writer->sort_stdin, "%lu %lu %lu %lu %s %s %d %*.*s\n",
+		fprintf(writer->sort_stdin,
+			"%lu %lu %lu %lu %s %s %s %d %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,
 			(unsigned long)(last - first),
 			(unsigned long)tup.count,
 			or_else(dyn_rrname, "n/a"),
+			tup.rrtype,
 			or_else(dyn_rdata, "n/a"),
 			(int)query->mode,
-			(int)len, (int)len, buf);
-		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %d %*.*s'\n",
-			 (unsigned long)first,
-			 (unsigned long)last,
-			 (unsigned long)(last - first),
-			 (unsigned long)tup.count,
-			 or_else(dyn_rrname, "n/a"),
-			 or_else(dyn_rdata, "n/a"),
-			 (int)query->mode,
-			 (int)len, (int)len, buf);
+			(int)len, (int)len, fetch->buf);
+		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %s %d %*.*s'\n",
+		      (unsigned long)first,
+		      (unsigned long)last,
+		      (unsigned long)(last - first),
+		      (unsigned long)tup.count,
+		      or_else(dyn_rrname, "n/a"),
+		      tup.rrtype,
+		      or_else(dyn_rdata, "n/a"),
+		      (int)query->mode,
+		      (int)len, (int)len, fetch->buf);
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {

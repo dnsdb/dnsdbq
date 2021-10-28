@@ -35,12 +35,12 @@ static void io_drain(void);
 static void fetch_reap(fetch_t);
 static void fetch_done(fetch_t);
 static void fetch_unlink(fetch_t);
-static void query_done(query_t);
+static void last_fetch(fetch_t);
 
 static writer_t writers = NULL;
 static CURLM *multi = NULL;
 static bool curl_cleanup_needed = false;
-static query_t paused[MAX_JOBS];
+static query_t paused[MAX_FETCHES];
 static int npaused = 0;
 
 const char saf_begin[] = "begin";
@@ -172,7 +172,7 @@ fetch_done(fetch_t fetch) {
 
 	/* if this was the last fetch on some query, signal. */
 	if (query->fetches == fetch && fetch->next == NULL)
-		query_done(query);
+		last_fetch(fetch);
 }
 
 /* fetch_unlink -- disconnect a fetch from its writer.
@@ -241,7 +241,12 @@ ps_stdout(writer_t writer) {
 void
 query_status(query_t query, const char *status, const char *message) {
 	assert((query->status == NULL) == (query->message == NULL));
-	assert(query->status == NULL);
+	if (query->multitype && query->status != NULL) {
+		DESTROY(query->status);
+		DESTROY(query->message);
+	} else {
+		assert(query->status == NULL);
+	}
 	query->status = strdup(status);
 	query->message = strdup(message);
 }
@@ -274,17 +279,17 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				/* grab the token. */
 				writer->active = query;
 				DEBUG(2, true, "active (%d) %s\n",
-				      npaused, query->command);
+				      npaused, query->descrip);
 			} else if (writer->active != query) {
 				/* pause the query. */
 				paused[npaused++] = query;
 				DEBUG(2, true, "pause (%d) %s\n",
-				      npaused, query->command);
+				      npaused, query->descrip);
 				return CURL_WRITEFUNC_PAUSE;
 			}
 		}
 		if (!query->hdr_sent) {
-			printf("++ %s\n", query->command);
+			printf("++ %s\n", query->descrip);
 			query->hdr_sent = true;
 		}
 	}
@@ -309,27 +314,22 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			if (eol != NULL)
 				*eol = '\0';
 
-			/* only report the first response status (vs. -m). */
-			if (query->status == NULL) {
+			/* only remember the first response status. */
+			if (query->status == NULL)
 				query_status(query,
 					     psys->status(fetch),
 					     message);
-				if (!quiet) {
-					char *url;
+			if (!quiet) {
+				char *url;
 
-					curl_easy_getinfo(fetch->easy,
-							CURLINFO_EFFECTIVE_URL,
-							  &url);
-					fprintf(stderr,
-						"%s: warning: "
-						"libcurl %ld [%s]\n",
-						program_name, fetch->rcode,
-						url);
-				}
+				curl_easy_getinfo(fetch->easy,
+						  CURLINFO_EFFECTIVE_URL,
+						  &url);
+				fprintf(stderr,
+					"%s: warning: libcurl %ld [%s] %s\n",
+					program_name, fetch->rcode,
+					url, message);
 			}
-			if (!quiet)
-				fprintf(stderr, "%s: warning: libcurl: [%s]\n",
-					program_name, message);
 			DESTROY(message);
 			fetch->buf[0] = '\0';
 			fetch->len = 0;
@@ -350,7 +350,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			/* cause CURLE_WRITE_ERROR for this transfer. */
 			bytes = 0;
 			if (psys->encap == encap_saf)
-				query->saf_cond = sc_we_limited;
+				fetch->saf_cond = sc_we_limited;
 			/* inform io_engine() that the abort is intentional. */
 			fetch->stopped = true;
 		} else if (writer->meta_query) {
@@ -361,11 +361,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			       fetch->buf, pre_len + 1);
 			writer->ps_len += pre_len + 1;
 		} else {
-			query->writer->count +=
-				data_blob(query, fetch->buf, pre_len);
+			query->writer->count += data_blob(fetch, pre_len);
 
 			if (psys->encap == encap_saf)
-				switch (query->saf_cond) {
+				switch (fetch->saf_cond) {
 				case sc_init:
 				case sc_begin:
 				case sc_ongoing:
@@ -388,25 +387,28 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	return bytes;
 }
 
-/* query_done -- do something with leftover buffer data when a query ends.
+/* last_fetch -- do something with leftover buffer data when a query ends.
  */
 static void
-query_done(query_t query) {
+last_fetch(fetch_t fetch) {
+	query_t query = fetch->query;
+
+	assert(query->fetches == fetch && fetch->next == NULL);
 	DEBUG(2, true, "query_done(%s), meta=%d\n",
-	      query->command, query->writer->meta_query);
+	      query->descrip, query->writer->meta_query);
 	if (query->writer->meta_query)
 		return;
 
 	if (batching == batch_none && !quiet) {
-		const char *msg = or_else(query->saf_msg, "");
+		const char *msg = or_else(fetch->saf_msg, "");
 
-		if (query->saf_cond == sc_limited)
+		if (fetch->saf_cond == sc_limited)
 			fprintf(stderr, "Database limit: %s\n", msg);
-		else if (query->saf_cond == sc_failed)
+		else if (fetch->saf_cond == sc_failed)
 			fprintf(stderr, "Database result: %s\n", msg);
-		else if (query->saf_cond == sc_missing)
+		else if (fetch->saf_cond == sc_missing)
 			fprintf(stderr, "Query response missing: %s\n", msg);
-		else if (query->status != NULL)
+		else if (query->status != NULL && !query->multitype)
 			fprintf(stderr, "Query status: %s (%s)\n",
 				query->status, query->message);
 	} else if (batching == batch_verbose) {
@@ -422,10 +424,10 @@ query_done(query_t query) {
 			asprintf(&writer->ps_buf, "-- %s (%s)\n",
 				 or_else(query->status, status_noerror),
 				 or_else(query->message,
-					 or_else(query->saf_msg, "no error")));
+					 or_else(fetch->saf_msg, "no error")));
 		if (npaused > 0) {
 			query_t unpause;
-			fetch_t fetch;
+			fetch_t ufetch;
 			int i;
 
 			/* unpause the next query's fetches. */
@@ -433,12 +435,12 @@ query_done(query_t query) {
 			npaused--;
 			for (i = 0; i < npaused; i++)
 				paused[i] = paused[i + 1];
-			for (fetch = unpause->fetches;
-			     fetch != NULL;
-			     fetch = fetch->next) {
+			for (ufetch = unpause->fetches;
+			     ufetch != NULL;
+			     ufetch = ufetch->next) {
 				DEBUG(2, true, "unpause (%d) %s\n",
-				      npaused, unpause->command);
-				curl_easy_pause(fetch->easy, CURLPAUSE_CONT);
+				      npaused, unpause->descrip);
+				curl_easy_pause(ufetch->easy, CURLPAUSE_CONT);
 			}
 		}
 	}
@@ -483,16 +485,18 @@ writer_fini(writer_t writer) {
 				fetch->len = 0;
 			}
 
+			/* release any fetch-specific data. */
+			DESTROY(fetch->saf_msg);
+
 			/* tear down any curl infrastructure on the fetch. */
 			fetch_reap(fetch);
 			fetch = NULL;
 			query->fetches = fetch_next;
 		}
 		assert((query->status != NULL) == (query->message != NULL));
-		DESTROY(query->saf_msg);
 		DESTROY(query->status);
 		DESTROY(query->message);
-		DESTROY(query->command);
+		DESTROY(query->descrip);
 		DESTROY(query);
 		writer->queries = query_next;
 	}
@@ -542,7 +546,7 @@ writer_fini(writer_t writer) {
 				 (int)(nl - linep),
 				 (int)(nl - linep),
 				 linep);
-			/* skip sort keys (first, last, count, name, data). */
+			/* skip sort key: first */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no SP found in '%s'\n",
@@ -550,6 +554,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: last */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no second SP in '%s'\n",
@@ -557,6 +562,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: duration */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no third SP in '%s'\n",
@@ -564,6 +570,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: count */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no fourth SP in '%s'\n",
@@ -571,6 +578,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: rrname */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no fifth SP in '%s'\n",
@@ -578,6 +586,7 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: rrtype */
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
 					"%s: warning: no sixth SP in '%s'\n",
@@ -585,6 +594,15 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* skip sort key: rdata */
+			if ((linep = strchr(linep, ' ')) == NULL) {
+				fprintf(stderr,
+					"%s: warning: no seventh SP in '%s'\n",
+					program_name, line);
+				continue;
+			}
+			linep += strspn(linep, " ");
+			/* recover the mode */
 			mode_e mode = (mode_e) (int) strtol(linep, NULL, 10);
 			if (mode == no_mode) {
 				fprintf(stderr,
@@ -594,11 +612,12 @@ writer_fini(writer_t writer) {
 			}
 			if ((linep = strchr(linep, ' ')) == NULL) {
 				fprintf(stderr,
-					"%s: warning: no seventh SP in '%s'\n",
+					"%s: warning: no eighth SP in '%s'\n",
 					program_name, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
+			/* recover the json */
 			DEBUG(2, true, "sort2: '%*.*s'\n",
 				 (int)(nl - linep),
 				 (int)(nl - linep),
@@ -710,27 +729,27 @@ io_drain(void) {
 						  &fetch->rcode);
 
 			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
-			      query->command, fetch->rcode);
+			      query->descrip, fetch->rcode);
 			if (psys->encap == encap_saf) {
-				if (query->saf_cond == sc_begin ||
-				    query->saf_cond == sc_ongoing)
+				if (fetch->saf_cond == sc_begin ||
+				    fetch->saf_cond == sc_ongoing)
 				{
 					/* stream ended without a terminating
 					 * SAF value, so override stale value
 					 * we received before the problem.
 					 */
-					query->saf_cond = sc_missing;
-					query->saf_msg = strdup(
+					fetch->saf_cond = sc_missing;
+					fetch->saf_msg = strdup(
 						"Data transfer failed "
 						"-- No SAF terminator "
 						"at end of stream");
 					query_status(query,
 						     status_error,
-						     query->saf_msg);
+						     fetch->saf_msg);
 				}
 				DEBUG(2, true, "... saf_cond %d saf_msg %s\n",
-				      query->saf_cond,
-				      or_else(query->saf_msg, ""));
+				      fetch->saf_cond,
+				      or_else(fetch->saf_msg, ""));
 			}
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
 				fprintf(stderr,
@@ -775,22 +794,22 @@ io_drain(void) {
 	}
 }
 
-/* escape -- HTML-encode a string, in place.
+/* escape -- HTML-encode a string, returns a string which must be free()'d.
  */
-void
-escape(CURL *easy, char **str) {
-	char *escaped;
+char *
+escape(const char *str) {
+	char *escaped, *ret;
 
-	if (*str == NULL)
-		return;
-	escaped = curl_easy_escape(easy, *str, (int)strlen(*str));
+	if (str == NULL)
+		return NULL;
+	escaped = curl_escape(str, (int)strlen(str));
 	if (escaped == NULL) {
 		fprintf(stderr, "%s: curl_escape(%s) failed\n",
-			program_name, *str);
+			program_name, str);
 		my_exit(1);
 	}
-	DESTROY(*str);
-	*str = strdup(escaped);
+	ret = strdup(escaped);
 	curl_free(escaped);
 	escaped = NULL;
+	return ret;
 }

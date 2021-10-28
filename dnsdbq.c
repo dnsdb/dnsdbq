@@ -73,7 +73,8 @@ static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(qdesc_ct);
 static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
-static void launch(query_t, pdns_fence_ct);
+static const char *multitype_coherency(const char *);
+static void launch_fetch(query_t, const char *, pdns_fence_ct);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
@@ -343,7 +344,7 @@ main(int argc, char *argv[]) {
 			break;
 		case 't':
 			if (qd.rrtype != NULL)
-				usage("can only specify rrtype one way");
+				usage("can only specify rrtype(s) once");
 			qd.rrtype = strdup(optarg);
 			break;
 		case 'b':
@@ -484,15 +485,6 @@ main(int argc, char *argv[]) {
 	}
 	if (presentation == pres_minimal)
 		minimal_deduper = deduper_new(minimal_modulus);
-
-	/* recondition various options for HTML use. */
-	CURL *easy = curl_easy_init();
-	escape(easy, &qd.thing);
-	escape(easy, &qd.rrtype);
-	escape(easy, &qd.bailiwick);
-	escape(easy, &qd.pfxlen);
-	curl_easy_cleanup(easy);
-	easy = NULL;
 
 	if ((msg = qparam_ready(&qp)) != NULL)
 		usage(msg);
@@ -714,19 +706,19 @@ help(void) {
 	printf("usage: %s [-acdfGghIjmqSsUv468] [-p dns|json|csv|minimal]\n",
 	       program_name);
 	puts("\t[-u SYSTEM] [-V VERB] [-0 FUNCTION=INPUT]\n"
-	     "\t[-k (first|last|duration|count|name|data)[,...]]\n"
+	     "\t[-k (first|last|duration|count|name|type|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT]\n"
 	     "\t[-O OFFSET] [-M MAX_COUNT]\n"
 	     "\t[-A AFTER] [-B BEFORE]\n"
 	     "\t[-D ASINFO_DOMAIN] [-T (datefix|reverse|chomp)[,...] {\n"
 	     "\t\t-f |\n"
 	     "\t\t-J INPUTFILE |\n"
-	     "\t\t[-t RRTYPE] [-b BAILIWICK] {\n"
-	     "\t\t\t-r OWNER[/TYPE[/BAILIWICK]] |\n"
-	     "\t\t\t-n NAME[/TYPE] |\n"
+	     "\t\t[-t RRTYPE[,...]] [-b BAILIWICK] {\n"
+	     "\t\t\t-r OWNER[/RRTYPE[,...][/BAILIWICK]] |\n"
+	     "\t\t\t-n NAME[/RRTYPE[,...]] |\n"
 	     "\t\t\t-i IP[/PFXLEN] |\n"
-	     "\t\t\t-N RAW-NAME-DATA[/TYPE]\n"
-	     "\t\t\t-R RAW-OWNER-DATA[/TYPE[/BAILIWICK]]\n"
+	     "\t\t\t-N RAW-NAME-DATA[/RRTYPE[,...]]\n"
+	     "\t\t\t-R RAW-OWNER-DATA[/RRTYPE[,...][/BAILIWICK]]\n"
 	     "\t\t}\n"
 	     "\t}");
 	printf("for -A and -B, use absolute format YYYY-MM-DD[ HH:MM:SS],\n"
@@ -737,11 +729,11 @@ help(void) {
 	     "use -d one or more times to ramp up the diagnostic output.\n"
 	     "for -0, the function must be \"countoff\"\n"
 	     "for -f, stdin must contain lines of the following forms:\n"
-	     "\trrset/name/NAME[/TYPE[/BAILIWICK]]\n"
-	     "\trrset/raw/HEX-PAIRS[/RRTYPE[/BAILIWICK]]\n"
-	     "\trdata/name/NAME[/TYPE]\n"
+	     "\trrset/name/NAME[/RRTYPE[,...][/BAILIWICK]]\n"
+	     "\trrset/raw/HEX-PAIRS[/RRTYPE[,...][/BAILIWICK]]\n"
+	     "\trdata/name/NAME[/RRTYPE[,...]]\n"
 	     "\trdata/ip/ADDR[,PFXLEN]\n"
-	     "\trdata/raw/HEX-PAIRS[/RRTYPE]\n"
+	     "\trdata/raw/HEX-PAIRS[/RRTYPE[,...]]\n"
 	     "\t(output format will depend on -p or -j, framed by '--'.)\n"
 	     "\t(with -ff, framing will be '++ $cmd', '-- $stat ($code)'.\n"
 	     "use -g to get graveled results (default is -G, rocks).\n"
@@ -763,7 +755,7 @@ help(void) {
 	     "use -v to show the program version.\n"
 	     "use -4 to force connecting to the server via IPv4.\n"
 	     "use -6 to force connecting to the server via IPv6.\n"
-	     "use -8 to allow arbitrary 8-bit values in -r and -n arguments.\n",
+	     "use -8 to allow 8-bit values in -r and -n arguments.\n",
 	     asinfo_domain);
 
 	puts("for -u, system must be one of:");
@@ -1046,7 +1038,8 @@ do_batch(FILE *f, qparam_ct qpp) {
 
 		/* if not parallelizing, start a writer here instead. */
 		if (!one_writer)
-			writer = writer_init(qp.output_limit, ps_stdout, false);
+			writer = writer_init(qp.output_limit,
+					     ps_stdout, false);
 
 		/* crack the batch line if possible. */
 		msg = batch_parse(command, &qd);
@@ -1054,16 +1047,22 @@ do_batch(FILE *f, qparam_ct qpp) {
 			fprintf(stderr, "%s: batch entry parse error: %s\n",
 				program_name, msg);
 		} else {
-			/* start one or two curl jobs based on this search. */
+			/* start one or more curl fetches based on this entry.
+			 */
 			query_t query = query_launcher(&qd, &qp, writer);
 
 			/* if merging, drain some jobs; else, drain all jobs.
 			 */
 			if (one_writer)
-				io_engine(MAX_JOBS);
+				io_engine(MAX_FETCHES);
 			else
 				io_engine(0);
-			if (query->status != NULL && batching != batch_verbose)
+
+			/* if one of our fetches already failed, say so now.
+			 */
+			if (query != NULL &&
+			    query->status != NULL &&
+			    batching != batch_verbose)
 			{
 				assert(query->message != NULL);
 				fprintf(stderr,
@@ -1149,7 +1148,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 		optind = 0;
 #else
 		/* 1 is the value that optind should be initialized to,
-		 * accorinng to IEEE Std 1003.1.
+		 * according to IEEE Std 1003.1.
 		 */
 		optind = 1;
 #if defined __FreeBSD__ || defined __OpenBSD__ || defined __NetBSD__ || \
@@ -1273,63 +1272,68 @@ batch_parse(char *line, qdesc_t qdp) {
  */
 static char *
 makepath(qdesc_ct qdp) {
-	char *command;
-	int x;
+	/* recondition various options for HTML use. */
+	char *thing = escape(qdp->thing);
+	char *rrtype = escape(qdp->rrtype);
+	char *bailiwick = escape(qdp->bailiwick);
+	char *pfxlen = escape(qdp->pfxlen);
 
+	char *path = NULL;
 	switch (qdp->mode) {
+		int x;
 	case rrset_mode:
-		if (qdp->rrtype != NULL && qdp->bailiwick != NULL)
-			x = asprintf(&command, "rrset/name/%s/%s/%s",
-				     qdp->thing, qdp->rrtype, qdp->bailiwick);
-		else if (qdp->rrtype != NULL)
-			x = asprintf(&command, "rrset/name/%s/%s",
-				     qdp->thing, qdp->rrtype);
-		else if (qdp->bailiwick != NULL)
-			x = asprintf(&command, "rrset/name/%s/ANY/%s",
-				     qdp->thing, qdp->bailiwick);
+		if (rrtype != NULL && bailiwick != NULL)
+			x = asprintf(&path, "rrset/name/%s/%s/%s",
+				     thing, rrtype, bailiwick);
+		else if (rrtype != NULL)
+			x = asprintf(&path, "rrset/name/%s/%s",
+				     thing, rrtype);
+		else if (bailiwick != NULL)
+			x = asprintf(&path, "rrset/name/%s/ANY/%s",
+				     thing, bailiwick);
 		else
-			x = asprintf(&command, "rrset/name/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rrset/name/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case name_mode:
-		if (qdp->rrtype != NULL)
-			x = asprintf(&command, "rdata/name/%s/%s",
-				     qdp->thing, qdp->rrtype);
+		if (rrtype != NULL)
+			x = asprintf(&path, "rdata/name/%s/%s",
+				     thing, rrtype);
 		else
-			x = asprintf(&command, "rdata/name/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rdata/name/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case ip_mode:
-		if (qdp->pfxlen != NULL)
-			x = asprintf(&command, "rdata/ip/%s,%s",
-				     qdp->thing, qdp->pfxlen);
+		if (pfxlen != NULL)
+			x = asprintf(&path, "rdata/ip/%s,%s",
+				     thing, pfxlen);
 		else
-			x = asprintf(&command, "rdata/ip/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rdata/ip/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case raw_rrset_mode:
-		if (qdp->rrtype != NULL)
-			x = asprintf(&command, "rrset/raw/%s/%s",
-				     qdp->thing, qdp->rrtype);
+		if (rrtype != NULL)
+			x = asprintf(&path, "rrset/raw/%s/%s",
+				     thing, rrtype);
 		else
-			x = asprintf(&command, "rrset/raw/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rrset/raw/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
 	case raw_name_mode:
-		if (qdp->rrtype != NULL)
-			x = asprintf(&command, "rdata/raw/%s/%s",
-				     qdp->thing, qdp->rrtype);
+		if (rrtype != NULL)
+			x = asprintf(&path, "rdata/raw/%s/%s",
+				     thing, rrtype);
 		else
-			x = asprintf(&command, "rdata/raw/%s",
-				     qdp->thing);
+			x = asprintf(&path, "rdata/raw/%s",
+				     thing);
 		if (x < 0)
 			my_panic(true, "asprintf");
 		break;
@@ -1338,29 +1342,29 @@ makepath(qdesc_ct qdp) {
 	default:
 		abort();
 	}
-	return command;
+
+	DESTROY(thing);
+	DESTROY(rrtype);
+	DESTROY(bailiwick);
+	DESTROY(pfxlen);
+
+	return path;
 }
 
 /* query_launcher -- fork off some curl jobs via launch() for this query.
+ *
+ * can write to STDERR and return NULL if a query cannot be launched.
  */
 static query_t
 query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	struct pdns_fence fence = {};
 	query_t query = NULL;
+	const char *msg;
 
+	/* ready player one. */
 	CREATE(query, sizeof(struct query));
-	query->writer = writer;
-	writer = NULL;
-	query->params = *qpp;
-	query->next = query->writer->queries;
-	query->writer->queries = query;
-	query->command = makepath(qdp);
-	query->mode = qdp->mode;
 
-	/* figure out from time fencing which job(s) we'll be starting.
-	 *
-	 * the 4-tuple is: first_after, first_before, last_after, last_before
-	 */
+	/* define the fence. */
 	if (qpp->after != 0) {
 		if (qpp->complete) {
 			/* each db tuple must begin after the fence-start. */
@@ -1379,18 +1383,104 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 			fence.first_before = qpp->before;
 		}
 	}
-	launch(query, &fence);
+
+	/* branch on rrtype. */
+	if (qdp->rrtype == NULL) {
+		/* no rrtype string given, let makepath set it to "any". */
+		char *path = makepath(qdp);
+		launch_fetch(query, path, &fence);
+		DESTROY(path);
+	} else if ((msg = multitype_coherency(qdp->rrtype)) != NULL) {
+		fprintf(stderr, "%s: multitype_coherency failed: %s\n",
+			program_name, msg);
+		DESTROY(query);
+		return NULL;
+	} else {
+		/* rrtype string was given, parse comma separated list. */
+		char *rrtypes = strdup(qdp->rrtype);
+		char *saveptr = NULL;
+		int nfetches = 0;
+		for (char *rrtype = strtok_r(rrtypes, ",", &saveptr);
+		     rrtype != NULL;
+		     rrtype = strtok_r(NULL, ",", &saveptr))
+		{
+			struct qdesc qd = {
+				.mode = qdp->mode,
+				.thing = qdp->thing,
+				.rrtype = rrtype,
+				.bailiwick = qdp->bailiwick,
+				.pfxlen = qdp->pfxlen
+			};
+			char *path = makepath(&qd);
+			launch_fetch(query, path, &fence);
+			nfetches++;
+			DESTROY(path);
+		}
+		if (nfetches > 1)
+			query->multitype = true;
+		DESTROY(rrtypes);
+	}
+
+	/* finish query initialization, link it up, and return it. */
+	query->writer = writer;
+	writer = NULL;
+	query->params = *qpp;
+	query->next = query->writer->queries;
+	query->writer->queries = query;
+	query->descrip = makepath(qdp);
+	query->mode = qdp->mode;
 	return query;
 }
 
-/* launch -- actually launch a query job, given a command and time fences.
+/* multitype_coherency -- return an error text if these rrtypes don't mix.
+ */
+static const char *
+multitype_coherency(const char *input) {
+	char *rrtypes = strdup(input);
+	char *saveptr = NULL;
+	bool some = false, any = false,
+		some_dnssec = false, any_dnssec = false;
+	for (char *rrtype = strtok_r(rrtypes, ",", &saveptr);
+	     rrtype != NULL;
+	     rrtype = strtok_r(NULL, ",", &saveptr))
+	{
+		for (char *p = rrtype; *p != '\0'; p++)
+			if (isupper(*p))
+				*p = (char) tolower(*p);
+		if (strcmp(rrtype, "any") == 0)
+			any = true;
+		else if (strcmp(rrtype, "any-dnssec") == 0)
+			any_dnssec = true;
+		else if (strcmp(rrtype, "ds") == 0 ||
+			 strcmp(rrtype, "rrsig") == 0 ||
+			 strcmp(rrtype, "nsec") == 0 ||
+			 strcmp(rrtype, "dnskey") == 0 ||
+			 strcmp(rrtype, "cdnskey") == 0 ||
+			 strcmp(rrtype, "cds") == 0 ||
+			 strcmp(rrtype, "ta") == 0 ||
+			 strcmp(rrtype, "nsec3") == 0 ||
+			 strcmp(rrtype, "nsec3param") == 0 ||
+			 strcmp(rrtype, "dlv") == 0)
+			some_dnssec = true;
+		else
+			some = true;
+		if (any && some)
+			return "ANY is redundant when mixed like this";
+		if (any_dnssec && some_dnssec)
+			return "ANY-DNSSEC is redundant when mixed like this";
+	}
+	DESTROY(rrtypes);
+	return NULL;
+}
+
+/* launch_fetch -- actually launch a query job, given a path and time fences.
  */
 static void
-launch(query_t query, pdns_fence_ct fp) {
+launch_fetch(query_t query, const char *path, pdns_fence_ct fp) {
 	qparam_ct qpp = &query->params;
 	char *url;
 
-	url = psys->url(query->command, NULL, qpp, fp, false);
+	url = psys->url(path, NULL, qpp, fp, false);
 	if (url == NULL)
 		my_exit(1);
 

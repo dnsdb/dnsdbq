@@ -171,7 +171,7 @@ void tuple_unmake(pdns_tuple_t);
 struct counted *countoff(const char *);
 void countoff_debug(const char *, const char *, const struct counted *);
 char *reverse(const char *);
-int data_blob(query_t, const char *, size_t);
+int data_blob(fetch_t, size_t);
 void pick_system(const char *, const char *);
 void read_config(void);
 

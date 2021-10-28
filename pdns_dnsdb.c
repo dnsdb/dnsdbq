@@ -367,11 +367,11 @@ dnsdb_info(void) {
 	/* create a rump query. */
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
-	query->command = strdup("rate_limit");
+	query->descrip = strdup("rate_limit");
 	writer->queries = query;
 
 	/* start a status fetch. */
-	create_fetch(query, dnsdb_url(query->command, NULL, &qparam_empty,
+	create_fetch(query, dnsdb_url("rate_limit", NULL, &qparam_empty,
 				      &(struct pdns_fence){}, true));
 
 	/* run all jobs to completion. */

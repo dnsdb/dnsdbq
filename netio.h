@@ -49,7 +49,7 @@ struct qparam {
 typedef struct qparam *qparam_t;
 typedef const struct qparam *qparam_ct;
 
-/* one API fetch; several may be needed for complex kinds of query. */
+/* one API fetch; several may be needed for complex (multitype) queries. */
 struct fetch {
 	struct fetch	*next;
 	struct query	*query;
@@ -60,23 +60,24 @@ struct fetch {
 	size_t		len;
 	long		rcode;
 	bool		stopped;
+	saf_cond_e	saf_cond;
+	char		*saf_msg;
 };
 typedef struct fetch *fetch_t;
 
-/* one query; one per invocation (or per batch line if parallel.) */
+/* one query; one per invocation (or per batch line.) */
 struct query {
 	struct query	*next;
 	struct fetch	*fetches;
 	struct writer	*writer;
 	struct qparam	params;
-	char		*command;
+	char		*descrip;
 	mode_e		mode;
+	bool		multitype;
 	/* invariant: (status == NULL) == (writer == NULL) */
 	char		*status;
 	char		*message;
 	bool		hdr_sent;
-	saf_cond_e	saf_cond;
-	char		*saf_msg;
 };
 typedef struct query *query_t;
 
@@ -111,6 +112,6 @@ size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 void writer_fini(writer_t);
 void unmake_writers(void);
 void io_engine(int);
-void escape(CURL *, char **);
+char *escape(const char *);
 
 #endif /*NETIO_H_INCLUDED*/
