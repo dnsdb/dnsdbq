@@ -73,7 +73,7 @@ static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
 static char *makepath(qdesc_ct);
 static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
-static const char *multitype_coherency(const char *);
+static const char *rrtype_correctness(const char *);
 static void launch_fetch(query_t, const char *, pdns_fence_ct);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
@@ -1390,8 +1390,8 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 		char *path = makepath(qdp);
 		launch_fetch(query, path, &fence);
 		DESTROY(path);
-	} else if ((msg = multitype_coherency(qdp->rrtype)) != NULL) {
-		fprintf(stderr, "%s: multitype_coherency failed: %s\n",
+	} else if ((msg = rrtype_correctness(qdp->rrtype)) != NULL) {
+		fprintf(stderr, "%s: rrtype incorrect: %s\n",
 			program_name, msg);
 		DESTROY(query);
 		return NULL;
@@ -1432,12 +1432,15 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	return query;
 }
 
-/* multitype_coherency -- return an error text if these rrtypes don't mix.
+/* rrtype_correctness -- return an error text if the rrtypes are senseless
  */
 static const char *
-multitype_coherency(const char *input) {
+rrtype_correctness(const char *input) {
+	char **rrtypeset = calloc(MAX_FETCHES, sizeof(char *));
 	char *rrtypes = strdup(input);
 	char *saveptr = NULL;
+	const char *ret = NULL;
+	int nrrtypeset = 0;
 	bool some = false, any = false,
 		some_dnssec = false, any_dnssec = false;
 	for (char *rrtype = strtok_r(rrtypes, ",", &saveptr);
@@ -1447,6 +1450,16 @@ multitype_coherency(const char *input) {
 		for (char *p = rrtype; *p != '\0'; p++)
 			if (isupper(*p))
 				*p = (char) tolower(*p);
+		if (nrrtypeset == MAX_FETCHES) {
+			ret = "too many rrtypes specified";
+			goto done;
+		}
+		for (int i = 0; i < nrrtypeset; i++)
+			if (strcmp(rrtype, rrtypeset[i]) == 0) {
+				ret = "duplicate rrtype encountered";
+				goto done;
+			}
+		rrtypeset[nrrtypeset++] = rrtype;
 		if (strcmp(rrtype, "any") == 0)
 			any = true;
 		else if (strcmp(rrtype, "any-dnssec") == 0)
@@ -1464,13 +1477,19 @@ multitype_coherency(const char *input) {
 			some_dnssec = true;
 		else
 			some = true;
-		if (any && some)
-			return "ANY is redundant when mixed like this";
-		if (any_dnssec && some_dnssec)
-			return "ANY-DNSSEC is redundant when mixed like this";
+		if (any && some) {
+			ret = "ANY is redundant when mixed like this";
+			goto done;
+		}
+		if (any_dnssec && some_dnssec) {
+			ret = "ANY-DNSSEC is redundant when mixed like this";
+			goto done;
+		}
 	}
+ done:
 	DESTROY(rrtypes);
-	return NULL;
+	DESTROY(rrtypeset);
+	return ret;
 }
 
 /* launch_fetch -- actually launch a query job, given a path and time fences.

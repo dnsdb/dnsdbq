@@ -39,7 +39,12 @@
 #error "No passive DNS system defined"
 #endif
 #define DEFAULT_VERB 0
+
+/* maximum number of concurrent fetches.
+ * must not be greater than any pDNS system's concurrent connection limit.
+ */
 #define	MAX_FETCHES 8
+
 #define DNSDBQ_SYSTEM "DNSDBQ_SYSTEM"
 
 #define CREATE(p, s) if ((p) != NULL) { my_panic(false, "non-NULL ptr"); } \
