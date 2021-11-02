@@ -87,7 +87,7 @@ void
 deduper_dump(deduper_t me, FILE *out) {
 	for (size_t bucket = 0; bucket < me->buckets; bucket++)
 		if (me->chains[bucket] != NULL) {
-			fprintf(out, "[%lu]", bucket);
+			fprintf(out, "[%zu]", bucket);
 			for (chainlink_t chainlink = me->chains[bucket];
 			     chainlink != NULL;
 			     chainlink = chainlink->next)
