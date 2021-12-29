@@ -1448,8 +1448,8 @@ rrtype_correctness(const char *input) {
 	     rrtype = strtok_r(NULL, ",", &saveptr))
 	{
 		for (char *p = rrtype; *p != '\0'; p++)
-			if (isupper(*p))
-				*p = (char) tolower(*p);
+			if (isupper((int)*p))
+				*p = (char) tolower((int)*p);
 		if (nrrtypeset == MAX_FETCHES) {
 			ret = "too many rrtypes specified";
 			goto done;

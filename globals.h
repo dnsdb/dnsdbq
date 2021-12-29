@@ -34,7 +34,7 @@ extern const struct verb verbs[];
 #endif
 
 EXTERN	const char id_swclient[]	INIT("dnsdbq");
-EXTERN	const char id_version[]		INIT("2.6.0");
+EXTERN	const char id_version[]		INIT("2.6.1");
 EXTERN	const char *program_name	INIT(NULL);
 EXTERN	const char path_sort[]		INIT("/usr/bin/sort");
 EXTERN	const char json_header[]	INIT("Accept: application/json");
