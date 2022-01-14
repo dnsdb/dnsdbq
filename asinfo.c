@@ -160,6 +160,47 @@ asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 }
 #endif
 
+/*
+ * Return a string for the rcode.
+ */
+static const char *
+asinfo_p_rcode(int rcode) {
+	switch (rcode) {
+	case ns_r_noerror:
+		return "NOERROR";
+	case ns_r_formerr:
+		return "FORMERR";
+	case ns_r_servfail:
+		return "SERVFAIL";
+	case ns_r_nxdomain:
+		return "NXDOMAIN";
+	case ns_r_notimpl:
+		return "NOTIMP";
+	case ns_r_refused:
+		return "REFUSED";
+	case ns_r_yxdomain:
+		return "YXDOMAIN";
+	case ns_r_yxrrset:
+		return "YXRRSET";
+	case ns_r_nxrrset:
+		return "NXRRSET";
+	case ns_r_notauth:
+		return "NOTAUTH";
+	case ns_r_notzone:
+		return "NOTZONE";
+	case ns_r_max:
+		return "";
+	case ns_r_badsig:
+		return "BADSIG";
+	case ns_r_badkey:
+		return "BADKEY";
+	case ns_r_badtime:
+		return "BADTIME";
+	default:
+		return "";
+	}
+}
+
 /* asinfo_from_dns(dname, asnum, cidr) -- retrieve and parse a ASINFO DNS TXT
  *
  * return NULL on success, or else, reason (string) for failure.
@@ -191,7 +232,7 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 		return strerror(errno);
 	rcode = ns_msg_getflag(msg, ns_f_rcode);
 	if (rcode != ns_r_noerror)
-		return p_rcode(rcode);
+		return asinfo_p_rcode(rcode);
 	an = ns_msg_count(msg, ns_s_an);
 	if (an == 0)
 		return "ANCOUNT == 0";
