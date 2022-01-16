@@ -128,14 +128,14 @@ present_text_lookup(pdns_tuple_ct tup,
  */
 static void
 present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
-	char *asnum = NULL, *cidr = NULL, *comment = NULL;
-	const char *result = NULL;
+	char *asnum = NULL, *cidr = NULL, *comment = NULL, *result = NULL;
 
 #ifndef CRIPPLED_LIBC
 	result = asinfo_from_rr(rrtype, rdata, &asnum, &cidr);
 #endif
 	if (result != NULL) {
-		comment = strdup(result);
+		comment = result;
+		result = NULL;
 	} else if (asnum != NULL && cidr != NULL) {
 		const char *src = asnum;
 		bool wordbreak = true;
@@ -369,14 +369,14 @@ annotate_one(json_t *anno, const char *rdata, const char *name, json_t *obj) {
 #ifndef CRIPPLED_LIBC
 static json_t *
 annotate_asinfo(const char *rrtype, const char *rdata) {
-	char *asnum = NULL, *cidr = NULL;
+	char *asnum = NULL, *cidr = NULL, *result = NULL;
 	json_t *asinfo = NULL;
-	const char *result;
 
 	if ((result = asinfo_from_rr(rrtype, rdata, &asnum, &cidr)) != NULL) {
 		asinfo = json_object();
 		json_object_set_new_nocheck(asinfo, "comment",
 					    json_string(result));
+		free(result);
 	} else if (asnum != NULL && cidr != NULL) {
 		json_t *array = json_array();
 		char *copy, *walker, *token;
@@ -467,15 +467,15 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 		printf("\"%s\"", rdata);
 	if (asinfo_lookup && tup->obj.rrtype != NULL &&
 	    tup->obj.rdata != NULL) {
-		char *asnum = NULL, *cidr = NULL;
-		const char *result = NULL;
+		char *asnum = NULL, *cidr = NULL, *result = NULL;
 
 #ifndef CRIPPLED_LIBC
 		result = asinfo_from_rr(tup->rrtype, rdata, &asnum, &cidr);
 #endif
 		if (result != NULL) {
 			asnum = strdup(result);
-			cidr = strdup(result);
+			cidr = result;
+			result = NULL;
 		}
 		putchar(',');
 		if (asnum != NULL) {

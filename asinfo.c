@@ -45,22 +45,22 @@ static struct __res_state res;
 
 /* forward. */
 
-static const char *asinfo_from_ipv4(const char *, char **, char **);
+static char *asinfo_from_ipv4(const char *, char **, char **);
 #ifdef asinfo_ipv6
 static const char *asinfo_from_ipv6(const char *, char **, char **);
 #endif
-static const char *asinfo_from_dns(const char *, char **, char **);
+static char *asinfo_from_dns(const char *, char **, char **);
 static const char *keep_best(char **, char **, char *, char *);
 
 /* public. */
 
 /* asinfo_from_rr(rrtype, rdata, asnum, cidr) -- find ASINFO for A/AAAA string
  *
- * return NULL on success, or else, reason (string) for failure.
+ * return NULL on success, or else, reason (malloc'd string) for failure.
  *
  * side effect: on success, *asnum and *cidr will be heap-allocated strings.
  */
-const char *
+char *
 asinfo_from_rr(const char *rrtype, const char *rdata,
 	       char **asnum, char **cidr)
 {
@@ -99,22 +99,22 @@ asinfo_shutdown(void) {
 
 /* asinfo_from_ipv4(addr, asnum, cidr) -- prepare and use ASINFO IPv4 name
  *
- * return NULL on success, or else, reason (string) for failure.
+ * return NULL on success, or else, reason (malloc'd string) for failure.
  *
  * side effect: on success, *asnum and *cidr will be heap-allocated strings.
  */
-static const char *
+static char *
 asinfo_from_ipv4(const char *addr, char **asnum, char **cidr) {
 	u_char a4[32/8];
 	char *dname;
 
 	if (inet_pton(AF_INET, addr, a4) < 0)
-		return strerror(errno);
+		return strdup(strerror(errno));
 	int n = asprintf(&dname, "%d.%d.%d.%d.%s",
 			 a4[3], a4[2], a4[1], a4[0], asinfo_domain);
 	if (n < 0)
-		return strerror(errno);
-	const char *result = asinfo_from_dns(dname, asnum, cidr);
+		return strdup(strerror(errno));
+	char *result = asinfo_from_dns(dname, asnum, cidr);
 	free(dname);
 	return result;
 }
@@ -122,30 +122,29 @@ asinfo_from_ipv4(const char *addr, char **asnum, char **cidr) {
 #ifdef asinfo_ipv6
 /* asinfo_from_ipv6(addr, asnum, cidr) -- prepare and use ASINFO IPv6 name
  *
- * return NULL on success, or else, reason (string) for failure.
+ * return NULL on success, or else, reason (malloc'd string) for failure.
  *
  * side effect: on success, *asnum and *cidr will be heap-allocated strings.
  *
  * NOTE WELL: this is a placeholder, since no ASINFO source has working IPv6.
  */
-static const char *
+static char *
 asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
+	char *result, *dname, *p;
 	u_char a6[128/8];
-	const char *result;
-	char *dname, *p;
 	int i;
 
 	if (inet_pton(AF_INET6, addr, &a6) < 0)
-		return strerror(errno);
+		return strdup(strerror(errno));
 	dname = malloc(strlen(asinfo_domain) + (128/4)*2);
 	if (dname == NULL)
-		return strerror(errno);
+		return strdup(strerror(errno));
 	result = NULL;
 	p = dname;
 	for (i = (128/8) - 1; i >= 0; i--) {
 		int n = sprintf(p, "%x.%x.", a6[i] & 0xf, a6[i] >> 4);
 		if (n < 0) {
-			result = strerror(errno);
+			result = strdup(strerror(errno));
 			break;
 		}
 		p += n;
@@ -162,15 +161,15 @@ asinfo_from_ipv6(const char *addr, char **asnum, char **cidr) {
 
 /* asinfo_from_dns(dname, asnum, cidr) -- retrieve and parse a ASINFO DNS TXT
  *
- * return NULL on success, or else, reason (string) for failure.
+ * return NULL on success, or else, reason (malloc'd string) for failure.
  *
  * side effect: on success, *asnum and *cidr will be heap-allocated strings.
  */
-static const char *
+static char *
 asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	u_char buf[NS_PACKETSZ];
 	int n, an, rrn, rcode;
-	const char *result;
+	char *result;
 	ns_msg msg;
 	ns_rr rr;
 
@@ -185,16 +184,19 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 		if (res.res_h_errno == HOST_NOT_FOUND)
 			return NULL;
 		else
-			return hstrerror(res.res_h_errno);
+			return strdup(hstrerror(res.res_h_errno));
 	}
 	if (ns_initparse(buf, n, &msg) < 0)
-		return strerror(errno);
+		return strdup(strerror(errno));
 	rcode = ns_msg_getflag(msg, ns_f_rcode);
-	if (rcode != ns_r_noerror)
-		return p_rcode(rcode);
+	if (rcode != ns_r_noerror) {
+		if (asprintf(&result, "DNS RCODE 0x%x", rcode) < 0)
+			return strdup(strerror(errno));
+		return result;
+	}
 	an = ns_msg_count(msg, ns_s_an);
 	if (an == 0)
-		return "ANCOUNT == 0";
+		return strdup("ANCOUNT == 0");
 	/* some ASINFO data sources return multiple TXT RR's, each having
 	 * a prefix length measured in bits. we will select the best
 	 * (longest match) prefix offered.
@@ -205,7 +207,7 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 		char *txt[3];
 
 		if (ns_parserr(&msg, ns_s_an, rrn, &rr) < 0) {
-			result = strerror(errno);
+			result = strdup(strerror(errno));
 			break;
 		}
 		rdata = ns_rr_rdata(rr);
@@ -216,18 +218,18 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 			 * more than three TXT segments (<character-strings>).
 			 */
 			if (ntxt == 3) {
-				result = "len(TXT[]) > 3";
+				result = strdup("len(TXT[]) > 3");
 				break;
 			}
 			n = *rdata++;
 			rdlen--;
 			if (n > rdlen) {
-				result = "TXT overrun";
+				result = strdup("TXT overrun");
 				break;
 			}
 			txt[ntxt] = strndup((const char *)rdata, (size_t)n);
 			if (txt[ntxt] == NULL) {
-				result = "strndup FAIL";
+				result = strdup("strndup FAIL");
 				break;
 			}
 			DEBUG(2, true, "TXT[%d] \"%s\"\n", ntxt, txt[ntxt]);
@@ -258,8 +260,11 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 				new_cidr = strndup(t1 + seplen, (size_t)
 						   (t2 - (t1 + seplen)));
 				t1 = t2 = NULL;
-				result = keep_best(asnum, cidr,
-						   new_asnum, new_cidr);
+				const char *t = keep_best(asnum, cidr,
+							  new_asnum,
+							  new_cidr);
+				if (t != NULL)
+					result = strdup(t);
 			} else if (ntxt == 3) {
 				/* routeviews.org format:
 				 *
@@ -274,14 +279,16 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 					     txt[1], txt[2]) >= 0)
 				{
 					new_asnum = strdup(txt[0]);
-					result = keep_best(asnum, cidr,
-							   new_asnum,
-							   new_cidr);
+					const char *t = keep_best(asnum, cidr,
+								  new_asnum,
+								  new_cidr);
+					if (t != NULL)
+						result = strdup(t);
 				} else {
-					result = strerror(errno);
+					result = strdup(strerror(errno));
 				}
 			} else {
-				result = "unrecognized asinfo TXT format";
+				result = strdup("unrecognized TXT format");
 			}
 		}
 		for (n = 0; n < ntxt; n++) {
