@@ -159,6 +159,7 @@ fetch_reap(fetch_t fetch) {
 		curl_slist_free_all(fetch->hdrs);
 		fetch->hdrs = NULL;
 	}
+	DESTROY(fetch->saf_msg);
 	DESTROY(fetch->url);
 	DESTROY(fetch->buf);
 	DESTROY(fetch);
