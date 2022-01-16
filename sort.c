@@ -268,6 +268,7 @@ sortable_dnsname(sortbuf_t buf, const char *name) {
 	// ensure our result buffer is large enough.
 	size_t new_size = buf->size + c->nalnum;
 	if (new_size == 0) {
+		DESTROY(c);
 		buf->base = realloc(buf->base, 1);
 		buf->base[0] = '.';
 		buf->size = 1;
