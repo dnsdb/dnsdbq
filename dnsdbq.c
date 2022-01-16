@@ -404,7 +404,8 @@ main(int argc, char *argv[]) {
 		case 'T': {
 			char *copy, *walker, *token;
 			copy = walker = strdup(optarg);
-			while ((token = strsep(&walker, ",")) != NULL)
+			char *save = NULL;
+			while ((token = strtok_r(walker, ",", &save)) != NULL) {
 				if (strcasecmp(token, "reverse") == 0)
 					transforms |= TRANS_REVERSE;
 				else if (strcasecmp(token, "datefix") == 0)
@@ -415,6 +416,8 @@ main(int argc, char *argv[]) {
 					DESTROY(copy);
 					usage("unrecognized transform in -T");
 				}
+				walker = NULL;
+			}
 			DESTROY(copy);
 			break;
 		    }
