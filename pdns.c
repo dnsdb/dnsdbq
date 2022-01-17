@@ -382,9 +382,12 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
 		char *copy, *walker, *token;
 
 		copy = walker = strdup(asnum);
-		while ((token = strsep(&walker, " ")) != NULL)
+		char *save = NULL;
+		while ((token = strtok_r(walker, "\040", &save)) != NULL) {
 			json_array_append_new(array, json_integer(atol(token)));
-		free(copy);
+			walker = NULL;
+		}
+		DESTROY(copy);
 		asinfo = json_object();
 		json_object_set_new_nocheck(asinfo, "as", array);
 		json_object_set_new_nocheck(asinfo, "cidr", json_string(cidr));
