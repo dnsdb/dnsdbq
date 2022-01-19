@@ -1366,6 +1366,7 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 
 	/* ready player one. */
 	CREATE(query, sizeof(struct query));
+	query->params = *qpp;
 
 	/* define the fence. */
 	if (qpp->after != 0) {
@@ -1427,7 +1428,6 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	/* finish query initialization, link it up, and return it. */
 	query->writer = writer;
 	writer = NULL;
-	query->params = *qpp;
 	query->next = query->writer->queries;
 	query->writer->queries = query;
 	query->descrip = makepath(qdp);
