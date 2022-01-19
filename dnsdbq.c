@@ -1366,28 +1366,32 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 
 	/* ready player one. */
 	CREATE(query, sizeof(struct query));
+	query->descrip = makepath(qdp);
+	query->mode = qdp->mode;
+	query->params = *qpp;
+	qpp = NULL;
 
 	/* define the fence. */
-	if (qpp->after != 0) {
-		if (qpp->complete) {
+	if (query->params.after != 0) {
+		if (query->params.complete) {
 			/* each db tuple must begin after the fence-start. */
-			fence.first_after = qpp->after;
+			fence.first_after = query->params.after;
 		} else {
 			/* each db tuple must end after the fence-start. */
-			fence.last_after = qpp->after;
+			fence.last_after = query->params.after;
 		}
 	}
-	if (qpp->before != 0) {
-		if (qpp->complete) {
+	if (query->params.before != 0) {
+		if (query->params.complete) {
 			/* each db tuple must end before the fence-end. */
-			fence.last_before = qpp->before;
+			fence.last_before = query->params.before;
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			fence.first_before = qpp->before;
+			fence.first_before = query->params.before;
 		}
 	}
 
-	/* branch on rrtype. */
+	/* branch on rrtype; launch (or queue) nec'y fetches. */
 	if (qdp->rrtype == NULL) {
 		/* no rrtype string given, let makepath set it to "any". */
 		char *path = makepath(qdp);
@@ -1427,11 +1431,8 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	/* finish query initialization, link it up, and return it. */
 	query->writer = writer;
 	writer = NULL;
-	query->params = *qpp;
 	query->next = query->writer->queries;
 	query->writer->queries = query;
-	query->descrip = makepath(qdp);
-	query->mode = qdp->mode;
 	return query;
 }
 
@@ -1499,10 +1500,7 @@ rrtype_correctness(const char *input) {
  */
 static void
 launch_fetch(query_t query, const char *path, pdns_fence_ct fp) {
-	qparam_ct qpp = &query->params;
-	char *url;
-
-	url = psys->url(path, NULL, qpp, fp, false);
+	char *url = psys->url(path, NULL, &query->params, fp, false);
 	if (url == NULL)
 		my_exit(1);
 

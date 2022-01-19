@@ -81,7 +81,7 @@ unmake_curl(void) {
 	}
 }
 
-/* fetch -- given a url, tell libcurl to go fetch it.
+/* fetch -- given a url, tell libcurl to go fetch it, attach fetch to query.
  */
 fetch_t
 create_fetch(query_t query, char *url) {
