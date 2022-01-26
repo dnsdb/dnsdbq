@@ -1092,6 +1092,7 @@ read_config(void) {
 	l = 0;
 	while (getline(&line, &n, f) > 0) {
 		char *tok1, *tok2, *tok3;
+		char *saveptr = NULL;
 		const char *msg;
 
 		l++;
@@ -1100,21 +1101,17 @@ read_config(void) {
 				program_name, l);
 			my_exit(1);
 		}
-		tokstr_t ts = tokstr_string(line);
-		tok1 = tokstr_next(ts, "\040\011\012");
-		tok2 = tokstr_next(ts, "\040\011\012");
-		tok3 = tokstr_next(ts, "\040\011\012");
-		tokstr_last(&ts);
+		tok1 = strtok_r(line, "\040\012", &saveptr);
+		tok2 = strtok_r(NULL, "\040\012", &saveptr);
+		tok3 = strtok_r(NULL, "\040\012", &saveptr);
 		if (tok1 == NULL || tok2 == NULL) {
 			fprintf(stderr,
 				"%s: conf line #%d: malformed\n",
 				program_name, l);
-			DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 			my_exit(1);
 		}
 		if (tok3 == NULL || *tok3 == '\0') {
 			/* variable wasn't set, ignore the line. */
-			DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 			continue;
 		}
 
@@ -1128,13 +1125,9 @@ read_config(void) {
 						program_name,
 						DNSDBQ_SYSTEM,
 						tok3);
-					DESTROY(tok1);
-					DESTROY(tok2);
-					DESTROY(tok3);
 					my_exit(1);
 				}
 			}
-			DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 			continue;
 		}
 
@@ -1155,11 +1148,9 @@ read_config(void) {
 			msg = psys->setval(tok2, tok3);
 			if (msg != NULL) {
 				fprintf(stderr, "setval: %s\n", msg);
-				DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 				my_exit(1);
 			}
 		}
-		DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 	}
 	DESTROY(line);
 	x = pclose(f);
