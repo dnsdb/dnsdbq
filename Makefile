@@ -79,7 +79,7 @@ asinfo.o: asinfo.c \
   asinfo.h globals.h defs.h sort.h pdns.h netio.h
 dnsdbq.o: dnsdbq.c \
   defs.h netio.h \
-  pdns.h \
+  pdns.h tokstr.h \
   pdns_dnsdb.h pdns_circl.h sort.h \
   time.h globals.h
 ns_ttl.o: ns_ttl.c \
@@ -93,7 +93,7 @@ pdns.o: pdns.c defs.h \
   netio.h \
   pdns.h \
   time.h \
-  globals.h sort.h
+  globals.h sort.h tokstr.h
 pdns_circl.o: pdns_circl.c \
   defs.h \
   pdns.h \
