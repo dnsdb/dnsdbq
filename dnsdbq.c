@@ -52,6 +52,7 @@
 #include "pdns.h"
 #include "sort.h"
 #include "time.h"
+#include "tokstr.h"
 #include "globals.h"
 #undef MAIN_PROGRAM
 
@@ -356,11 +357,10 @@ main(int argc, char *argv[]) {
 			if (sorting == no_sort)
 				usage("-k must be preceded by -s or -S");
 
-			char *saveptr = NULL;
-			const char *tok;
-			for (tok = strtok_r(optarg, ",", &saveptr);
-			     tok != NULL;
-			     tok = strtok_r(NULL, ",", &saveptr))
+			tokstr_t ts = tokstr_string(optarg);
+			for (char *tok;
+			     (tok = tokstr_next(ts, ",")) != NULL;
+			     free(tok))
 			{
 				if (find_sort_key(tok) != NULL)
 					usage("Each sort key may only be "
@@ -369,6 +369,7 @@ main(int argc, char *argv[]) {
 				if ((msg = add_sort_key(tok)) != NULL)
 					usage(msg);
 			}
+			tokstr_last(&ts);
 			break;
 		    }
 		case 'J':
@@ -402,10 +403,11 @@ main(int argc, char *argv[]) {
 			}
 			break;
 		case 'T': {
-			char *copy, *walker, *token;
-			copy = walker = strdup(optarg);
-			char *save = NULL;
-			while ((token = strtok_r(walker, ",", &save)) != NULL) {
+			tokstr_t ts = tokstr_string(optarg);
+			for (char *token;
+			     (token = tokstr_next(ts, ",")) != NULL;
+			     free(token))
+			{
 				if (strcasecmp(token, "reverse") == 0)
 					transforms |= TRANS_REVERSE;
 				else if (strcasecmp(token, "datefix") == 0)
@@ -413,12 +415,10 @@ main(int argc, char *argv[]) {
 				else if (strcasecmp(token, "chomp") == 0)
 					transforms |= TRANS_CHOMP;
 				else {
-					DESTROY(copy);
 					usage("unrecognized transform in -T");
 				}
-				walker = NULL;
 			}
-			DESTROY(copy);
+			tokstr_last(&ts);
 			break;
 		    }
 		case 'm':
@@ -1120,20 +1120,19 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 	char **opt = optv;
 	const char *msg;
 	int optc, ch;
-	char *tok;
 
-	char *temp = strdup(optstr);
-	char *saveptr = NULL;
 	/* crack the option string based on space or tab delimiters. */
-	for (tok = strtok_r(temp, "\040\t", &saveptr);
-	     tok != NULL;
-	     tok = strtok_r(NULL, "\040\t", &saveptr))
+	tokstr_t ts = tokstr_string(optstr);
+	for (char *tok;
+	     (tok = tokstr_next(ts, "\040\011")) != NULL;
+	     free(tok))
 	{
 		/* dispense with extra spaces and tabs (empty fields). */
 		if (*tok == '\0')
 			continue;
 		*opt++ = tok;
 	}
+	tokstr_last(&ts);
 
 	/* if no options were specified (e.g., $options\n), restore defaults.
 	 */
@@ -1178,7 +1177,6 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 	}
 	/* done. */
 	DESTROY(optv);
-	DESTROY(temp);
 	return msg;
 }
 
@@ -1404,12 +1402,11 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 		return NULL;
 	} else {
 		/* rrtype string was given, parse comma separated list. */
-		char *rrtypes = strdup(qdp->rrtype);
-		char *saveptr = NULL;
 		int nfetches = 0;
-		for (char *rrtype = strtok_r(rrtypes, ",", &saveptr);
-		     rrtype != NULL;
-		     rrtype = strtok_r(NULL, ",", &saveptr))
+		tokstr_t ts = tokstr_string(qdp->rrtype);
+		for (char *rrtype;
+		     (rrtype = tokstr_next(ts, ",")) != NULL;
+		     free(rrtype))
 		{
 			struct qdesc qd = {
 				.mode = qdp->mode,
@@ -1423,9 +1420,9 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 			nfetches++;
 			DESTROY(path);
 		}
+		tokstr_last(&ts);
 		if (nfetches > 1)
 			query->multitype = true;
-		DESTROY(rrtypes);
 	}
 
 	/* finish query initialization, link it up, and return it. */
@@ -1441,15 +1438,14 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 static const char *
 rrtype_correctness(const char *input) {
 	char **rrtypeset = calloc(MAX_FETCHES, sizeof(char *));
-	char *rrtypes = strdup(input);
-	char *saveptr = NULL;
 	const char *ret = NULL;
 	int nrrtypeset = 0;
 	bool some = false, any = false,
 		some_dnssec = false, any_dnssec = false;
-	for (char *rrtype = strtok_r(rrtypes, ",", &saveptr);
-	     rrtype != NULL;
-	     rrtype = strtok_r(NULL, ",", &saveptr))
+	tokstr_t ts = tokstr_string(input);
+	for (char *rrtype;
+	     (rrtype = tokstr_next(ts, ",")) != NULL;
+	     free(rrtype))
 	{
 		for (char *p = rrtype; *p != '\0'; p++)
 			if (isupper((int)*p))
@@ -1463,7 +1459,7 @@ rrtype_correctness(const char *input) {
 				ret = "duplicate rrtype encountered";
 				goto done;
 			}
-		rrtypeset[nrrtypeset++] = rrtype;
+		rrtypeset[nrrtypeset++] = strdup(rrtype);
 		if (strcmp(rrtype, "any") == 0)
 			any = true;
 		else if (strcmp(rrtype, "any-dnssec") == 0)
@@ -1478,9 +1474,11 @@ rrtype_correctness(const char *input) {
 			 strcmp(rrtype, "nsec3") == 0 ||
 			 strcmp(rrtype, "nsec3param") == 0 ||
 			 strcmp(rrtype, "dlv") == 0)
+		{
 			some_dnssec = true;
-		else
+		} else {
 			some = true;
+		}
 		if (any && some) {
 			ret = "ANY is redundant when mixed like this";
 			goto done;
@@ -1490,8 +1488,10 @@ rrtype_correctness(const char *input) {
 			goto done;
 		}
 	}
+	tokstr_last(&ts);
  done:
-	DESTROY(rrtypes);
+	for (int i = 0; i < nrrtypeset; i++)
+		DESTROY(rrtypeset[i]);
 	DESTROY(rrtypeset);
 	return ret;
 }

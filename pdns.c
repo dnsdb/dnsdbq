@@ -29,6 +29,7 @@
 #include "ns_ttl.h"
 #include "pdns.h"
 #include "time.h"
+#include "tokstr.h"
 #include "globals.h"
 
 static void present_text_line(const char *, const char *, const char *);
@@ -379,21 +380,16 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
 		free(result);
 	} else if (asnum != NULL && cidr != NULL) {
 		json_t *array = json_array();
-		char *copy, *walker, *token;
-
-		copy = walker = strdup(asnum);
-		char *save = NULL;
-		while ((token = strtok_r(walker, "\040", &save)) != NULL) {
-			json_array_append_new(array, json_integer(atol(token)));
-			walker = NULL;
-		}
-		DESTROY(copy);
+		tokstr_t ts = tokstr_string(asnum);
+		for (char *t; (t = tokstr_next(ts, "\040")) != NULL; free(t))
+			json_array_append_new(array, json_integer(atol(t)));
+		tokstr_last(&ts);
 		asinfo = json_object();
 		json_object_set_new_nocheck(asinfo, "as", array);
 		json_object_set_new_nocheck(asinfo, "cidr", json_string(cidr));
-		free(asnum);
-		free(cidr);
 	}
+	DESTROY(asnum);
+	DESTROY(cidr);
 	return asinfo;
 }
 #endif
@@ -1096,7 +1092,6 @@ read_config(void) {
 	l = 0;
 	while (getline(&line, &n, f) > 0) {
 		char *tok1, *tok2, *tok3;
-		char *saveptr = NULL;
 		const char *msg;
 
 		l++;
@@ -1105,17 +1100,21 @@ read_config(void) {
 				program_name, l);
 			my_exit(1);
 		}
-		tok1 = strtok_r(line, "\040\012", &saveptr);
-		tok2 = strtok_r(NULL, "\040\012", &saveptr);
-		tok3 = strtok_r(NULL, "\040\012", &saveptr);
+		tokstr_t ts = tokstr_string(line);
+		tok1 = tokstr_next(ts, "\040\011\012");
+		tok2 = tokstr_next(ts, "\040\011\012");
+		tok3 = tokstr_next(ts, "\040\011\012");
+		tokstr_last(&ts);
 		if (tok1 == NULL || tok2 == NULL) {
 			fprintf(stderr,
 				"%s: conf line #%d: malformed\n",
 				program_name, l);
+			DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 			my_exit(1);
 		}
 		if (tok3 == NULL || *tok3 == '\0') {
 			/* variable wasn't set, ignore the line. */
+			DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 			continue;
 		}
 
@@ -1129,9 +1128,13 @@ read_config(void) {
 						program_name,
 						DNSDBQ_SYSTEM,
 						tok3);
+					DESTROY(tok1);
+					DESTROY(tok2);
+					DESTROY(tok3);
 					my_exit(1);
 				}
 			}
+			DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 			continue;
 		}
 
@@ -1152,9 +1155,11 @@ read_config(void) {
 			msg = psys->setval(tok2, tok3);
 			if (msg != NULL) {
 				fprintf(stderr, "setval: %s\n", msg);
+				DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 				my_exit(1);
 			}
 		}
+		DESTROY(tok1); DESTROY(tok2); DESTROY(tok3);
 	}
 	DESTROY(line);
 	x = pclose(f);
