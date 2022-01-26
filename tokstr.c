@@ -44,6 +44,7 @@ static char *next_string(struct tokstr_string *, const char *);
 
 /* public. */
 
+// tokstr_buffer -- create an iterator for a counted string
 tokstr_t
 tokstr_buffer(const char *source, size_t size) {
 	tokstr_t ts = malloc(sizeof(struct tokstr_buffer));
@@ -59,6 +60,7 @@ tokstr_buffer(const char *source, size_t size) {
 	return ts;
 }
 
+// tokstr_string -- create an iterator for a nul-terminated string
 tokstr_t
 tokstr_string(const char *source) {
 	tokstr_t ts = malloc(sizeof(struct tokstr_string));
@@ -73,6 +75,7 @@ tokstr_string(const char *source) {
 	return ts;
 }
 
+// tokstr_next -- return next token from an iterator (caller must free() this)
 char *
 tokstr_next(tokstr_t ts, const char *delims) {
 	char *ret = NULL;
@@ -89,6 +92,7 @@ tokstr_next(tokstr_t ts, const char *delims) {
 	return ret;
 }
 
+// tokstr_last -- destroy an iterator and release all of its internal resources
 void
 tokstr_last(tokstr_t *pts) {
 	free(*pts);
@@ -97,6 +101,7 @@ tokstr_last(tokstr_t *pts) {
 
 /* private functions. */
 
+// next_buffer -- implement tokstr_next for counted string iterators
 static char *
 next_buffer(struct tokstr_buffer *buf, const char *delims) {
 	char *ret = NULL;
@@ -113,6 +118,7 @@ next_buffer(struct tokstr_buffer *buf, const char *delims) {
 	return ret;
 }
 
+// next_string -- implement tokstr_next for nul-terminated string iterators
 static char *
 next_string(struct tokstr_string *str, const char *delims) {
 	char *ret = NULL;
