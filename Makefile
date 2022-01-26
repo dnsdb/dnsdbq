@@ -40,10 +40,12 @@ LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
 TOOL = dnsdbq
 TOOL_OBJ = $(TOOL).o ns_ttl.o netio.o \
 	pdns.o pdns_circl.o pdns_dnsdb.o \
-	sort.o time.o asinfo.o deduper.o
+	sort.o time.o asinfo.o deduper.o \
+	tokstr.o
 TOOL_SRC = $(TOOL).c ns_ttl.c netio.c \
 	pdns.c pdns_circl.c pdns_dnsdb.c \
-	sort.c time.c asinfo.c deduper.c
+	sort.c time.c asinfo.c deduper.c \
+	tokstr.c
 
 all: $(TOOL)
 
@@ -77,7 +79,7 @@ asinfo.o: asinfo.c \
   asinfo.h globals.h defs.h sort.h pdns.h netio.h
 dnsdbq.o: dnsdbq.c \
   defs.h netio.h \
-  pdns.h \
+  pdns.h tokstr.h \
   pdns_dnsdb.h pdns_circl.h sort.h \
   time.h globals.h
 ns_ttl.o: ns_ttl.c \
@@ -91,7 +93,7 @@ pdns.o: pdns.c defs.h \
   netio.h \
   pdns.h \
   time.h \
-  globals.h sort.h
+  globals.h sort.h tokstr.h
 pdns_circl.o: pdns_circl.c \
   defs.h \
   pdns.h \
@@ -111,3 +113,5 @@ time.o: time.c \
   globals.h sort.h pdns.h \
   netio.h \
   ns_ttl.h
+tokstr.o: tokstr.c \
+  tokstr.h

@@ -29,6 +29,7 @@
 #include "ns_ttl.h"
 #include "pdns.h"
 #include "time.h"
+#include "tokstr.h"
 #include "globals.h"
 
 static void present_text_line(const char *, const char *, const char *);
@@ -379,21 +380,16 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
 		free(result);
 	} else if (asnum != NULL && cidr != NULL) {
 		json_t *array = json_array();
-		char *copy, *walker, *token;
-
-		copy = walker = strdup(asnum);
-		char *save = NULL;
-		while ((token = strtok_r(walker, "\040", &save)) != NULL) {
-			json_array_append_new(array, json_integer(atol(token)));
-			walker = NULL;
-		}
-		DESTROY(copy);
+		tokstr_t ts = tokstr_string(asnum);
+		for (char *t; (t = tokstr_next(ts, "\040")) != NULL; free(t))
+			json_array_append_new(array, json_integer(atol(t)));
+		tokstr_last(&ts);
 		asinfo = json_object();
 		json_object_set_new_nocheck(asinfo, "as", array);
 		json_object_set_new_nocheck(asinfo, "cidr", json_string(cidr));
-		free(asnum);
-		free(cidr);
 	}
+	DESTROY(asnum);
+	DESTROY(cidr);
 	return asinfo;
 }
 #endif
