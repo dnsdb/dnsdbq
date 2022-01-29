@@ -6,7 +6,7 @@
 
 /* example:
 
-	tokstr_h ts = tokstr_string("this:is+-test");
+	tokstr_t ts = tokstr_string("this:is+-test");
 	for (char *t; (t = tokstr_next(ts, "-:+")) != NULL; free(t))
 		printf("\t\"%s\"\n", t);
 	tokstr_last(&ts);
