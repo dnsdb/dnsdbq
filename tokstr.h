@@ -14,20 +14,19 @@
  * will output "this", "is", and "test".
  */
 
-// tokstr_t -- opaque handle for one iterator
+// opaque type for iterator state -- never used
 struct tokstr;
-typedef struct tokstr *tokstr_t;
 
 // tokstr_buffer -- create an iterator for a counted string
-tokstr_t tokstr_buffer(const char *source, size_t size);
+struct tokstr *tokstr_buffer(const char *, size_t);
 
 // tokstr_string -- create an iterator for a nul-terminated string
-tokstr_t tokstr_string(const char *source);
+struct tokstr *tokstr_string(const char *);
 
 // tokstr_next -- return next token from an iterator (caller must free() this)
-char *tokstr_next(tokstr_t ts, const char *delims);
+char *tokstr_next(struct tokstr *, const char *);
 
 // tokstr_last -- destroy an iterator and release all of its internal resources
-void tokstr_last(tokstr_t *pts);
+void tokstr_last(struct tokstr **);
 
 #endif /*__TOKSTR_H*/
