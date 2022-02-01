@@ -29,7 +29,7 @@ struct tokstr_string {
 	const char		*source;
 };
 
-struct tokstr {
+struct tokstr_pvt {
 	union {
 		struct tokstr_class	class;
 		struct tokstr_buffer	buffer;
@@ -45,11 +45,11 @@ static char *next_string(struct tokstr_string *, const char *);
 /* public. */
 
 // tokstr_buffer -- create an iterator for a counted string
-tokstr_t
+struct tokstr *
 tokstr_buffer(const char *source, size_t size) {
-	tokstr_t ts = malloc(sizeof(struct tokstr_buffer));
+	struct tokstr_buffer *ts = malloc(sizeof(struct tokstr_buffer));
 	if (ts != NULL) {
-		ts->data.buffer = (struct tokstr_buffer) {
+		*ts = (struct tokstr_buffer) {
 			.class = (struct tokstr_class) {
 				.type = ts_buffer,
 				},
@@ -57,27 +57,28 @@ tokstr_buffer(const char *source, size_t size) {
 			.size = size,
 		};
 	}
-	return ts;
+	return (struct tokstr *) ts;
 }
 
 // tokstr_string -- create an iterator for a nul-terminated string
-tokstr_t
+struct tokstr *
 tokstr_string(const char *source) {
-	tokstr_t ts = malloc(sizeof(struct tokstr_string));
+	struct tokstr_string *ts = malloc(sizeof(struct tokstr_string));
 	if (ts != NULL) {
-		ts->data.string = (struct tokstr_string) {
+		*ts = (struct tokstr_string) {
 			.class = (struct tokstr_class) {
 				.type = ts_string,
 				},
 			.source = source,
 		};
 	}
-	return ts;
+	return (struct tokstr *) ts;
 }
 
 // tokstr_next -- return next token from an iterator (caller must free() this)
 char *
-tokstr_next(tokstr_t ts, const char *delims) {
+tokstr_next(struct tokstr *ts_pub, const char *delims) {
+	struct tokstr_pvt *ts = (struct tokstr_pvt *) ts_pub;
 	char *ret = NULL;
 	switch (ts->data.class.type) {
 	case ts_buffer:
@@ -94,7 +95,7 @@ tokstr_next(tokstr_t ts, const char *delims) {
 
 // tokstr_last -- destroy an iterator and release all of its internal resources
 void
-tokstr_last(tokstr_t *pts) {
+tokstr_last(struct tokstr **pts) {
 	free(*pts);
 	*pts = NULL;
 }
