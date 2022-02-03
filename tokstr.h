@@ -32,9 +32,8 @@
 
  */
 
-// tokstr_t -- opaque handle for one iterator
+// opaque type for iterator state -- never used
 struct tokstr;
-typedef struct tokstr *tokstr_t;
 
 struct tokstr_reg {
 	const char		*base;
@@ -42,21 +41,24 @@ struct tokstr_reg {
 };
 
 // tokstr_region -- create an iterator for a counted string
-tokstr_t tokstr_region(struct tokstr_reg);
+struct tokstr *tokstr_region(struct tokstr_reg);
 
 // tokstr_string -- create an iterator for a nul-terminated string
-tokstr_t tokstr_string(const char *);
+struct tokstr *tokstr_string(const char *);
 
-// tokstr_next -- return next token from an iterator (caller must free() this)
-char *tokstr_next(tokstr_t, const char *);
+// tokstr_string -- create an iterator for a nul-terminated string
+struct tokstr *tokstr_string(const char *);
 
-// tokstr_next_copy -- copy next token from an iterator; return size, 0, or -1
-ssize_t tokstr_next_copy(tokstr_t, const char *, char *, size_t);
+// tokstr_next -- return next token from an iterator (strndup)
+char *tokstr_next(struct tokstr *, const char *);
 
-// tokstr_next_region -- return region of next token
-struct tokstr_reg tokstr_next_region(tokstr_t, const char *);
+// tokstr_next_copy -- return next token from an iterator (copy)
+ssize_t tokstr_next_copy(struct tokstr *, const char *, char *, size_t);
+
+// tokstr_next_region -- return next token from iterator (zero-copy)
+struct tokstr_reg tokstr_next_region(struct tokstr *, const char *);
 
 // tokstr_last -- destroy an iterator and release all of its internal resources
-void tokstr_last(tokstr_t *);
+void tokstr_last(struct tokstr **);
 
 #endif /*__TOKSTR_H*/

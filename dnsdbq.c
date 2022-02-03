@@ -357,7 +357,7 @@ main(int argc, char *argv[]) {
 			if (sorting == no_sort)
 				usage("-k must be preceded by -s or -S");
 
-			tokstr_t ts = tokstr_string(optarg);
+			struct tokstr *ts = tokstr_string(optarg);
 			for (char *tok;
 			     (tok = tokstr_next(ts, ",")) != NULL;
 			     free(tok))
@@ -403,7 +403,7 @@ main(int argc, char *argv[]) {
 			}
 			break;
 		case 'T': {
-			tokstr_t ts = tokstr_string(optarg);
+			struct tokstr *ts = tokstr_string(optarg);
 			for (char *token;
 			     (token = tokstr_next(ts, ",")) != NULL;
 			     free(token))
@@ -1122,7 +1122,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 	int optc, ch;
 
 	/* crack the option string based on space or tab delimiters. */
-	tokstr_t ts = tokstr_string(optstr);
+	struct tokstr *ts = tokstr_string(optstr);
 	for (char *tok;
 	     (tok = tokstr_next(ts, "\040\011")) != NULL;
 	     free(tok))
@@ -1403,7 +1403,7 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 	} else {
 		/* rrtype string was given, parse comma separated list. */
 		int nfetches = 0;
-		tokstr_t ts = tokstr_string(qdp->rrtype);
+		struct tokstr *ts = tokstr_string(qdp->rrtype);
 		for (char *rrtype;
 		     (rrtype = tokstr_next(ts, ",")) != NULL;
 		     free(rrtype))
@@ -1442,7 +1442,7 @@ rrtype_correctness(const char *input) {
 	int nrrtypeset = 0;
 	bool some = false, any = false,
 		some_dnssec = false, any_dnssec = false;
-	tokstr_t ts = tokstr_string(input);
+	struct tokstr *ts = tokstr_string(input);
 	for (char *rrtype;
 	     (rrtype = tokstr_next(ts, ",")) != NULL;
 	     free(rrtype))

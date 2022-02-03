@@ -380,7 +380,7 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
 		free(result);
 	} else if (asnum != NULL && cidr != NULL) {
 		json_t *array = json_array();
-		tokstr_t ts = tokstr_string(asnum);
+		struct tokstr *ts = tokstr_string(asnum);
 		for (char *t; (t = tokstr_next(ts, "\040")) != NULL; free(t))
 			json_array_append_new(array, json_integer(atol(t)));
 		tokstr_last(&ts);
