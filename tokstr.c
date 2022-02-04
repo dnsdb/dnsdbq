@@ -76,7 +76,7 @@ tokstr_string(const char *source) {
 	return (struct tokstr *) ts;
 }
 
-// tokstr_next -- return next token from an iterator (strndup)
+// tokstr_next -- return next token from an iterator (which must be free()'d)
 char *
 tokstr_next(struct tokstr *ts_pub, const char *delims) {
 	struct tokstr_reg reg = tokstr_next_region(ts_pub, delims);

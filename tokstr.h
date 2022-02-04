@@ -49,7 +49,7 @@ struct tokstr *tokstr_string(const char *);
 // tokstr_string -- create an iterator for a nul-terminated string
 struct tokstr *tokstr_string(const char *);
 
-// tokstr_next -- return next token from an iterator (strndup)
+// tokstr_next -- return next token from an iterator (which must be free()'d)
 char *tokstr_next(struct tokstr *, const char *);
 
 // tokstr_next_copy -- return next token from an iterator (copy)
