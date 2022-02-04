@@ -7,21 +7,21 @@
 
 /* example using heap-allocated strings:
 
-	tokstr_t ts = tokstr_string("this:is+-test");
+	struct tokstr *ts = tokstr_string("this:is+-test");
 	for (char *t; (t = tokstr_next(ts, "-:+")) != NULL; free(t))
 		printf("\t\"%s\"\n", t);
 	tokstr_last(&ts);
 
  * will output "this", "is", and "test". so will this:
 
-	tokstr_t ts = tokstr_string("this:is+-test");
+	struct tokstr *ts = tokstr_string("this:is+-test");
 	for (char t[100]; tokstr_next_copy(ts, "-:+", t, sizeof t) > 0;)
 		printf("\t\"%s\"\n", t);
 	tokstr_last(&ts);
 
  * as will this:
 
-	tokstr_t ts = tokstr_string("this:is+-test");
+	struct tokstr *ts = tokstr_string("this:is+-test");
 	for (;;) {
 		struct tokstr_reg t = tokstr_next_region(ts, "-:+");
 		if (t.base == NULL)
