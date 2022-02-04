@@ -7,7 +7,6 @@
 #define _GNU_SOURCE
 
 #include <assert.h>
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -112,10 +111,8 @@ tokstr_next_copy(struct tokstr *ts, const char *delims,
 	struct tokstr_reg reg = tokstr_next_region(ts, delims);
 	if (reg.base == NULL)
 		return 0;
-	if (reg.size >= size) {
-		errno = EMSGSIZE;
+	if (reg.size >= size)
 		return -1;
-	}
 	memcpy(buffer, reg.base, reg.size);
 	buffer[reg.size] = '\0';
 	return (ssize_t) reg.size;
