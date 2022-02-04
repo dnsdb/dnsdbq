@@ -76,6 +76,7 @@ tokstr_string(const char *source) {
 }
 
 // tokstr_next -- return next token from an iterator (which must be free()'d)
+// (NULL means no more tokens are available.)
 char *
 tokstr_next(struct tokstr *ts_pub, const char *delims) {
 	struct tokstr_reg reg = tokstr_next_region(ts_pub, delims);
@@ -84,7 +85,24 @@ tokstr_next(struct tokstr *ts_pub, const char *delims) {
 	return strndup(reg.base, reg.size);
 }
 
+// tokstr_next_copy -- copy next token from an iterator; return size, 0, or -1
+// (0 means no more tokens are available.)
+ssize_t
+tokstr_next_copy(struct tokstr *ts, const char *delims,
+		 char *buffer, size_t size)
+{
+	struct tokstr_reg reg = tokstr_next_region(ts, delims);
+	if (reg.base == NULL)
+		return 0;
+	if (reg.size >= size)
+		return -1;
+	memcpy(buffer, reg.base, reg.size);
+	buffer[reg.size] = '\0';
+	return (ssize_t) reg.size;
+}
+
 // tokstr_next_region -- return next token from an iterator (zero-copy)
+// (.base == NULL means no more tokens are available.)
 struct tokstr_reg
 tokstr_next_region(struct tokstr *ts_pub, const char *delims) {
 	struct tokstr_pvt *ts = (struct tokstr_pvt *) ts_pub;
@@ -101,21 +119,6 @@ tokstr_next_region(struct tokstr *ts_pub, const char *delims) {
 	}
 	assert((reg.base == NULL) == (reg.size == 0));
 	return reg;
-}
-
-// tokstr_next_copy -- copy next token from an iterator; return size, 0, or -1
-ssize_t
-tokstr_next_copy(struct tokstr *ts, const char *delims,
-		 char *buffer, size_t size)
-{
-	struct tokstr_reg reg = tokstr_next_region(ts, delims);
-	if (reg.base == NULL)
-		return 0;
-	if (reg.size >= size)
-		return -1;
-	memcpy(buffer, reg.base, reg.size);
-	buffer[reg.size] = '\0';
-	return (ssize_t) reg.size;
 }
 
 // tokstr_last -- destroy an iterator and release all of its internal resources

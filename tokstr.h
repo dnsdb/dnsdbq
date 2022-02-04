@@ -50,12 +50,15 @@ struct tokstr *tokstr_string(const char *);
 struct tokstr *tokstr_string(const char *);
 
 // tokstr_next -- return next token from an iterator (which must be free()'d)
+// (NULL means no more tokens are available.)
 char *tokstr_next(struct tokstr *, const char *);
 
-// tokstr_next_copy -- return next token from an iterator (copy)
+// tokstr_next_copy -- copy next token from an iterator; return size, 0, or -1
+// (0 means no more tokens are available.)
 ssize_t tokstr_next_copy(struct tokstr *, const char *, char *, size_t);
 
 // tokstr_next_region -- return next token from iterator (zero-copy)
+// (.base == NULL means no more tokens are available.)
 struct tokstr_reg tokstr_next_region(struct tokstr *, const char *);
 
 // tokstr_last -- destroy an iterator and release all of its internal resources
