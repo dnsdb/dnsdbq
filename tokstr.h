@@ -59,6 +59,7 @@ ssize_t tokstr_next_copy(struct tokstr *, const char *, char *, size_t);
 
 // tokstr_next_region -- return next token from iterator (zero-copy)
 // (.base == NULL means no more tokens are available.)
+// NOTE WELL: if program state becomes undefined here, can assert() or abort()
 struct tokstr_reg tokstr_next_region(struct tokstr *, const char *);
 
 // tokstr_last -- destroy an iterator and release all of its internal resources
