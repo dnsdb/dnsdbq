@@ -1,10 +1,12 @@
 // tokstr -- textual token iterator with some input independence
+// 2022-01-29 [revised during code review, add regions]
 // 2022-01-25 [initially released inside dnsdbq]
 
 /* externals. */
 
 #define _GNU_SOURCE
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -18,10 +20,9 @@ struct tokstr_class {
 	enum tokstr_type	type;
 };
 
-struct tokstr_buffer {
+struct tokstr_region {
 	struct tokstr_class	class;
-	const char		*source;
-	size_t			size;
+	struct tokstr_reg	source;
 };
 
 struct tokstr_string {
@@ -32,29 +33,28 @@ struct tokstr_string {
 struct tokstr_pvt {
 	union {
 		struct tokstr_class	class;
-		struct tokstr_buffer	buffer;
+		struct tokstr_region	region;
 		struct tokstr_string	string;
 	} data;
 };
 
 /* forward. */
 
-static char *next_buffer(struct tokstr_buffer *, const char *);
-static char *next_string(struct tokstr_string *, const char *);
+static struct tokstr_reg next_region(struct tokstr_region *, const char *);
+static struct tokstr_reg next_string(struct tokstr_string *, const char *);
 
 /* public. */
 
-// tokstr_buffer -- create an iterator for a counted string
+// tokstr_region -- create an iterator for a counted string
 struct tokstr *
-tokstr_buffer(const char *source, size_t size) {
-	struct tokstr_buffer *ts = malloc(sizeof(struct tokstr_buffer));
+tokstr_region(struct tokstr_reg source) {
+	struct tokstr_region *ts = malloc(sizeof(struct tokstr_region));
 	if (ts != NULL) {
-		*ts = (struct tokstr_buffer) {
+		*ts = (struct tokstr_region) {
 			.class = (struct tokstr_class) {
 				.type = ts_buffer,
 				},
 			.source = source,
-			.size = size,
 		};
 	}
 	return (struct tokstr *) ts;
@@ -75,22 +75,50 @@ tokstr_string(const char *source) {
 	return (struct tokstr *) ts;
 }
 
-// tokstr_next -- return next token from an iterator (caller must free() this)
+// tokstr_next -- return next token from an iterator (which must be free()'d)
+// (NULL means no more tokens are available.)
 char *
 tokstr_next(struct tokstr *ts_pub, const char *delims) {
+	struct tokstr_reg reg = tokstr_next_region(ts_pub, delims);
+	if (reg.base == NULL)
+		return NULL;
+	return strndup(reg.base, reg.size);
+}
+
+// tokstr_next_copy -- copy next token from an iterator; return size, 0, or -1
+// (0 means no more tokens are available.)
+ssize_t
+tokstr_next_copy(struct tokstr *ts, const char *delims,
+		 char *buffer, size_t size)
+{
+	struct tokstr_reg reg = tokstr_next_region(ts, delims);
+	if (reg.base == NULL)
+		return 0;
+	if (reg.size >= size)
+		return -1;
+	memcpy(buffer, reg.base, reg.size);
+	buffer[reg.size] = '\0';
+	return (ssize_t) reg.size;
+}
+
+// tokstr_next_region -- return next token from an iterator (zero-copy)
+// (.base == NULL means no more tokens are available.)
+struct tokstr_reg
+tokstr_next_region(struct tokstr *ts_pub, const char *delims) {
 	struct tokstr_pvt *ts = (struct tokstr_pvt *) ts_pub;
-	char *ret = NULL;
+	struct tokstr_reg reg = {};
 	switch (ts->data.class.type) {
 	case ts_buffer:
-		ret = next_buffer(&ts->data.buffer, delims);
+		reg = next_region(&ts->data.region, delims);
 		break;
 	case ts_string:
-		ret = next_string(&ts->data.string, delims);
+		reg = next_string(&ts->data.string, delims);
 		break;
 	default:
 		abort();
 	}
-	return ret;
+	assert((reg.base == NULL) == (reg.size == 0));
+	return reg;
 }
 
 // tokstr_last -- destroy an iterator and release all of its internal resources
@@ -103,37 +131,36 @@ tokstr_last(struct tokstr **pts) {
 /* private functions. */
 
 // next_buffer -- implement tokstr_next for counted string iterators
-static char *
-next_buffer(struct tokstr_buffer *buf, const char *delims) {
-	char *ret = NULL;
-	if (buf->size != 0) {
-		while (buf->size != 0 && strchr(delims, *buf->source) != 0)
-			buf->size--, buf->source++;
-		const char *prev = buf->source;
-		while (buf->size != 0 && strchr(delims, *buf->source) == 0)
-			buf->size--, buf->source++;
-		size_t size = (size_t) (buf->source - prev);
+static struct tokstr_reg
+next_region(struct tokstr_region *reg, const char *delims) {
+	if (reg->source.size != 0) {
+		while (reg->source.size != 0 &&
+		       strchr(delims, *reg->source.base) != 0)
+			reg->source.size--, reg->source.base++;
+		const char *prev = reg->source.base;
+		while (reg->source.size != 0 &&
+		       strchr(delims, *reg->source.base) == 0)
+			reg->source.size--, reg->source.base++;
+		size_t size = (size_t) (reg->source.base - prev);
 		if (size != 0)
-			ret = strndup(prev, size);
+			return (struct tokstr_reg) {prev, size};
 	}
-	return ret;
+	return (struct tokstr_reg) {};
 }
 
 // next_string -- implement tokstr_next for nul-terminated string iterators
-static char *
+static struct tokstr_reg
 next_string(struct tokstr_string *str, const char *delims) {
-	char *ret = NULL;
 	int ch = *str->source;
 	if (ch != '\0') {
 		while (ch != '\0' && strchr(delims, ch) != NULL)
 			ch = *++str->source;
-		const char *next = str->source;
+		const char *prev = str->source;
 		while (ch != '\0' && strchr(delims, ch) == NULL)
-			ch = *++next;
-		size_t size = (size_t) (next - str->source);
+			ch = *++str->source;
+		size_t size = (size_t) (str->source - prev);
 		if (size != 0)
-			ret = strndup(str->source, size);
-		str->source = next;
+			return (struct tokstr_reg) {prev, size};
 	}
-	return ret;
+	return (struct tokstr_reg) {};
 }
