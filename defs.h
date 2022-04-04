@@ -29,7 +29,6 @@
  */
 #ifdef __CYGWIN__
 #define CRIPPLED_LIBC 1
-typedef _ssize_t ssize_t;
 #endif /* __CYGWIN__ */
 
 #if WANT_PDNS_DNSDB
