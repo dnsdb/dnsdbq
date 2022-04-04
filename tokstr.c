@@ -6,6 +6,7 @@
 
 #define _GNU_SOURCE
 
+#include <sys/types.h>
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
