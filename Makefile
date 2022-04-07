@@ -14,11 +14,19 @@
 # limitations under the License.
 #
 
-CURLINCL = `curl-config --cflags` 
-JANSINCL = -I/usr/local/include
+# Base directory for jansson header and libraries
+JANSBASE=/usr/local
+# For macOS on M1, use this instead of the above line:
+#JANSBASE=/opt/homebrew
 
+JANSINCL = -I$(JANSBASE)/include
+
+JANSLIBS = -L$(JANSBASE)/lib -ljansson
+# For almost static builds on macOS, use this instead of the above line:
+#JANSLIBS = $(JANSBASE)/lib/libjansson.a
+
+CURLINCL = `curl-config --cflags`
 CURLLIBS = `[ ! -z "$$(curl-config --libs)" ] && curl-config --libs || curl-config --static-libs`
-JANSLIBS = -L/usr/local/lib -ljansson
 
 CWARN =-W -Wall -Wextra -Wcast-qual -Wpointer-arith -Wwrite-strings \
 	-Wmissing-prototypes  -Wbad-function-cast -Wnested-externs \
@@ -33,8 +41,8 @@ CGPROF =
 CDEBUG = -g -O3
 CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)
 INCL= $(CURLINCL) $(JANSINCL)
-# freebsd requires that -lresolv _not_ be used here
 LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
+# For freebsd, it requires that -lresolv _not_ be used here, use this instead of the above line:
 #LIBS= $(CURLLIBS) $(JANSLIBS)
 
 TOOL = dnsdbq
