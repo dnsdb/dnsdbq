@@ -108,7 +108,9 @@ Building and installing:
     On FreeBSD, you may need to remove -lresolv in the LIBS line of
     the Makefile.
 
-    On macOS on Apple M1 processors, in the Makefile, uncomment the line
+    On macOS on Apple M1 processors, Homebrew now defaults to be
+    installed in /opt/homebrew instead of /usr/local.  If that is the
+    case on your system, in the Makefile, uncomment the line
     #JANSBASE=/opt/homebrew
 
     On macOS, if you want an almost static dnsdbq binary on macOS,
@@ -117,8 +119,7 @@ Building and installing:
     then be deployed on any identical macOS version and architecture.
 
 	1. Find the static jansson library, probably as installed by brew
-	   /usr/local/lib/libjansson.a or on M1 processors
-	   /opt/homebrew/lib/libjansson.a
+	   /usr/local/lib/libjansson.a or /opt/homebrew/lib/libjansson.a
 	2. Change the Makefile's line
 		JANSLIBS = -L$(JANSBASE)/lib -ljansson
 	    to instead specify the static library location, probably to:
