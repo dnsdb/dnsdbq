@@ -639,6 +639,10 @@ controls how human readable date times are presented in the output.
 If "iso" (the default) then ISO8601 (RFC3339) format is used, for
 example; "2018-09-06T22:48:00Z".  If "csv" then an Excel CSV
 compatible format is used; for example, "2018-09-06 22:48:00".
+.It Ev HTTPS_PROXY
+contains the URL of the HTTPS proxy that you wish to use.  See
+.Ic "https://curl.se/libcurl/c/CURLOPT_PROXY.html"
+for information on its values.
 .El
 .Sh "EXIT STATUS"
 Success (exit status zero) occurs if a connection could be established
