@@ -1130,7 +1130,7 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 		/* dispense with extra spaces and tabs (empty fields). */
 		if (*tok == '\0')
 			continue;
-		*opt++ = tok;
+		*opt++ = strdup(tok);
 	}
 	tokstr_last(&ts);
 
@@ -1176,6 +1176,9 @@ batch_options(const char *optstr, qparam_t options, qparam_ct dflt) {
 			qparam_debug("batch", options);
 	}
 	/* done. */
+
+	for (int i = 0; i < opt - optv; i++)
+		free(optv[i]);
 	DESTROY(optv);
 	return msg;
 }
