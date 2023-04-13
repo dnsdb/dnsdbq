@@ -160,7 +160,6 @@ struct counted {
 bool pprint_json(const char *, size_t, FILE *);
 void present_json_lookup(pdns_tuple_ct, mode_e, writer_t);
 void present_json_summarize(pdns_tuple_ct, mode_e, writer_t);
-void present_json(pdns_tuple_ct, bool);
 void present_text_lookup(pdns_tuple_ct, mode_e, writer_t);
 void present_csv_lookup(pdns_tuple_ct, mode_e, writer_t);
 void present_minimal_lookup(pdns_tuple_ct, mode_e, writer_t);
@@ -171,7 +170,7 @@ void tuple_unmake(pdns_tuple_t);
 struct counted *countoff(const char *);
 void countoff_debug(const char *, const char *, const struct counted *);
 char *reverse(const char *);
-int data_blob(fetch_t, size_t);
+int pdns_blob(fetch_t, size_t);
 void pick_system(const char *, const char *);
 void read_config(void);
 

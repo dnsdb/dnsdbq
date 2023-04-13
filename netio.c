@@ -362,7 +362,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			       fetch->buf, pre_len + 1);
 			writer->ps_len += pre_len + 1;
 		} else {
-			query->writer->count += data_blob(fetch, pre_len);
+			query->writer->count += pdns_blob(fetch, pre_len);
 
 			if (psys->encap == encap_saf)
 				switch (fetch->saf_cond) {
@@ -375,8 +375,9 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				case sc_limited:
 				case sc_failed:
 				case sc_we_limited:
-					/* inform io_engine() intentional
-					 * abort. */
+					/* inform io_engine() that the abort
+					 * is intentional.
+					 */
 					fetch->stopped = true;
 					break;
 				}

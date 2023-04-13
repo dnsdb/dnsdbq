@@ -35,6 +35,7 @@
 static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
 static void present_minimal_thing(const char *thing);
+static void present_json(pdns_tuple_ct, bool);
 static json_t *annotate_json(pdns_tuple_ct, bool);
 static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
 #ifndef CRIPPLED_LIBC
@@ -249,7 +250,7 @@ present_json_summarize(pdns_tuple_ct tup,
 
 /* present_json -- shared renderer for DNSDB JSON tuples (lookup and summarize)
  */
-void
+static void
 present_json(pdns_tuple_ct tup, bool rd) {
 	json_t *copy = annotate_json(tup, rd);
 
@@ -490,11 +491,11 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
 	putchar('\n');
 }
 
-/* present_rdata_lookup -- render one DNSDB tuple as a "line" (MINIMAL)
+/* present_minimal_lookup -- render one DNSDB tuple as a "line"
  */
 void
 present_minimal_lookup(pdns_tuple_ct tup,
-		       mode_e mode __attribute__ ((unused)),
+		       mode_e mode,
 		       writer_t writer __attribute__ ((unused)))
 {
 	/* did this tuple come from a left hand or right hand query? */
@@ -545,7 +546,7 @@ present_minimal_thing(const char *thing) {
 		puts(thing);
 }
 
-/* present_csv_summ -- render a summarize result as CSV.
+/* present_csv_summarize -- render a summarize result as CSV.
  */
 void
 present_csv_summarize(pdns_tuple_ct tup,
@@ -870,13 +871,13 @@ reverse(const char *src) {
 	return ret;
 }
 
-/* data_blob -- process one deblocked json blob as a counted string.
+/* pdns_blob -- process one deblocked json pdns blob as a counted string.
  *
- * presents, or outputs to POSIX sort(1), each blob and then frees it.
+ * presents, or outputs to POSIX sort(1), the blob, and then frees it.
  * returns number of tuples processed (for now, 1 or 0).
  */
 int
-data_blob(fetch_t fetch, size_t len) {
+pdns_blob(fetch_t fetch, size_t len) {
 	query_t query = fetch->query;
 	writer_t writer = query->writer;
 	struct pdns_tuple tup;
