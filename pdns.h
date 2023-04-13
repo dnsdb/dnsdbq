@@ -117,7 +117,11 @@ struct pdns_system {
 };
 typedef const struct pdns_system *pdns_system_ct;
 
-typedef void (*present_t)(pdns_tuple_ct, mode_e, writer_t);
+struct presenter {
+	void		(*output)(pdns_tuple_ct, query_ct, writer_t);
+	bool		sortable;
+};
+typedef const struct presenter *presenter_ct;
 
 /* a verb is a specific type of request.  See struct pdns_system
  * verb_ok() for that function that verifies if the verb and the options
@@ -133,38 +137,38 @@ struct verb {
 	const char *	(*ok)(void);
 
 	/* formatter function for each presentation format */
-	present_t	text, json, csv, minimal;
+	presenter_ct	text, json, csv, minimal;
 };
 typedef const struct verb *verb_ct;
 
 /* query parameters descriptor. */
 struct qdesc {
-	mode_e	mode;
-	char	*thing;
-	char	*rrtype;
-	char	*bailiwick;
-	char	*pfxlen;
+	mode_e		mode;
+	char		*thing;
+	char		*rrtype;
+	char		*bailiwick;
+	char		*pfxlen;
 };
 typedef struct qdesc *qdesc_t;
 typedef const struct qdesc *qdesc_ct;
 
 struct counted {
-	int nlabel;
-	size_t nchar;
-	size_t nalnum;
-	size_t lens[];
+	int		nlabel;
+	size_t		nchar;
+	size_t		nalnum;
+	size_t		lens[];
 };
 #define COUNTED_SIZE(nlabel) \
 	(sizeof(struct counted) + (unsigned int) nlabel * sizeof(size_t))
 
 bool pprint_json(const char *, size_t, FILE *);
-void present_json_lookup(pdns_tuple_ct, mode_e, writer_t);
-void present_json_summarize(pdns_tuple_ct, mode_e, writer_t);
-void present_text_lookup(pdns_tuple_ct, mode_e, writer_t);
-void present_csv_lookup(pdns_tuple_ct, mode_e, writer_t);
-void present_minimal_lookup(pdns_tuple_ct, mode_e, writer_t);
-void present_text_summarize(pdns_tuple_ct, mode_e, writer_t);
-void present_csv_summarize(pdns_tuple_ct, mode_e, writer_t);
+void present_json_lookup(pdns_tuple_ct, query_ct, writer_t);
+void present_json_summarize(pdns_tuple_ct, query_ct, writer_t);
+void present_text_lookup(pdns_tuple_ct, query_ct, writer_t);
+void present_csv_lookup(pdns_tuple_ct, query_ct, writer_t);
+void present_minimal_lookup(pdns_tuple_ct, query_ct, writer_t);
+void present_text_summarize(pdns_tuple_ct, query_ct, writer_t);
+void present_csv_summarize(pdns_tuple_ct, query_ct, writer_t);
 const char *tuple_make(pdns_tuple_t, const char *, size_t);
 void tuple_unmake(pdns_tuple_t);
 struct counted *countoff(const char *);

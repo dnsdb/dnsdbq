@@ -60,6 +60,7 @@ typedef enum { batch_none, batch_terse, batch_verbose } batch_e;
 #define TRANS_REVERSE	0x01
 #define TRANS_DATEFIX	0x02
 #define TRANS_CHOMP	0x04
+#define TRANS_QDETAIL	0x08
 
 /* or_else -- return one pointer or else the other.
  */

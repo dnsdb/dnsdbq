@@ -70,8 +70,8 @@ struct query {
 	struct query	*next;
 	struct fetch	*fetches;
 	struct writer	*writer;
-	struct qparam	params;
-	char		*descrip;
+	struct qparam	qp;
+	char		*descr;
 	mode_e		mode;
 	bool		multitype;
 	/* invariant: (status == NULL) == (writer == NULL) */
@@ -80,6 +80,7 @@ struct query {
 	bool		hdr_sent;
 };
 typedef struct query *query_t;
+typedef const struct query *query_ct;
 
 typedef void (*ps_user_t)(struct writer *);
 

@@ -62,7 +62,7 @@ EXTERN	sort_e sorting			INIT(no_sort);
 EXTERN	batch_e batching		INIT(batch_none);
 EXTERN	present_e presentation		INIT(pres_none);
 EXTERN	char *presentation_name		INIT(NULL);
-EXTERN	present_t presenter		INIT(NULL);
+EXTERN	presenter_ct presenter		INIT(NULL);
 EXTERN	struct timeval startup_time	INIT({});
 EXTERN	int exit_code			INIT(0);
 EXTERN	long curl_ipresolve		INIT(CURL_IPRESOLVE_WHATEVER);

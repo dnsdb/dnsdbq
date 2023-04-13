@@ -91,17 +91,25 @@ static const char * const conf_files[] = {
 	NULL
 };
 
+const struct presenter pres_text_lookup = { present_text_lookup, true };
+const struct presenter pres_json_lookup = { present_json_lookup, true };
+const struct presenter pres_csv_lookup = { present_csv_lookup, true };
+const struct presenter pres_minimal_lookup = { present_minimal_lookup, false };
+const struct presenter pres_text_summarize = { present_text_summarize, true };
+const struct presenter pres_json_summarize = { present_json_summarize, true };
+const struct presenter pres_csv_summarize = { present_csv_summarize, true };
+
 const struct verb verbs[] = {
 	/* note: element [0] of this array is the DEFAULT_VERB. */
 	{ "lookup", "/lookup", lookup_ok,
-	  present_text_lookup,
-	  present_json_lookup,
-	  present_csv_lookup,
-	  present_minimal_lookup },
+	  &pres_text_lookup,
+	  &pres_json_lookup,
+	  &pres_csv_lookup,
+	  &pres_minimal_lookup },
 	{ "summarize", "/summarize", summarize_ok,
-	  present_text_summarize,
-	  present_json_summarize,
-	  present_csv_summarize,
+	  &pres_text_summarize,
+	  &pres_json_summarize,
+	  &pres_csv_summarize,
 	  NULL },
 	{ NULL, NULL, NULL, NULL, NULL, NULL, NULL }
 };
@@ -414,6 +422,8 @@ main(int argc, char *argv[]) {
 					transforms |= TRANS_DATEFIX;
 				else if (strcasecmp(token, "chomp") == 0)
 					transforms |= TRANS_CHOMP;
+				else if (strcasecmp(token, "qdetail") == 0)
+					transforms |= TRANS_QDETAIL;
 				else {
 					usage("unrecognized transform in -T");
 				}
@@ -532,8 +542,21 @@ main(int argc, char *argv[]) {
 	}
 
 	/* get to final readiness; in particular, get psys set. */
-	if (sorting != no_sort)
+	if (sorting != no_sort) {
+		if (!presenter->sortable) {
+			char *errmsg = NULL;
+			int x = asprintf(&errmsg,
+					 "that presentation format (%s) "
+					 "cannot be sorted",
+					 presentation_name);
+			if (x < 0)
+				my_panic(true, "asprintf");
+			usage(errmsg);
+		}
+		if ((transforms & TRANS_QDETAIL) != 0)
+			usage("\"-T qdetail\" is incompatible with sorting");
 		sort_ready();
+	}
 	if (config_file == NULL)
 		config_file = select_config();
 	if (picked_system != NULL) {
@@ -1367,28 +1390,28 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 
 	/* ready player one. */
 	CREATE(query, sizeof(struct query));
-	query->descrip = makepath(qdp);
+	query->descr = makepath(qdp);
 	query->mode = qdp->mode;
-	query->params = *qpp;
+	query->qp = *qpp;
 	qpp = NULL;
 
 	/* define the fence. */
-	if (query->params.after != 0) {
-		if (query->params.complete) {
+	if (query->qp.after != 0) {
+		if (query->qp.complete) {
 			/* each db tuple must begin after the fence-start. */
-			fence.first_after = query->params.after;
+			fence.first_after = query->qp.after;
 		} else {
 			/* each db tuple must end after the fence-start. */
-			fence.last_after = query->params.after;
+			fence.last_after = query->qp.after;
 		}
 	}
-	if (query->params.before != 0) {
-		if (query->params.complete) {
+	if (query->qp.before != 0) {
+		if (query->qp.complete) {
 			/* each db tuple must end before the fence-end. */
-			fence.last_before = query->params.before;
+			fence.last_before = query->qp.before;
 		} else {
 			/* each db tuple must begin before the fence-end. */
-			fence.first_before = query->params.before;
+			fence.first_before = query->qp.before;
 		}
 	}
 
@@ -1503,7 +1526,7 @@ rrtype_correctness(const char *input) {
  */
 static void
 launch_fetch(query_t query, const char *path, pdns_fence_ct fp) {
-	char *url = psys->url(path, NULL, &query->params, fp, false);
+	char *url = psys->url(path, NULL, &query->qp, fp, false);
 	if (url == NULL)
 		my_exit(1);
 
@@ -1525,7 +1548,7 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	writer = writer_init(qpp->output_limit, NULL, false);
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
-	query->params = *qpp;
+	query->qp = *qpp;
 	CREATE(fetch, sizeof(struct fetch));
 	fetch->query = query;
 	query->fetches = fetch;
