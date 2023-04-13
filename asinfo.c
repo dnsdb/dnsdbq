@@ -174,11 +174,8 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 	ns_rr rr;
 
 	DEBUG(1, true, "asinfo_from_dns(%s)\n", dname);
-	if ((res.options & RES_INIT) == 0) {
+	if ((res.options & RES_INIT) == 0)
 		res_ninit(&res);
-		/* use a TCP connection and keep it open */
-		res.options |= RES_USEVC|RES_STAYOPEN;
-	}
 	n = res_nquery(&res, dname, ns_c_in, ns_t_txt, buf, sizeof buf);
 	if (n < 0) {
 		if (res.res_h_errno == HOST_NOT_FOUND)
@@ -210,6 +207,8 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 			result = strdup(strerror(errno));
 			break;
 		}
+		if (ns_rr_type(rr) != ns_t_txt)
+			goto next_rr;
 		rdata = ns_rr_rdata(rr);
 		rdlen = ns_rr_rdlen(rr);
 		ntxt = 0;
@@ -295,6 +294,7 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 			free(txt[n]);
 			txt[n] = NULL;
 		}
+ next_rr:;
 	}
 	return result;
 }
