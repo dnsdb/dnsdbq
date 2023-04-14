@@ -343,9 +343,12 @@ annotate_json(pdns_tuple_ct tup, query_ct query, bool rd) {
 			json_object_set_new_nocheck(copy, "rrname",
 						    json_string(tup->rrname));
 
-		json_t *obj = annotation_json(query, annoRD);
-		if (obj != NULL)
-			json_object_set_new_nocheck(copy, "_dnsdbq", obj);
+		if ((transforms & TRANS_QDETAIL) != 0 || annoRD != NULL) {
+			json_t *obj = annotation_json(query, annoRD);
+			if (obj != NULL)
+				json_object_set_new_nocheck(copy, "_dnsdbq",
+							    obj);
+		}
 		return copy;
 	}
 	return NULL;
@@ -361,36 +364,31 @@ static json_t *
 annotation_json(query_ct query, json_t *annoRD) {
 	json_t *obj = NULL;
 
-	if (query != NULL) {
-		if ((transforms & TRANS_QDETAIL) != 0) {
-			instantiate_json(&obj);
+	if (query != NULL && (transforms & TRANS_QDETAIL) != 0) {
+		instantiate_json(&obj);
+		if ((transforms & TRANS_QDETAIL) != 0)
 			json_object_set_new_nocheck(obj, "descr",
 						    json_string(query->descr));
-		}
-		if (query->qp.after != 0) {
-			instantiate_json(&obj);
+		if (query->qp.after != 0)
 			json_object_set_new_nocheck(obj, "after",
 				json_string_nocheck(
 					time_str(query->qp.after, iso8601)));
-		}
-		if (query->qp.before != 0) {
-			instantiate_json(&obj);
+		if (query->qp.before != 0)
 			json_object_set_new_nocheck(obj, "before",
 				json_string_nocheck(
 					time_str(query->qp.before, iso8601)));
-		}
-		if (query->qp.query_limit != -1) {
-			instantiate_json(&obj);
+		if (query->qp.query_limit != -1)
 			json_object_set_new_nocheck(obj, "limit",
 				json_integer((json_int_t)
 					     query->qp.query_limit));
-		}
-		if (query->qp.offset != 0) {
-			instantiate_json(&obj);
+		if (query->qp.offset != 0)
 			json_object_set_new_nocheck(obj, "offset",
 				json_integer((json_int_t)
 					     query->qp.offset));
-		}
+		json_object_set_new_nocheck(obj, "gravel",
+					    json_boolean(query->qp.gravel));
+		json_object_set_new_nocheck(obj, "complete",
+					    json_boolean(query->qp.complete));
 	}
 	if (annoRD != NULL) {
 		instantiate_json(&obj);
