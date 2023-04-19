@@ -540,6 +540,8 @@ main(int argc, char *argv[]) {
 			my_panic(true, "asprintf");
 		usage(errmsg);
 	}
+	if (presentation != pres_json && (transforms & TRANS_QDETAIL) != 0)
+		usage("'-T qdetail' currently requires '-j' or '-p json'");
 
 	/* get to final readiness; in particular, get psys set. */
 	if (sorting != no_sort) {
