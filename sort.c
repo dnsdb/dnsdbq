@@ -185,10 +185,7 @@ sortable_rdata(pdns_tuple_ct tup) {
 				sortable_rdatum(&buf, tup->rrtype,
 						json_string_value(rr));
 			else
-				fprintf(stderr,
-					"%s: warning: rdata slot "
-					"is not a string\n",
-					program_name);
+				my_logf("warning: rdata slot is not a string");
 		}
 	} else {
 		sortable_rdatum(&buf, tup->rrtype, tup->rdata);

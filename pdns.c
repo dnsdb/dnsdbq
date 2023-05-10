@@ -216,7 +216,7 @@ pprint_json(const char *buf, size_t len, FILE *outf) {
 
 	json_t *js = json_loadb(buf, len, 0, &error);
 	if (js == NULL) {
-		fprintf(stderr, "JSON parsing error %d:%d: %s %s\n",
+		my_logf("JSON parsing error %d:%d: %s %s",
 			error.line, error.column,
 			error.text, error.source);
 		return false;
@@ -641,14 +641,14 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 	DEBUG(4, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
-		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
-			program_name, error.line, error.column,
+		my_logf("warning: json_loadb: %d:%d: %s %s",
+			error.line, error.column,
 			error.text, error.source);
 		abort();
 	}
 	if (debug_level >= 4) {
 		char *pretty = json_dumps(tup->obj.main, JSON_INDENT(2));
-		fprintf(stderr, "debug: %s\n", pretty);
+		my_logf("%s", pretty);
 		free(pretty);
 	}
 
@@ -938,8 +938,7 @@ pdns_blob(fetch_t fetch, size_t len) {
 
 	msg = tuple_make(&tup, fetch->buf, len);
 	if (msg != NULL) {
-		fputs(msg, stderr);
-		fputc('\n', stderr);
+		my_logf("%s", msg);
 		goto more;
 	}
 
@@ -972,9 +971,8 @@ pdns_blob(fetch_t fetch, size_t len) {
 			} else {
 				/* use sc_missing for an invalid cond value */
 				fetch->saf_cond = sc_missing;
-				fprintf(stderr,
-					"%s: Unknown value for \"cond\": %s\n",
-					program_name, tup.cond);
+				my_logf("Unknown value for \"cond\": %s",
+					tup.cond);
 			}
 		}
 
@@ -1091,7 +1089,7 @@ pick_system(const char *name, const char *context) {
 	}
 
 	if (msg != NULL) {
-		fprintf(stderr, "%s (in %s)\n", msg, context);
+		my_logf("%s (in %s)\n", msg, context);
 		DESTROY(msg);
 		my_exit(1);
 	}
@@ -1131,8 +1129,7 @@ read_config(void) {
 	unsetenv("APIKEY");
 	f = popen(cmd, "r");
 	if (f == NULL) {
-		fprintf(stderr, "%s: [%s]: %s",
-			program_name, cmd, strerror(errno));
+		my_logf("[%s]: %s", cmd, strerror(errno));
 		DESTROY(cmd);
 		my_exit(1);
 	}
@@ -1148,17 +1145,14 @@ read_config(void) {
 
 		l++;
 		if (strchr(line, '\n') == NULL) {
-			fprintf(stderr, "%s: conf line #%d: too long\n",
-				program_name, l);
+			my_logf("conf line #%d: too long", l);
 			my_exit(1);
 		}
 		tok1 = strtok_r(line, "\040\012", &saveptr);
 		tok2 = strtok_r(NULL, "\040\012", &saveptr);
 		tok3 = strtok_r(NULL, "\040\012", &saveptr);
 		if (tok1 == NULL || tok2 == NULL) {
-			fprintf(stderr,
-				"%s: conf line #%d: malformed\n",
-				program_name, l);
+			my_logf("conf line #%d: malformed", l);
 			my_exit(1);
 		}
 		if (tok3 == NULL || *tok3 == '\0') {
@@ -1172,8 +1166,7 @@ read_config(void) {
 			if (strcmp(tok2, "system") == 0 && !psys_specified) {
 				pick_system(tok3, config_file);
 				if (psys == NULL) {
-					fprintf(stderr, "%s: unknown %s %s\n",
-						program_name,
+					my_logf("unknown %s %s\n",
 						DNSDBQ_SYSTEM,
 						tok3);
 					my_exit(1);
@@ -1189,16 +1182,16 @@ read_config(void) {
 			if (strcmp(tok2, "apikey") == 0) {
 				int ignored __attribute__((unused));
 				ignored = asprintf(&t, "[%zu]", strlen(tok3));
-			} else
+			} else {
 				t = strdup(tok3);
-			fprintf(stderr, "line #%d: sets %s|%s|%s\n",
-				l, tok1, tok2, t);
+			}
+			my_logf("line #%d: sets %s|%s|%s", l, tok1, tok2, t);
 			DESTROY(t);
 		}
 		if (strcmp(tok1, psys->name) == 0) {
 			msg = psys->setval(tok2, tok3);
 			if (msg != NULL) {
-				fprintf(stderr, "setval: %s\n", msg);
+				my_logf("setval: %s", msg);
 				my_exit(1);
 			}
 		}

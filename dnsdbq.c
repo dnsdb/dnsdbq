@@ -151,7 +151,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:0:"
+			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:0:o:"
 			    "adfhIjmqSsUv468" QPARAM_GETOPT))
 	       != -1)
 	{
@@ -329,6 +329,11 @@ main(int argc, char *argv[]) {
 			    (max_count <= 0))
 				usage("-M must be positive");
 			break;
+		case 'o':
+			if (!parse_long(optarg, &curl_timeout) ||
+			    (curl_timeout < 0))
+				usage("-o must be non-negative");
+			break;
 		case 'u':
 			picked_system = strdup(optarg);
 			break;
@@ -483,9 +488,8 @@ main(int argc, char *argv[]) {
 		usage("the -a option requires a modern functional C library.");
 #else
 		if (!asinfo_domain_exists(asinfo_domain)) {
-			fprintf(stderr,
-				"%s: ASINFO domain (%s) does not exist.\n",
-				program_name, asinfo_domain);
+			my_logf("ASINFO domain (%s) does not exist",
+				asinfo_domain);
 			my_exit(1);
 		}
 #endif
@@ -713,11 +717,8 @@ my_exit(int code) {
  */
 __attribute__((noreturn)) void
 my_panic(bool want_perror, const char *s) {
-	fprintf(stderr, "%s: ", program_name);
-	if (want_perror)
-		perror(s);
-	else
-		fprintf(stderr, "%s\n", s);
+	my_logf("panic (%s): ", s,
+		want_perror ? strerror(errno) : "generic");
 	my_exit(1);
 }
 
@@ -1058,9 +1059,8 @@ do_batch(FILE *f, qparam_ct qpp) {
 				(sizeof "$options") - 1) == 0)
 		{
 			if ((msg = batch_options(command, &qp, qpp)) != NULL)
-				fprintf(stderr, "%s: warning: "
-					"batch option parse error: %s\n",
-					program_name, msg);
+				my_logf("warning: batch option parse error: %s",
+					msg);
 			continue;
 		}
 
@@ -1072,8 +1072,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 		/* crack the batch line if possible. */
 		msg = batch_parse(command, &qd);
 		if (msg != NULL) {
-			fprintf(stderr, "%s: batch entry parse error: %s\n",
-				program_name, msg);
+			my_logf("batch entry parse error: %s", msg);
 		} else {
 			/* start one or more curl fetches based on this entry.
 			 */
@@ -1093,9 +1092,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 			    batching != batch_verbose)
 			{
 				assert(query->message != NULL);
-				fprintf(stderr,
-					"%s: batch line status: %s (%s)\n",
-					program_name,
+				my_logf("batch line status: %s (%s)",
 					query->status, query->message);
 			}
 		}
@@ -1424,8 +1421,7 @@ query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
 		launch_fetch(query, path, &fence);
 		DESTROY(path);
 	} else if ((msg = rrtype_correctness(qdp->rrtype)) != NULL) {
-		fprintf(stderr, "%s: rrtype incorrect: %s\n",
-			program_name, msg);
+		my_logf("rrtype incorrect: %s", msg);
 		DESTROY(query);
 		return NULL;
 	} else {

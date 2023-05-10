@@ -30,6 +30,7 @@
 #include "netio.h"
 #include "pdns.h"
 #include "globals.h"
+#include "time.h"
 
 static void io_drain(void);
 static void fetch_reap(fetch_t);
@@ -61,8 +62,7 @@ make_curl(void) {
 	curl_cleanup_needed = true;
 	multi = curl_multi_init();
 	if (multi == NULL) {
-		fprintf(stderr, "%s: curl_multi_init() failed\n",
-			program_name);
+		my_logf("curl_multi_init() failed");
 		my_exit(1);
 	}
 }
@@ -112,6 +112,13 @@ create_fetch(query_t query, char *url) {
 		curl_easy_setopt(fetch->easy,
 				 CURLOPT_IPRESOLVE, curl_ipresolve);
 
+	/* if user specified a timeout, use for connection and transactions. */
+	if (curl_timeout != 0L) {
+		curl_easy_setopt(fetch->easy,
+				 CURLOPT_CONNECTTIMEOUT, curl_timeout);
+		curl_easy_setopt(fetch->easy,
+				 CURLOPT_TIMEOUT, curl_timeout);
+	}
 	if (psys->auth != NULL)
 	    psys->auth(fetch);
 
@@ -139,8 +146,8 @@ create_fetch(query_t query, char *url) {
 
 	res = curl_multi_add_handle(multi, fetch->easy);
 	if (res != CURLM_OK) {
-		fprintf(stderr, "%s: curl_multi_add_handle() failed: %s\n",
-			program_name, curl_multi_strerror(res));
+		my_logf("curl_multi_add_handle() failed: %s",
+			curl_multi_strerror(res));
 		my_exit(1);
 	}
 	return fetch;
@@ -326,10 +333,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				curl_easy_getinfo(fetch->easy,
 						  CURLINFO_EFFECTIVE_URL,
 						  &url);
-				fprintf(stderr,
-					"%s: warning: libcurl %ld [%s] %s\n",
-					program_name, fetch->rcode,
-					url, message);
+				my_logf("warning: libcurl %ld [%s] %s",
+					fetch->rcode, url, message);
 			}
 			DESTROY(message);
 			fetch->buf[0] = '\0';
@@ -405,13 +410,13 @@ last_fetch(fetch_t fetch) {
 		const char *msg = or_else(fetch->saf_msg, "");
 
 		if (fetch->saf_cond == sc_limited)
-			fprintf(stderr, "Database limit: %s\n", msg);
+			my_logf("Database API limit: %s", msg);
 		else if (fetch->saf_cond == sc_failed)
-			fprintf(stderr, "Database result: %s\n", msg);
+			my_logf("Database result: %s", msg);
 		else if (fetch->saf_cond == sc_missing)
-			fprintf(stderr, "Query response missing: %s\n", msg);
+			my_logf("API response missing: %s", msg);
 		else if (query->status != NULL && !query->multitype)
-			fprintf(stderr, "Query status: %s (%s)\n",
+			my_logf("API status: %s (%s)",
 				query->status, query->message);
 	} else if (batching == batch_verbose) {
 		/* if this was an actively written query, unpause another. */
@@ -481,9 +486,8 @@ writer_fini(writer_t writer) {
 			/* release any buffered info. */
 			DESTROY(fetch->buf);
 			if (fetch->len != 0) {
-				fprintf(stderr,
-					"%s: warning: stranding %d octets!\n",
-					program_name, (int)fetch->len);
+				my_logf("warning: stranding %d octets!",
+					(int)fetch->len);
 				fetch->len = 0;
 			}
 
@@ -538,9 +542,7 @@ writer_fini(writer_t writer) {
 			size_t len;
 
 			if ((nl = strchr(line, '\n')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no \\n found in '%s'\n",
-					program_name, line);
+				my_logf("warning: no \\n found in '%s'", line);
 				continue;
 			}
 			linep = line;
@@ -550,57 +552,43 @@ writer_fini(writer_t writer) {
 				 linep);
 			/* skip sort key: first */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no SP found in '%s'\n",
-					program_name, line);
+				my_logf("warning: no SP found in '%s'", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: last */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no second SP in '%s'\n",
-					program_name, line);
+				my_logf("warning: no second SP in '%s'", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: duration */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no third SP in '%s'\n",
-					program_name, line);
+				my_logf("warning: no third SP in '%s'", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: count */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no fourth SP in '%s'\n",
-					program_name, line);
+				my_logf("warning: no fourth SP in '%s'", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: rrname */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no fifth SP in '%s'\n",
-					program_name, line);
+				my_logf("warning: no fifth SP in '%s'", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: rrtype */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no sixth SP in '%s'\n",
-					program_name, line);
+				my_logf("warning: no sixth SP in '%s'", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: rdata */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no seventh SP in '%s'\n",
-					program_name, line);
+				my_logf("warning: no seventh SP in '%s'", line);
 				continue;
 			}
 			linep += strspn(linep, " ");
@@ -612,9 +600,7 @@ writer_fini(writer_t writer) {
 			len = (size_t)(nl - linep);
 			msg = tuple_make(&tup, linep, len);
 			if (msg != NULL) {
-				fprintf(stderr,
-					"%s: warning: tuple_make: %s\n",
-					program_name, msg);
+				my_logf("warning: tuple_make: %s", msg);
 				continue;
 			}
 			/* after the sort, we don't know what query
@@ -632,10 +618,8 @@ writer_fini(writer_t writer) {
 			perror("waitpid");
 		} else {
 			if (!writer->sort_killed && status != 0)
-				fprintf(stderr,
-					"%s: warning: sort "
-					"exit status is %u\n",
-					program_name, (unsigned)status);
+				my_logf("warning: sort exit status is %u",
+					(unsigned)status);
 		}
 	}
 
@@ -742,24 +726,19 @@ io_drain(void) {
 				      or_else(fetch->saf_msg, ""));
 			}
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
-				fprintf(stderr,
-					"%s: warning: libcurl failed since "
-					"could not resolve host\n",
-					program_name);
+				my_logf("libcurl failed since "
+					"could not resolve host");
 				exit_code = 1;
 			} else if (cm->data.result == CURLE_COULDNT_CONNECT) {
-				fprintf(stderr,
-					"%s: warning: libcurl failed since "
-					"could not connect\n",
-					program_name);
+				my_logf("libcurl failed since "
+					"could not connect");
 				exit_code = 1;
 			} else if (cm->data.result != CURLE_OK &&
 				   !fetch->stopped)
 			{
-				fprintf(stderr,
-					"%s: warning: libcurl failed with "
-					"curl error %d (%s)\n",
-					program_name, cm->data.result,
+				my_logf("libcurl failed with "
+					"curl error %d (%s)",
+					cm->data.result,
 					curl_easy_strerror(cm->data.result));
 				exit_code = 1;
 			}
@@ -794,8 +773,7 @@ escape(const char *str) {
 		return NULL;
 	escaped = curl_escape(str, (int)strlen(str));
 	if (escaped == NULL) {
-		fprintf(stderr, "%s: curl_escape(%s) failed\n",
-			program_name, str);
+		my_logf("curl_escape(%s) failed", str);
 		my_exit(1);
 	}
 	ret = strdup(escaped);

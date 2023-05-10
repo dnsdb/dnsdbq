@@ -20,7 +20,7 @@
 .Nd DNSDB query tool
 .Sh SYNOPSIS
 .Nm dnsdbq
-.Op Fl acdfgGhIjmqSsUv468
+.Op Fl acdfgGhIjmoqSsUv468
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -34,6 +34,7 @@
 .Op Fl N Ar hex[/rrtype[,...]]
 .Op Fl n Ar name[/rrtype[,...]]
 .Op Fl O Ar offset
+.Op Fl o Ar timeout
 .Op Fl p Ar output_type
 .Op Fl R Ar hex[/rrtype[,...][/bailiwick]]
 .Op Fl r Ar name[/rrtype[,...][/bailiwick]]
@@ -320,6 +321,9 @@ are somewhat more expensive than right-hand wildcard queries.
 to offset by #offset the results returned by the query.
 This gives you incremental results transfers.
 Cannot be negative. The default is 0 which means no offset.
+.It Fl o Ar timeout
+specifies the timeout, in seconds, for initial connection to database
+server and for each transaction made to that server.
 .It Fl p Ar output_type
 select output type. Specify:
 .Bl -tag -width "minimal"
