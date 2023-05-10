@@ -367,7 +367,7 @@ dnsdb_info(void) {
 	/* create a rump query. */
 	CREATE(query, sizeof(struct query));
 	query->writer = writer;
-	query->descrip = strdup("rate_limit");
+	query->descr = strdup("rate_limit");
 	writer->queries = query;
 
 	/* start a status fetch. */

@@ -339,7 +339,7 @@ environment variable for controlling how
 timestamps are formatted for this option.
 .It Cm minimal
 outputs only the owner name or rdata, one per line and deduplicated;
-for use by shell scripts.
+for use by shell scripts. This is incompatible with sorting.
 .El
 .It Fl q
 makes the program reticent about warnings.
@@ -385,6 +385,10 @@ show the DNS owner name (rrname) in TLD-first order (so, COM.EXAMPLE
 rather than EXAMPLE.COM).
 .It Cm chomp
 strip away the trailing dot (.) from the DNS owner name (rrname).
+.It Cm qdetail
+annotate the response to include query details, mostly for use by
+.Fl V Ar summarize.
+This is incompatible with sorting.
 .El
 .It Fl t Ar rrtype[,...]
 specify the resource record type(s) desired.  Default is ANY.

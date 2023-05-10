@@ -35,8 +35,9 @@
 static void present_text_line(const char *, const char *, const char *);
 static void present_csv_line(pdns_tuple_ct, const char *);
 static void present_minimal_thing(const char *thing);
-static void present_json(pdns_tuple_ct, bool);
-static json_t *annotate_json(pdns_tuple_ct, bool);
+static void present_json(pdns_tuple_ct, query_ct, bool);
+static json_t *annotate_json(pdns_tuple_ct, query_ct, bool);
+static json_t *annotation_json(query_ct query, json_t *annoRD);
 static json_t *annotate_one(json_t *, const char *, const char *, json_t *);
 #ifndef CRIPPLED_LIBC
 static json_t *annotate_asinfo(const char *, const char *);
@@ -47,7 +48,7 @@ static struct counted *countoff_r(const char *, int);
  */
 void
 present_text_lookup(pdns_tuple_ct tup,
-		    mode_e mode __attribute__ ((unused)),
+		    query_ct query __attribute__ ((unused)),
 		    writer_t writer __attribute__ ((unused)))
 {
 	bool pflag, ppflag;
@@ -169,7 +170,7 @@ present_text_line(const char *rrname, const char *rrtype, const char *rdata) {
  */
 void
 present_text_summarize(pdns_tuple_ct tup,
-		       mode_e mode __attribute__ ((unused)),
+		       query_ct query __attribute__ ((unused)),
 		       writer_t writer __attribute__ ((unused)))
 {
 	const char *prefix;
@@ -232,27 +233,27 @@ pprint_json(const char *buf, size_t len, FILE *outf) {
  */
 void
 present_json_lookup(pdns_tuple_ct tup,
-		    mode_e mode __attribute__ ((unused)),
+		    query_ct query __attribute__ ((unused)),
 		    writer_t writer __attribute__ ((unused)))
 {
-	present_json(tup, true);
+	present_json(tup, query, true);
 }
 
 /* present_json_summarize -- render one DNSDB tuple as newline-separated JSON.
  */
 void
 present_json_summarize(pdns_tuple_ct tup,
-		       mode_e mode __attribute__ ((unused)),
+		       query_ct query __attribute__ ((unused)),
 		       writer_t writer __attribute__ ((unused)))
 {
-	present_json(tup, false);
+	present_json(tup, query, false);
 }
 
 /* present_json -- shared renderer for DNSDB JSON tuples (lookup and summarize)
  */
 static void
-present_json(pdns_tuple_ct tup, bool rd) {
-	json_t *copy = annotate_json(tup, rd);
+present_json(pdns_tuple_ct tup, query_ct query, bool rd) {
+	json_t *copy = annotate_json(tup, query, rd);
 
 	if (copy != NULL) {
 		json_dumpf(copy, stdout, JSON_INDENT(0) | JSON_COMPACT);
@@ -267,7 +268,7 @@ present_json(pdns_tuple_ct tup, bool rd) {
 /* annotate_json -- create a temporary copy of a tuple; apply transforms.
  */
 static json_t *
-annotate_json(pdns_tuple_ct tup, bool rd) {
+annotate_json(pdns_tuple_ct tup, query_ct query, bool rd) {
 	json_t *annoRD = NULL, *annoTF = NULL, *annoTL = NULL,
 		*annoZF = NULL, *annoZL = NULL;
 
@@ -321,7 +322,7 @@ annotate_json(pdns_tuple_ct tup, bool rd) {
 	/* anything annotated? */
 	if ((annoZF != NULL && annoZL != NULL) ||
 	    (annoTF != NULL && annoTL != NULL) ||
-	    (transforms & (TRANS_REVERSE|TRANS_CHOMP)) != 0 ||
+	    (transforms & (TRANS_REVERSE|TRANS_CHOMP|TRANS_QDETAIL)) != 0 ||
 	    annoRD != NULL)
 	{
 		json_t *copy = json_deep_copy(tup->obj.cof_obj);
@@ -341,12 +342,59 @@ annotate_json(pdns_tuple_ct tup, bool rd) {
 		if ((transforms & (TRANS_REVERSE|TRANS_CHOMP)) != 0)
 			json_object_set_new_nocheck(copy, "rrname",
 						    json_string(tup->rrname));
-		if (annoRD != NULL)
-			json_object_set_new_nocheck(copy, "dnsdbq_rdata",
-						    annoRD);
+
+		if ((transforms & TRANS_QDETAIL) != 0 || annoRD != NULL) {
+			json_t *obj = annotation_json(query, annoRD);
+			if (obj != NULL)
+				json_object_set_new_nocheck(copy, "_dnsdbq",
+							    obj);
+		}
 		return copy;
 	}
 	return NULL;
+}
+
+static inline void
+instantiate_json(json_t **objptr) {
+	if (*objptr == NULL)
+		*objptr = json_object();
+}
+
+static json_t *
+annotation_json(query_ct query, json_t *annoRD) {
+	json_t *obj = NULL;
+
+	if (query != NULL && (transforms & TRANS_QDETAIL) != 0) {
+		instantiate_json(&obj);
+		if ((transforms & TRANS_QDETAIL) != 0)
+			json_object_set_new_nocheck(obj, "descr",
+						    json_string(query->descr));
+		if (query->qp.after != 0)
+			json_object_set_new_nocheck(obj, "after",
+				json_string_nocheck(
+					time_str(query->qp.after, iso8601)));
+		if (query->qp.before != 0)
+			json_object_set_new_nocheck(obj, "before",
+				json_string_nocheck(
+					time_str(query->qp.before, iso8601)));
+		if (query->qp.query_limit != -1)
+			json_object_set_new_nocheck(obj, "limit",
+				json_integer((json_int_t)
+					     query->qp.query_limit));
+		if (query->qp.offset != 0)
+			json_object_set_new_nocheck(obj, "offset",
+				json_integer((json_int_t)
+					     query->qp.offset));
+		json_object_set_new_nocheck(obj, "gravel",
+					    json_boolean(query->qp.gravel));
+		json_object_set_new_nocheck(obj, "complete",
+					    json_boolean(query->qp.complete));
+	}
+	if (annoRD != NULL) {
+		instantiate_json(&obj);
+		json_object_set_new_nocheck(obj, "anno", annoRD);
+	}
+	return obj;
 }
 
 static json_t *
@@ -399,7 +447,7 @@ annotate_asinfo(const char *rrtype, const char *rdata) {
  */
 void
 present_csv_lookup(pdns_tuple_ct tup,
-		   mode_e mode __attribute__ ((unused)),
+		   query_ct query __attribute__ ((unused)),
 		   writer_t writer)
 {
 	if (!writer->csv_headerp) {
@@ -495,12 +543,15 @@ present_csv_line(pdns_tuple_ct tup, const char *rdata) {
  */
 void
 present_minimal_lookup(pdns_tuple_ct tup,
-		       mode_e mode,
+		       query_ct query,
 		       writer_t writer __attribute__ ((unused)))
 {
+	/* here is why this presenter is incompatible with sorting. */
+	assert(query != NULL);
+
 	/* did this tuple come from a left hand or right hand query? */
 	bool left = true;
-	switch (mode) {
+	switch (query->mode) {
 	case no_mode:
 		abort();
 	case rrset_mode:
@@ -550,7 +601,7 @@ present_minimal_thing(const char *thing) {
  */
 void
 present_csv_summarize(pdns_tuple_ct tup,
-		      mode_e mode __attribute__ ((unused)),
+		      query_ct query __attribute__ ((unused)),
 		      writer_t writer __attribute__ ((unused)))
 {
 	printf("time_first,time_last,zone_first,zone_last,"
@@ -899,7 +950,7 @@ pdns_blob(fetch_t fetch, size_t len) {
 		}
 
 		if (tup.cond != NULL) {
-			DEBUG(5, true, "data_blob tup.cond = %s\n", tup.cond);
+			DEBUG(5, true, "pdns_blob tup.cond = %s\n", tup.cond);
 			/* if we goto next now, this line will not be counted.
 			 */
 			if (strcmp(tup.cond, "begin") == 0) {
@@ -963,7 +1014,7 @@ pdns_blob(fetch_t fetch, size_t len) {
 		DEBUG(3, true, "dyn_rrname = '%s'\n", dyn_rrname);
 		DEBUG(3, true, "dyn_rdata = '%s'\n", dyn_rdata);
 		fprintf(writer->sort_stdin,
-			"%lu %lu %lu %lu %s %s %s %d %*.*s\n",
+			"%lu %lu %lu %lu %s %s %s %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,
 			(unsigned long)(last - first),
@@ -971,9 +1022,8 @@ pdns_blob(fetch_t fetch, size_t len) {
 			or_else(dyn_rrname, "n/a"),
 			tup.rrtype,
 			or_else(dyn_rdata, "n/a"),
-			(int)query->mode,
 			(int)len, (int)len, fetch->buf);
-		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %s %d %*.*s'\n",
+		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %s %*.*s'\n",
 		      (unsigned long)first,
 		      (unsigned long)last,
 		      (unsigned long)(last - first),
@@ -981,12 +1031,12 @@ pdns_blob(fetch_t fetch, size_t len) {
 		      or_else(dyn_rrname, "n/a"),
 		      tup.rrtype,
 		      or_else(dyn_rdata, "n/a"),
-		      (int)query->mode,
 		      (int)len, (int)len, fetch->buf);
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {
-		(*presenter)(&tup, query->mode, writer);
+		/* before the sort, we know the query that caused the tuple. */
+		(*presenter->output)(&tup, query, writer);
 	}
 
 	ret = 1;

@@ -265,7 +265,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	fetch_t fetch = (fetch_t) blob;
 	query_t query = fetch->query;
 	writer_t writer = query->writer;
-	qparam_ct qp = &query->params;
+	qparam_ct qp = &query->qp;
 	size_t bytes = size * nmemb;
 	char *nl;
 
@@ -280,17 +280,17 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				/* grab the token. */
 				writer->active = query;
 				DEBUG(2, true, "active (%d) %s\n",
-				      npaused, query->descrip);
+				      npaused, query->descr);
 			} else if (writer->active != query) {
 				/* pause the query. */
 				paused[npaused++] = query;
 				DEBUG(2, true, "pause (%d) %s\n",
-				      npaused, query->descrip);
+				      npaused, query->descr);
 				return CURL_WRITEFUNC_PAUSE;
 			}
 		}
 		if (!query->hdr_sent) {
-			printf("++ %s\n", query->descrip);
+			printf("++ %s\n", query->descr);
 			query->hdr_sent = true;
 		}
 	}
@@ -397,7 +397,7 @@ last_fetch(fetch_t fetch) {
 
 	assert(query->fetches == fetch && fetch->next == NULL);
 	DEBUG(2, true, "query_done(%s), meta=%d\n",
-	      query->descrip, query->writer->meta_query);
+	      query->descr, query->writer->meta_query);
 	if (query->writer->meta_query)
 		return;
 
@@ -441,7 +441,7 @@ last_fetch(fetch_t fetch) {
 			     ufetch != NULL;
 			     ufetch = ufetch->next) {
 				DEBUG(2, true, "unpause (%d) %s\n",
-				      npaused, unpause->descrip);
+				      npaused, unpause->descr);
 				curl_easy_pause(ufetch->easy, CURLPAUSE_CONT);
 			}
 		}
@@ -498,7 +498,7 @@ writer_fini(writer_t writer) {
 		assert((query->status != NULL) == (query->message != NULL));
 		DESTROY(query->status);
 		DESTROY(query->message);
-		DESTROY(query->descrip);
+		DESTROY(query->descr);
 		DESTROY(query);
 		writer->queries = query_next;
 	}
@@ -604,21 +604,6 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 			linep += strspn(linep, " ");
-			/* recover the mode */
-			mode_e mode = (mode_e) (int) strtol(linep, NULL, 10);
-			if (mode == no_mode) {
-				fprintf(stderr,
-					"%s: invalid mode from sort in '%s'\n",
-					program_name, line);
-				continue;
-			}
-			if ((linep = strchr(linep, ' ')) == NULL) {
-				fprintf(stderr,
-					"%s: warning: no eighth SP in '%s'\n",
-					program_name, line);
-				continue;
-			}
-			linep += strspn(linep, " ");
 			/* recover the json */
 			DEBUG(2, true, "sort2: '%*.*s'\n",
 				 (int)(nl - linep),
@@ -632,7 +617,10 @@ writer_fini(writer_t writer) {
 					program_name, msg);
 				continue;
 			}
-			(*presenter)(&tup, mode, writer);
+			/* after the sort, we don't know what query
+			 * caused any given tuple.
+			 */
+			(*presenter->output)(&tup, NULL, writer);
 			tuple_unmake(&tup);
 			count++;
 		}
@@ -731,7 +719,7 @@ io_drain(void) {
 						  &fetch->rcode);
 
 			DEBUG(2, true, "io_drain(%s) DONE rcode=%d\n",
-			      query->descrip, fetch->rcode);
+			      query->descr, fetch->rcode);
 			if (psys->encap == encap_saf) {
 				if (fetch->saf_cond == sc_begin ||
 				    fetch->saf_cond == sc_ongoing)
