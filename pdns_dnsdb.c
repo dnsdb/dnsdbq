@@ -531,14 +531,14 @@ rate_tuple_make(rate_tuple_t tup, const char *buf, size_t len) {
 	DEBUG(3, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
-		fprintf(stderr, "%s: warning: json_loadb: %d:%d: %s %s\n",
-			program_name, error.line, error.column,
+		my_logf("warning: json_loadb: %d:%d: %s %s",
+			error.line, error.column,
 			error.text, error.source);
 		abort();
 	}
 	if (debug_level >= 4) {
 		char *pretty = json_dumps(tup->obj.main, JSON_INDENT(2));
-		fprintf(stderr, "debug: %s\n", pretty);
+		my_logf("%s", pretty);
 		free(pretty);
 	}
 

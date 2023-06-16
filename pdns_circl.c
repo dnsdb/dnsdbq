@@ -112,16 +112,12 @@ circl_url(const char *path, char *sep,
 			break;
 		}
 	if (val == NULL) {
-		fprintf(stderr,
-			"%s: unsupported type of query for CIRCL pDNS: %s\n",
-			program_name, path);
+		my_logf("unsupported type of query for CIRCL pDNS: %s", path);
 		my_exit(1);
 	}
 
 	if (strchr(val, '/') != NULL) {
-		fprintf(stderr,
-			"%s: qualifiers not supported by CIRCL pDNS: %s\n",
-			program_name, val);
+		my_logf("qualifiers not supported by CIRCL pDNS: %s", val);
 		my_exit(1);
 	}
 	x = asprintf(&ret, "%s/%s", circl_base_url, val);

@@ -17,9 +17,11 @@
 #ifndef GLOBALS_H_INCLUDED
 #define GLOBALS_H_INCLUDED 1
 
+#include <stdarg.h>
 #include "defs.h"
 #include "deduper.h"
 #include "sort.h"
+#include "time.h"
 
 #ifdef MAIN_PROGRAM
 #define EXTERN
@@ -66,6 +68,7 @@ EXTERN	presenter_ct presenter		INIT(NULL);
 EXTERN	struct timeval startup_time	INIT({});
 EXTERN	int exit_code			INIT(0);
 EXTERN	long curl_ipresolve		INIT(CURL_IPRESOLVE_WHATEVER);
+EXTERN	long curl_timeout		INIT(0L);
 EXTERN	deduper_t minimal_deduper	INIT(NULL);
 
 /* deduplication table size. trades memory efficiency (an array of this many
@@ -79,5 +82,17 @@ EXTERN	const size_t minimal_modulus	INIT(10000);
 
 __attribute__((noreturn)) void my_exit(int);
 __attribute__((noreturn)) void my_panic(bool, const char *);
+
+/* my_logf -- annotate to stderr with program name and current time */
+static inline void
+my_logf(const char *fmtstr, ...) {
+	va_list ap;
+
+	va_start(ap, fmtstr);
+	fprintf(stderr, "%s [%s]: ", program_name,
+		time_str((u_long)time(NULL), false));
+	vfprintf(stderr, fmtstr, ap);
+	putc('\n', stderr);
+}
 
 #endif /*GLOBALS_H_INCLUDED*/
