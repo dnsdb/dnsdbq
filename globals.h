@@ -43,6 +43,7 @@ EXTERN	const char json_header[]	INIT("Accept: application/json");
 EXTERN	const char jsonl_header[]	INIT("Accept: application/x-ndjson");
 EXTERN	const char env_time_fmt[]	INIT("DNSDBQ_TIME_FORMAT");
 EXTERN	const char env_config_file[]	INIT("DNSDBQ_CONFIG_FILE");
+EXTERN	const char env_timeout[]	INIT("DNSDBQ_TIMEOUT");
 EXTERN	const char status_noerror[]	INIT("NOERROR");
 EXTERN	const char status_error[]	INIT("ERROR");
 EXTERN	const char *asinfo_domain	INIT("asn.routeviews.org");

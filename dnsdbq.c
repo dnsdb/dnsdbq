@@ -65,6 +65,7 @@ static void qdesc_debug(const char *, qdesc_ct);
 static void qparam_debug(const char *, qparam_ct);
 static __attribute__((noreturn)) void usage(const char *, ...);
 static bool parse_long(const char *, long *);
+static void set_timeout(const char *, const char *);
 static const char *qparam_ready(qparam_t);
 static const char *qparam_option(int, const char *, qparam_t);
 static verb_ct find_verb(const char *);
@@ -135,17 +136,21 @@ main(int argc, char *argv[]) {
 	/* global dynamic initialization. */
 	ideal_buffer = 4 * (size_t) sysconf(_SC_PAGESIZE);
 	gettimeofday(&startup_time, NULL);
+
 	if ((program_name = strrchr(argv[0], '/')) == NULL)
 		program_name = argv[0];
 	else
 		program_name++;
-	value = getenv(env_time_fmt);
-	if (value != NULL && strcasecmp(value, "iso") == 0)
+
+	if ((value = getenv(env_time_fmt)) != NULL &&
+	    strcasecmp(value, "iso") == 0)
 		iso8601 = true;
 
-	value = getenv(env_config_file);
-	if (value != NULL)
+	if ((value = getenv(env_config_file)) != NULL)
 		config_file = strdup(value);
+
+	if ((value = getenv(env_timeout)) != NULL)
+		set_timeout(value, env_timeout);
 
 	pverb = &verbs[DEFAULT_VERB];
 
@@ -330,9 +335,7 @@ main(int argc, char *argv[]) {
 				usage("-M must be positive");
 			break;
 		case 'o':
-			if (!parse_long(optarg, &curl_timeout) ||
-			    (curl_timeout < 0))
-				usage("-o must be non-negative");
+			set_timeout(optarg, "-o");
 			break;
 		case 'u':
 			picked_system = strdup(optarg);
@@ -909,6 +912,16 @@ parse_long(const char *in, long *out) {
 		return false;
 	*out = result;
 	return true;
+}
+
+/* set_timeout -- ingest a setting for curl_timeout
+ *
+ * exits through usage() if the value is invalid.
+ */
+static void
+set_timeout(const char *value, const char *source) {
+	if (!parse_long(value, &curl_timeout) || (curl_timeout < 0))
+		usage("%s must be non-negative", source);
 }
 
 /* qparam_ready -- check and possibly adjust the contents of a qparam.
