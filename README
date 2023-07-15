@@ -96,7 +96,7 @@ Installing dependencies:
     On macOS:
 	brew install jansson
 	
-	On Amazon Linux 2023 (AWS Ec2):
+    On Amazon Linux 2023 (AWS Ec2):
 	# A plain vanilla Amazon Linux AMI comes with with curl-minimal, and 'make' will 
 	# fail with an error that curl/curl.h is not found. Installing the following packages
 	# will allow dnsdbq to compile on a fresh Amazon Linux 2023 AMI:
