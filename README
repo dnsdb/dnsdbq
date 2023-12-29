@@ -85,10 +85,8 @@ Installing dependencies:
 	scl enable devtoolset-8 bash
 	# do the build from that bash
 
-    On CentOS 8 Linux:
-	dnf install gcc
-	dnf install jansson.x86_64 jansson-devel.x86_64
-	dnf install libcurl-devel.x86_64
+    On CentOS / AlmaLinux / Rocky Linux 8:
+	dnf install gcc jansson.x86_64 jansson-devel.x86_64 libcurl-devel.x86_64
 
     On FreeBSD 10:
 	pkg install curl jansson
