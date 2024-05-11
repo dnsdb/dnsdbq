@@ -31,6 +31,7 @@
 .Op Fl L Ar output_limit
 .Op Fl l Ar query_limit
 .Op Fl M Ar max_count
+.Op Fl C Ar cookie_file
 .Op Fl N Ar hex[/rrtype[,...]]
 .Op Fl n Ar name[/rrtype[,...]]
 .Op Fl O Ar offset
@@ -115,6 +116,8 @@ specified once, and for reasons of geometry, affects both
 and
 .Fl B
 if both are specified.
+.It Fl C
+specify a cookie file to be used by libcurl.
 .It Fl D
 specify the data source for ASINFO/CIDR annotations, if enabled by
 .Fl a .
