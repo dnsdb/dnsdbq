@@ -57,6 +57,25 @@ time_str(u_long x, bool iso8601fmt) {
 	return ret;
 }
 
+/* timeval_str -- format one timestamp (NULL means current time) and return it
+ */
+const char *timeval_str(const struct timeval *src) {
+	static char ret[sizeof "yyyy-mm-dd hh:mm:ss.mmm"];
+	char *dst;
+
+	struct timeval now;
+	if (src == NULL) {
+	  gettimeofday(&now, NULL);
+	  src = &now;
+	}
+
+	time_t t = (time_t)src->tv_sec;
+	struct tm result, *y = gmtime_r(&t, &result);
+	dst = ret + strftime(ret, sizeof ret, "%F %T", y);
+	sprintf(dst, ".%03d", src->tv_usec % 1000);
+	return ret;
+}
+
 /* time_get -- parse and return one (possibly relative) timestamp.
  */
 int

@@ -21,6 +21,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+
+#include "time.h"
 
 /* Note that cygwin has a crippled libresolv that does not
  * include the not so recent ns_initparse() function, etc.
@@ -79,7 +82,7 @@ debug(bool want_header, const char *fmtstr, ...) {
 
 	va_start(ap, fmtstr);
 	if (want_header)
-		fputs("debug: ", stderr);
+		fprintf(stderr, "debug [%s]: ", timeval_str(NULL));
 	vfprintf(stderr, fmtstr, ap);
 	va_end(ap);
 }
