@@ -82,7 +82,7 @@ debug(bool want_header, const char *fmtstr, ...) {
 
 	va_start(ap, fmtstr);
 	if (want_header)
-		fprintf(stderr, "debug [%s]: ", timeval_str(NULL));
+		fprintf(stderr, "debug [%s]: ", timeval_str(NULL, true));
 	vfprintf(stderr, fmtstr, ap);
 	va_end(ap);
 }

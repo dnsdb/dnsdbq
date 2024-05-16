@@ -57,22 +57,30 @@ time_str(u_long x, bool iso8601fmt) {
 	return ret;
 }
 
-/* timeval_str -- format one timestamp (NULL means current time) and return it
+/* timeval_str -- format one timeval (NULL means current time)
+ *
+ * returns static string.
+ *
+ * output format: yyyy-mm-dd hh:mm:ss.fff[fff]
  */
-const char *timeval_str(const struct timeval *src) {
-	static char ret[sizeof "yyyy-mm-dd hh:mm:ss.mmm"];
+const char *
+timeval_str(const struct timeval *src, bool milliseconds) {
+	static char ret[sizeof "yyyy-mm-dd hh:mm:ss.ffffff"];
 	char *dst;
 
 	struct timeval now;
 	if (src == NULL) {
-	  gettimeofday(&now, NULL);
-	  src = &now;
+		gettimeofday(&now, NULL);
+		src = &now;
 	}
 
 	time_t t = (time_t)src->tv_sec;
 	struct tm result, *y = gmtime_r(&t, &result);
 	dst = ret + strftime(ret, sizeof ret, "%F %T", y);
-	sprintf(dst, ".%03d", src->tv_usec % 1000);
+	if (milliseconds)
+		sprintf(dst, ".%03d", src->tv_usec % 1000);
+	else
+		sprintf(dst, ".%06d", src->tv_usec % 1000000);
 	return ret;
 }
 

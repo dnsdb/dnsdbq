@@ -23,7 +23,7 @@
 
 int time_cmp(u_long, u_long);
 const char *time_str(u_long, bool);
-const char *timeval_str(const struct timeval *);
+const char *timeval_str(const struct timeval *, bool);
 int time_get(const char *, u_long *);
 
 #endif /*TIME_H_INCLUDED*/
