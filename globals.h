@@ -90,7 +90,7 @@ my_logf(const char *fmtstr, ...) {
 	va_list ap;
 
 	va_start(ap, fmtstr);
-	fprintf(stderr, "%s [%s]: ", program_name, timeval_str(NULL));
+	fprintf(stderr, "%s [%s]: ", program_name, timeval_str(NULL, true));
 	vfprintf(stderr, fmtstr, ap);
 	putc('\n', stderr);
 }
