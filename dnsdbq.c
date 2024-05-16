@@ -156,7 +156,7 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:0:o:"
+			    "C:D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:0:o:"
 			    "adfhIjmqSsUv468" QPARAM_GETOPT))
 	       != -1)
 	{
@@ -186,6 +186,9 @@ main(int argc, char *argv[]) {
 		    }
 		case 'a':
 			asinfo_lookup = true;
+			break;
+		case 'C':
+			cookie_file = strdup(optarg);
 			break;
 		case 'D':
 			asinfo_domain = optarg;
@@ -700,6 +703,7 @@ my_exit(int code) {
 
 	/* globals which may have been initialized, are to be freed. */
 	DESTROY(config_file);
+	DESTROY(cookie_file);
 	if (psys != NULL)
 		psys->destroy();
 

@@ -31,6 +31,7 @@
 .Op Fl L Ar output_limit
 .Op Fl l Ar query_limit
 .Op Fl M Ar max_count
+.Op Fl C Ar cookie_file
 .Op Fl N Ar hex[/rrtype[,...]]
 .Op Fl n Ar name[/rrtype[,...]]
 .Op Fl O Ar offset
@@ -115,6 +116,10 @@ specified once, and for reasons of geometry, affects both
 and
 .Fl B
 if both are specified.
+.It Fl C
+specify a cookie file to be used by libcurl (read-only; analogous to
+.Xr curl 1
+-b). Typically this will be used for service authentication.
 .It Fl D
 specify the data source for ASINFO/CIDR annotations, if enabled by
 .Fl a .
@@ -662,4 +667,5 @@ error such as specifying the wrong server hostname.
 .Xr dig 1 ,
 .Xr jq 1 ,
 .Xr libcurl 3 ,
-.Xr dnstable-encoding 5
+.Xr dnstable-encoding 5 ,
+.Ic "https://curl.se/docs/http-cookies.html"

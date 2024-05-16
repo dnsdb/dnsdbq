@@ -36,7 +36,7 @@ extern const struct verb verbs[];
 #endif
 
 EXTERN	const char id_swclient[]	INIT("dnsdbq");
-EXTERN	const char id_version[]		INIT("2.6.4");
+EXTERN	const char id_version[]		INIT("2.6.5");
 EXTERN	const char *program_name	INIT(NULL);
 EXTERN	const char path_sort[]		INIT("/usr/bin/sort");
 EXTERN	const char json_header[]	INIT("Accept: application/json");
@@ -49,6 +49,7 @@ EXTERN	const char status_error[]	INIT("ERROR");
 EXTERN	const char *asinfo_domain	INIT("asn.routeviews.org");
 EXTERN	struct qparam qparam_empty INIT({ .query_limit = -1L,
 			.explicit_output_limit = -1L, .output_limit = -1L });
+EXTERN	char *cookie_file		INIT(NULL);
 EXTERN	char *config_file		INIT(NULL);
 EXTERN	verb_ct pverb			INIT(NULL);
 EXTERN	pdns_system_ct psys		INIT(NULL);
