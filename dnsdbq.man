@@ -117,7 +117,7 @@ and
 .Fl B
 if both are specified.
 .It Fl C
-specify a cookie file to be used by libcurl (read-only; analagous to
+specify a cookie file to be used by libcurl (read-only; analogous to
 .Xr curl 1
 -b). Typically this will be used for service authentication.
 .It Fl D
