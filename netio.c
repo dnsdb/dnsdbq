@@ -122,6 +122,10 @@ create_fetch(query_t query, char *url) {
 	if (psys->auth != NULL)
 	    psys->auth(fetch);
 
+	/* if user specified a cookie file, tell libcurl about it. */
+	if (cookie_file != NULL)
+		curl_easy_setopt(fetch->easy, CURLOPT_COOKIEFILE, cookie_file);
+
 	if (psys->encap == encap_saf)
 		fetch->hdrs = curl_slist_append(fetch->hdrs, jsonl_header);
 	else
