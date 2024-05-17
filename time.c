@@ -40,7 +40,9 @@ time_cmp(u_long a, u_long b) {
 	return 0;
 }
 
-/* time_str -- format one (possibly zero) timestamp (returns static string)
+/* time_str -- format one (possibly zero) timestamp
+ *
+ *	returns static string. always uses GMT.
  */
 const char *
 time_str(u_long x, bool iso8601fmt) {
@@ -54,6 +56,33 @@ time_str(u_long x, bool iso8601fmt) {
 
 		strftime(ret, sizeof ret, iso8601fmt ? "%FT%TZ" : "%F %T", y);
 	}
+	return ret;
+}
+
+/* timeval_str -- format one timeval (NULL means current time)
+ *
+ * returns static string. always uses GMT.
+ *
+ * output format: yyyy-mm-dd hh:mm:ss.fff[fff]
+ */
+const char *
+timeval_str(const struct timeval *src, bool milliseconds) {
+	static char ret[sizeof "yyyy-mm-dd hh:mm:ss.ffffff"];
+	char *dst;
+
+	struct timeval now;
+	if (src == NULL) {
+		gettimeofday(&now, NULL);
+		src = &now;
+	}
+
+	time_t t = (time_t)src->tv_sec;
+	struct tm result, *y = gmtime_r(&t, &result);
+	dst = ret + strftime(ret, sizeof ret, "%F %T", y);
+	if (milliseconds)
+		sprintf(dst, ".%03d", src->tv_usec % 1000);
+	else
+		sprintf(dst, ".%06d", src->tv_usec % 1000000);
 	return ret;
 }
 
