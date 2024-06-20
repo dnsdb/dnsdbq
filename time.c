@@ -77,13 +77,19 @@ timeval_str(const struct timeval *src, bool milliseconds) {
 	}
 
 	time_t t = (time_t)src->tv_sec;
+	long usecs = (long)src->tv_usec;
+
+	/* in the unlikely event that usecs is more than one second, move the excess time to the seconds value */
+	long excess_seconds = usecs / 1000000;
+	t += excess_seconds;
+	usecs -= excess_seconds * 1000000;
+
 	struct tm result, *y = gmtime_r(&t, &result);
 	dst = ret + strftime(ret, sizeof ret, "%F %T", y);
-	long usecs = (long)src->tv_usec;
 	if (milliseconds)
-		sprintf(dst, ".%03ld", usecs % 1000);
+		sprintf(dst, ".%03ld", usecs / 1000);
 	else
-		sprintf(dst, ".%06ld", usecs % 1000000);
+		sprintf(dst, ".%06ld", usecs);
 	return ret;
 }
 
@@ -118,4 +124,3 @@ time_get(const char *src, u_long *dst) {
 	}
 	return 0;
 }
-
