@@ -19,4 +19,7 @@
 dnsdbq
 valgrind.suppress
 dnsdbq.core
+dnsdbq.cat
+dnsdbq.cat.new
 TAGS
+tags

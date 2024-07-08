@@ -19,8 +19,9 @@
 .Nm dnsdbq
 .Nd DNSDB query tool
 .Sh SYNOPSIS
+.Bd -ragged -compact
 .Nm dnsdbq
-.Op Fl acdfgGhIjmqSsUv468
+.Op Fl acdfgGHhIjmqSsUvx468
 .Op Fl A Ar timestamp
 .Op Fl B Ar timestamp
 .Op Fl b Ar bailiwick
@@ -36,13 +37,15 @@
 .Op Fl O Ar offset
 .Op Fl o Ar timeout
 .Op Fl p Ar output_type
-.Op Fl R Ar hex[/rrtype[,...][/bailiwick]]
-.Op Fl r Ar name[/rrtype[,...][/bailiwick]]
 .Op Fl T Ar transform[,...]
+.Op Fl R Ar hex[/rrtype[,...][/bailiwick]]
 .Op Fl t Ar rrtype[,...]
+.Op Fl r Ar name[/rrtype[,...][/bailiwick]]
 .Op Fl u Ar server_sys
 .Op Fl V Ar verb
 .Op Fl 0 Ar function=thing
+.Op Fl x Ar subsytem[,...]
+.Ed
 .Sh DESCRIPTION
 .Nm dnsdbq
 constructs and issues queries to Passive DNS systems which return data
@@ -208,6 +211,8 @@ feature, and not all time ranges contain granular results ("gravel").
 undo the effect of
 .Fl g ,
 this returning rocks rather than gravel. (Used in $OPTIONS in batch files.)
+.It Fl H
+follow aliases (CNAME RRs) if present. (Uses broader queries.)
 .It Fl h
 emit usage and quit.
 .It Fl I
@@ -450,6 +455,18 @@ arguments are 7-bit ASCII clean.
 Non-ASCII values should be queried using PUNYCODE IDN encoding. This
 .Fl 8
 option allows using arbitrary 8 bit values.
+.It Fl x Ar subsystem[,...]
+specify one or more subsystems to be traced on the diagnostic output:
+.Bl -tag -width "response"
+.It Cm upstream
+show requests to and responses from the API server.
+.It Cm workq
+show deferred work queue entrances and exits.
+.It Cm buftup
+show deferred tuple queue entrances and exits.
+.It Cm follow
+show follow table entrances
+.El
 .El
 .Sh "TIMESTAMP FORMATS"
 Timestamps may be one of following forms.

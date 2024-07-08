@@ -389,6 +389,8 @@ annotation_json(query_ct query, json_t *annoRD) {
 					    json_boolean(query->qp.gravel));
 		json_object_set_new_nocheck(obj, "complete",
 					    json_boolean(query->qp.complete));
+		json_object_set_new_nocheck(obj, "follow",
+					    json_boolean(query->qp.follow));
 	}
 	if (annoRD != NULL) {
 		instantiate_json(&obj);
@@ -551,7 +553,7 @@ present_minimal_lookup(pdns_tuple_ct tup,
 
 	/* did this tuple come from a left hand or right hand query? */
 	bool left = true;
-	switch (query->mode) {
+	switch (query->qdp->mode) {
 	case no_mode:
 		abort();
 	case rrset_mode:
@@ -633,12 +635,16 @@ present_csv_summarize(pdns_tuple_ct tup,
 /* tuple_make -- create one DNSDB tuple object out of a JSON object.
  */
 const char *
-tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
+tuple_make(pdns_tuple_t *ptup, const char *buf, size_t len) {
 	const char *msg = NULL;
 	json_error_t error;
 
-	memset(tup, 0, sizeof *tup);
 	DEBUG(4, true, "[%d] '%-*.*s'\n", (int)len, (int)len, (int)len, buf);
+	pdns_tuple_t tup = calloc(1, sizeof *tup);
+	if (tup == NULL) {
+		my_logf("fatal: calloc failed");
+		abort();
+	}
 	tup->obj.main = json_loadb(buf, len, 0, &error);
 	if (tup->obj.main == NULL) {
 		my_logf("warning: json_loadb: %d:%d: %s %s",
@@ -813,22 +819,29 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		}
 		/* N.b., the array case is for the consumer to iterate over. */
 	}
+	tup->buf = strdup(buf);
+	tup->len = len;
 
 	assert(msg == NULL);
+	tup->next = NULL;
+	*ptup = tup;
 	return NULL;
 
  ouch:
 	assert(msg != NULL);
-	tuple_unmake(tup);
+	tuple_unmake(&tup);
 	return msg;
 }
 
 /* tuple_unmake -- deallocate the heap storage associated with one tuple.
  */
 void
-tuple_unmake(pdns_tuple_t tup) {
-	DESTROY(tup->rrname);
-	json_decref(tup->obj.main);
+tuple_unmake(pdns_tuple_t *ptup) {
+	(*ptup)->next = NULL;
+	DESTROY((*ptup)->rrname);
+	DESTROY((*ptup)->buf);
+	json_decref((*ptup)->obj.main);
+	DESTROY(*ptup);
 }
 
 /* countoff{_r,_debug} -- count and map the labels in a DNS name.
@@ -924,15 +937,13 @@ reverse(const char *src) {
 
 /* pdns_blob -- process one deblocked json pdns blob as a counted string.
  *
- * presents, or outputs to POSIX sort(1), the blob, and then frees it.
+ * presents or outputs the blob POSIX sort(1) and then frees it.
  * returns number of tuples processed (for now, 1 or 0).
  */
 int
 pdns_blob(fetch_t fetch, size_t len) {
 	query_t query = fetch->query;
-	writer_t writer = query->writer;
-	struct pdns_tuple tup;
-	u_long first, last;
+	pdns_tuple_t tup;
 	const char *msg;
 	int ret = 0;
 
@@ -943,60 +954,79 @@ pdns_blob(fetch_t fetch, size_t len) {
 	}
 
 	if (psys->encap == encap_saf) {
-		if (tup.msg != NULL) {
-			DEBUG(5, true, "data_blob tup.msg = %s\n", tup.msg);
-			fetch->saf_msg = strdup(tup.msg);
+		if (tup->msg != NULL) {
+			DEBUG(5, true, "data_blob tup->msg = %s\n", tup->msg);
+			fetch->saf_msg = strdup(tup->msg);
 		}
 
-		if (tup.cond != NULL) {
-			DEBUG(5, true, "pdns_blob tup.cond = %s\n", tup.cond);
+		if (tup->cond != NULL) {
+			DEBUG(5, true, "pdns_blob tup->cond = %s\n", tup->cond);
 			/* if we goto next now, this line will not be counted.
 			 */
-			if (strcmp(tup.cond, "begin") == 0) {
+			if (strcmp(tup->cond, "begin") == 0) {
 				fetch->saf_cond = sc_begin;
 				goto next;
-			} else if (strcmp(tup.cond, "ongoing") == 0) {
+			} else if (strcmp(tup->cond, "ongoing") == 0) {
 				/* "cond":"ongoing" key vals should
 				 * be ignored but the rest of line used. */
 				fetch->saf_cond = sc_ongoing;
-			} else if (strcmp(tup.cond, "succeeded") == 0) {
+			} else if (strcmp(tup->cond, "succeeded") == 0) {
 				fetch->saf_cond = sc_succeeded;
 				goto next;
-			} else if (strcmp(tup.cond, "limited") == 0) {
+			} else if (strcmp(tup->cond, "limited") == 0) {
 				fetch->saf_cond = sc_limited;
 				goto next;
-			} else if (strcmp(tup.cond, "failed") == 0) {
+			} else if (strcmp(tup->cond, "failed") == 0) {
 				fetch->saf_cond = sc_failed;
 				goto next;
 			} else {
 				/* use sc_missing for an invalid cond value */
 				fetch->saf_cond = sc_missing;
 				my_logf("Unknown value for \"cond\": %s",
-					tup.cond);
+					tup->cond);
 			}
 		}
 
 		/* A COF keepalive will have no "obj"
 		 * but may have a "cond" or "msg".
 		 */
-		if (tup.obj.saf_obj == NULL) {
+		if (tup->obj.saf_obj == NULL) {
 			DEBUG(4, true,
 			      "COF object is empty, i.e. a keepalive\n");
 			goto next;
 		}
 	}
 
-	/* there are two sets of timestamps in a tuple. we prefer
-	 * the on-the-wire times to the zone times, when available.
+	/* if this is a -H (follow) fetch and a CNAME is present,
+	 * buffer the tuple until end-of-fetch.
 	 */
-	if (tup.time_first != 0 && tup.time_last != 0) {
-		first = (u_long)tup.time_first;
-		last = (u_long)tup.time_last;
-	} else {
-		first = (u_long)tup.zone_first;
-		last = (u_long)tup.zone_last;
-	}
+	if (query->qp.follow && strcasecmp(tup->rrtype, "cname") == 0) {
+		if (fetch->tup_first == NULL) {
+			assert(fetch->tup_last == NULL);
+			fetch->tup_first = tup;
+			fetch->tup_last = tup;
+		} else {
+			assert(fetch->tup_last != NULL);
+			fetch->tup_last->next = tup;
+			fetch->tup_last = tup;
+		}
+		if ((tracing & TRACE_BUFTUP) != 0)
+			fprintf(stderr, "trace(BUFTUP) append (%s %s)\n",
+				tup->rrname, tup->rrtype);
+	} else
+		pdns_route(fetch, tup);
+	ret = 1;
+ next:
+	if (!query->qp.follow)
+		tuple_unmake(&tup);
+ more:
+	return ret;
+}
 
+/* pdns_route -- given a tuple, send it to POSIX sort(1) or the output channel
+ */
+void
+pdns_route(fetch_t fetch, pdns_tuple_ct tup) {
 	if (sorting != no_sort) {
 		/* POSIX sort(1) is given six extra fields at the front
 		 * of each line (first,last,duration,count,name,data)
@@ -1006,42 +1036,47 @@ pdns_blob(fetch_t fetch, size_t len) {
 		 * for all this PDP11-era logic is to avoid
 		 * having to store the full result in memory.
 		 */
-		char *dyn_rrname = sortable_rrname(&tup),
-			*dyn_rdata = sortable_rdata(&tup);
+		char *dyn_rrname = sortable_rrname(tup),
+			*dyn_rdata = sortable_rdata(tup);
+
+		/* there are two sets of timestamps in a tuple. we prefer
+		 * the on-the-wire times to the zone times, when available.
+		 */
+		u_long first, last;
+		if (tup->time_first != 0 && tup->time_last != 0) {
+			first = (u_long)tup->time_first;
+			last = (u_long)tup->time_last;
+		} else {
+			first = (u_long)tup->zone_first;
+			last = (u_long)tup->zone_last;
+		}
 
 		DEBUG(3, true, "dyn_rrname = '%s'\n", dyn_rrname);
 		DEBUG(3, true, "dyn_rdata = '%s'\n", dyn_rdata);
-		fprintf(writer->sort_stdin,
+		fprintf(fetch->query->writer->sort_stdin,
 			"%lu %lu %lu %lu %s %s %s %*.*s\n",
 			(unsigned long)first,
 			(unsigned long)last,
 			(unsigned long)(last - first),
-			(unsigned long)tup.count,
-			or_else(dyn_rrname, "n/a"),
-			tup.rrtype,
-			or_else(dyn_rdata, "n/a"),
-			(int)len, (int)len, fetch->buf);
+			(unsigned long)tup->count,
+			or_string(dyn_rrname, "n/a"),
+			tup->rrtype,
+			or_string(dyn_rdata, "n/a"),
+			(int)tup->len, (int)tup->len, tup->buf);
 		DEBUG(2, true, "sort0: '%lu %lu %lu %lu %s %s %s %*.*s'\n",
 		      (unsigned long)first,
 		      (unsigned long)last,
 		      (unsigned long)(last - first),
-		      (unsigned long)tup.count,
-		      or_else(dyn_rrname, "n/a"),
-		      tup.rrtype,
-		      or_else(dyn_rdata, "n/a"),
-		      (int)len, (int)len, fetch->buf);
+		      (unsigned long)tup->count,
+		      or_string(dyn_rrname, "n/a"),
+		      tup->rrtype,
+		      or_string(dyn_rdata, "n/a"),
+		      (int)tup->len, (int)tup->len, tup->buf);
 		DESTROY(dyn_rrname);
 		DESTROY(dyn_rdata);
 	} else {
-		/* before the sort, we know the query that caused the tuple. */
-		(*presenter->output)(&tup, query, writer);
+		(*presenter->output)(tup, fetch->query, fetch->query->writer);
 	}
-
-	ret = 1;
- next:
-	tuple_unmake(&tup);
- more:
-	return ret;
 }
 
 /* pick_system -- find a named system descriptor, return t/f as to "found?"
@@ -1201,4 +1236,192 @@ read_config(void) {
 	if (!WIFEXITED(x) || WEXITSTATUS(x) != 0)
 		my_exit(1);
 	assert(psys != NULL);
+}
+
+/* makepath -- make a RESTful URI that describes these query parameters.
+ *
+ * Returns a string that must be free()d.
+ */
+char *
+makepath(qdesc_ct qdp) {
+	/* recondition various options for HTML use. */
+	char *thing = escape(qdp->thing);
+	char *rrtype = escape(qdp->rrtype);
+	char *bailiwick = escape(qdp->bailiwick);
+	char *pfxlen = escape(qdp->pfxlen);
+
+	char *path = NULL;
+	switch (qdp->mode) {
+		int x;
+	case rrset_mode:
+		if (rrtype != NULL && bailiwick != NULL)
+			x = asprintf(&path, "rrset/name/%s/%s/%s",
+				     thing, rrtype, bailiwick);
+		else if (rrtype != NULL)
+			x = asprintf(&path, "rrset/name/%s/%s",
+				     thing, rrtype);
+		else if (bailiwick != NULL)
+			x = asprintf(&path, "rrset/name/%s/ANY/%s",
+				     thing, bailiwick);
+		else
+			x = asprintf(&path, "rrset/name/%s",
+				     thing);
+		if (x < 0)
+			my_panic(true, "asprintf");
+		break;
+	case name_mode:
+		if (rrtype != NULL)
+			x = asprintf(&path, "rdata/name/%s/%s",
+				     thing, rrtype);
+		else
+			x = asprintf(&path, "rdata/name/%s",
+				     thing);
+		if (x < 0)
+			my_panic(true, "asprintf");
+		break;
+	case ip_mode:
+		if (pfxlen != NULL)
+			x = asprintf(&path, "rdata/ip/%s,%s",
+				     thing, pfxlen);
+		else
+			x = asprintf(&path, "rdata/ip/%s",
+				     thing);
+		if (x < 0)
+			my_panic(true, "asprintf");
+		break;
+	case raw_rrset_mode:
+		if (rrtype != NULL)
+			x = asprintf(&path, "rrset/raw/%s/%s",
+				     thing, rrtype);
+		else
+			x = asprintf(&path, "rrset/raw/%s",
+				     thing);
+		if (x < 0)
+			my_panic(true, "asprintf");
+		break;
+	case raw_name_mode:
+		if (rrtype != NULL)
+			x = asprintf(&path, "rdata/raw/%s/%s",
+				     thing, rrtype);
+		else
+			x = asprintf(&path, "rdata/raw/%s",
+				     thing);
+		if (x < 0)
+			my_panic(true, "asprintf");
+		break;
+	case no_mode:
+		/*FALLTHROUGH*/
+	default:
+		abort();
+	}
+
+	DESTROY(thing);
+	DESTROY(rrtype);
+	DESTROY(bailiwick);
+	DESTROY(pfxlen);
+
+	return path;
+}
+
+/* launch_query -- fork off some curl jobs via launch_fetch() for this query.
+ *
+ * can write to STDERR and return NULL if a query cannot be launched.
+ */
+query_t
+launch_query(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
+	struct pdns_fence fence = { };
+	query_t query = NULL;
+
+	/* ready player one. */
+	CREATE(query, sizeof(struct query));
+	query->descr = makepath(qdp);
+	query->qp = *qpp;
+	query->qdp = qdesc_copy(qdp);
+	qpp = NULL;
+	DEBUG(2, true, "launch_query(%s)\n", query->descr);
+
+	/* define the fence. */
+	if (query->qp.after != 0) {
+		if (query->qp.complete) {
+			/* each db tuple must begin after the fence-start. */
+			fence.first_after = query->qp.after;
+		} else {
+			/* each db tuple must end after the fence-start. */
+			fence.last_after = query->qp.after;
+		}
+	}
+	if (query->qp.before != 0) {
+		if (query->qp.complete) {
+			/* each db tuple must end before the fence-end. */
+			fence.last_before = query->qp.before;
+		} else {
+			/* each db tuple must begin before the fence-end. */
+			fence.first_before = query->qp.before;
+		}
+	}
+
+	/* branch on rrtype; launch (or queue) nec'y fetches. */
+	if (query->qp.follow) {
+		/* make sure makepath sets rrtype to "any". */
+		struct qdesc qd = {
+			.mode = qdp->mode,
+			.thing = qdp->thing,
+			.rrtype = NULL,
+			.rrtypes = NULL,
+			.nrrtypes = 0,
+			.bailiwick = qdp->bailiwick,
+			.pfxlen = qdp->pfxlen
+		};
+		char *path = makepath(&qd);
+		launch_fetch(query, path, &fence);
+		DESTROY(path);
+		/* note that qd goes out of scope here. */
+	} else if (qdp->nrrtypes == 0) {
+		/* no rrtype string given, let makepath set it to "any". */
+		char *path = makepath(qdp);
+		launch_fetch(query, path, &fence);
+		DESTROY(path);
+	} else {
+		/* rrtype string was given, launch a query for each. */
+		for (int i = 0; i < qdp->nrrtypes; i++) {
+			/* copy most of *qdp except for rrtype information. */
+			char *rrtypes[] = { qdp->rrtypes[i] };
+			struct qdesc qd = {
+				.mode = qdp->mode,
+				.thing = qdp->thing,
+				.rrtype = rrtypes[0],
+				.rrtypes = rrtypes,
+				.nrrtypes = 1,
+				.bailiwick = qdp->bailiwick,
+				.pfxlen = qdp->pfxlen
+			};
+			char *path = makepath(&qd);
+			launch_fetch(query, path, &fence);
+			DESTROY(path);
+			/* note that qd goes out of scope here. */
+		}
+		if (qdp->nrrtypes > 1)
+			query->multitype = true;
+	}
+
+	/* finish query initialization, link it up, and return it. */
+	query->writer = writer;
+	writer = NULL;
+	query->next = query->writer->queries;
+	query->writer->queries = query;
+	return query;
+}
+
+/* launch_fetch -- actually launch a query job, given a path and time fences.
+ */
+void
+launch_fetch(query_t query, const char *path, pdns_fence_ct fp) {
+	char *url = psys->url(path, NULL, &query->qp, fp, false);
+	if (url == NULL)
+		my_exit(1);
+
+	DEBUG(1, true, "url [%s]\n", url);
+
+	create_fetch(query, url);
+	io_more();
 }

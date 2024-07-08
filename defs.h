@@ -62,13 +62,18 @@ typedef enum { batch_none, batch_terse, batch_verbose } batch_e;
 #define TRANS_CHOMP	0x04
 #define TRANS_QDETAIL	0x08
 
-/* or_else -- return one pointer or else the other.
+#define TRACE_UPSTREAM	0x01
+#define	TRACE_WORKQ	0x02
+#define	TRACE_BUFTUP	0x04
+#define	TRACE_FOLLOW	0x18
+
+/* or_string -- return one string or else the other.
  */
 static inline const char *
-or_else(const char *p, const char *or_else) {
-	if (p != NULL)
-		return p;
-	return or_else;
+or_string(const char *a, const char *b) {
+	if (a != NULL)
+		return a;
+	return b;
 }
 
 /* debug -- at the moment, dump to stderr.

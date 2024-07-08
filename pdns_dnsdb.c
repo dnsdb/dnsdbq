@@ -287,13 +287,13 @@ dnsdb_url(const char *path, char *sep, qparam_ct qpp,
 	x = asprintf(&ret, "%s%s%s/%s?swclient=%s&version=%s%s%s%s%s%s%s%s%s",
 		     scheme_if_needed, dnsdb_base_url, verb_path, path,
 		     id_swclient, id_version, aggr_if_needed,
-		     or_else(offset_str, ""),
-		     or_else(max_count_str, ""),
-		     or_else(query_limit_str, ""),
-		     or_else(first_after_str, ""),
-		     or_else(first_before_str, ""),
-		     or_else(last_after_str, ""),
-		     or_else(last_before_str, ""));
+		     or_string(offset_str, ""),
+		     or_string(max_count_str, ""),
+		     or_string(query_limit_str, ""),
+		     or_string(first_after_str, ""),
+		     or_string(first_before_str, ""),
+		     or_string(last_after_str, ""),
+		     or_string(last_before_str, ""));
 	if (x < 0) {
 		perror("asprintf");
 		goto done;

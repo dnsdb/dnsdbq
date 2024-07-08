@@ -42,11 +42,14 @@ struct pdns_json {
 };
 
 struct pdns_tuple {
+	struct pdns_tuple *next;
 	struct pdns_json  obj;
 	u_long		  time_first, time_last, zone_first, zone_last;
-	const char	 *bailiwick, *rrtype, *rdata, *cond, *msg;
-	char		 *rrname;
+	const char	  *bailiwick, *rrtype, *rdata, *cond, *msg;
+	char		  *rrname;
 	json_int_t	  count, num_results;
+	char		  *buf;
+	size_t		  len;
 };
 typedef struct pdns_tuple *pdns_tuple_t;
 typedef const struct pdns_tuple *pdns_tuple_ct;
@@ -145,12 +148,47 @@ typedef const struct verb *verb_ct;
 struct qdesc {
 	mode_e		mode;
 	char		*thing;
-	char		*rrtype;
+	char		*rrtype;	/* comma-separated string or NULL. */
+	char		**rrtypes;	/* array (counted). */
+	int		nrrtypes;	/* count. */
 	char		*bailiwick;
 	char		*pfxlen;
 };
 typedef struct qdesc *qdesc_t;
 typedef const struct qdesc *qdesc_ct;
+
+static inline qdesc_t
+qdesc_copy(qdesc_ct old) {
+	qdesc_t new = calloc(1, sizeof *new);
+	new->mode = old->mode;
+	new->thing = strdup(old->thing);
+	if (old->rrtype != NULL) {
+		new->rrtype = strdup(old->rrtype);
+		new->rrtypes = calloc((size_t)old->nrrtypes, sizeof(char *));
+		for (int i = 0; i < old->nrrtypes; i++)
+			new->rrtypes[new->nrrtypes++] =
+				strdup(old->rrtypes[i]);
+	}
+	new->bailiwick = (old->bailiwick == NULL)
+		? NULL : strdup(old->bailiwick);
+	new->pfxlen = (old->pfxlen == NULL)
+		? NULL : strdup(new->pfxlen);
+	return new;
+}
+
+static inline void
+qdesc_destroy(qdesc_t *qdpp) {
+	DESTROY((*qdpp)->thing);
+	if ((*qdpp)->rrtype != NULL) {
+		DESTROY((*qdpp)->rrtype);
+		while ((*qdpp)->nrrtypes-- > 0)
+			DESTROY((*qdpp)->rrtypes[0]);
+		DESTROY((*qdpp)->rrtypes);
+	}
+	DESTROY((*qdpp)->bailiwick);
+	DESTROY((*qdpp)->pfxlen);
+	DESTROY(*qdpp);
+}
 
 struct counted {
 	int		nlabel;
@@ -169,14 +207,18 @@ void present_csv_lookup(pdns_tuple_ct, query_ct, writer_t);
 void present_minimal_lookup(pdns_tuple_ct, query_ct, writer_t);
 void present_text_summarize(pdns_tuple_ct, query_ct, writer_t);
 void present_csv_summarize(pdns_tuple_ct, query_ct, writer_t);
-const char *tuple_make(pdns_tuple_t, const char *, size_t);
-void tuple_unmake(pdns_tuple_t);
+const char *tuple_make(pdns_tuple_t *, const char *, size_t);
+void tuple_unmake(pdns_tuple_t *);
 struct counted *countoff(const char *);
 void countoff_debug(const char *, const char *, const struct counted *);
 char *reverse(const char *);
 int pdns_blob(fetch_t, size_t);
+void pdns_route(fetch_t, pdns_tuple_ct);
 void pick_system(const char *, const char *);
 void read_config(void);
+char *makepath(qdesc_ct);
+query_t launch_query(qdesc_ct, qparam_ct, writer_t);
+void launch_fetch(query_t, const char *, pdns_fence_ct);
 
 /* Some HTTP status codes we handle specifically */
 #define HTTP_OK		   200

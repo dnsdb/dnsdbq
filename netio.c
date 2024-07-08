@@ -32,10 +32,15 @@
 #include "globals.h"
 #include "time.h"
 
+static void io_crank(int);
 static void io_drain(void);
 static void fetch_reap(fetch_t);
 static void fetch_done(fetch_t);
 static void fetch_unlink(fetch_t);
+static void fetch_follow(fetch_t);
+static void fetch_follow_one(fetch_t, u_long, u_long,
+			     const char *, const char *, const char *);
+static void work_add(qdesc_ct qdp, qparam_ct qpp, writer_t writer);
 static void last_fetch(fetch_t);
 
 static writer_t writers = NULL;
@@ -43,6 +48,7 @@ static CURLM *multi = NULL;
 static bool curl_cleanup_needed = false;
 static query_t paused[MAX_FETCHES];
 static int npaused = 0;
+static bool more = false;
 
 const char saf_begin[] = "begin";
 const char saf_ongoing[] = "ongoing";
@@ -169,6 +175,13 @@ fetch_reap(fetch_t fetch) {
 	DESTROY(fetch->saf_msg);
 	DESTROY(fetch->url);
 	DESTROY(fetch->buf);
+	while (fetch->tup_first != NULL) {
+		pdns_tuple_t next = fetch->tup_first->next;
+		fetch->tup_first->next = NULL;
+		tuple_unmake(&fetch->tup_first);
+		fetch->tup_first = next;
+	}
+	fetch->tup_last = NULL;
 	DESTROY(fetch);
 }
 
@@ -177,6 +190,17 @@ fetch_reap(fetch_t fetch) {
 static void
 fetch_done(fetch_t fetch) {
 	query_t query = fetch->query;
+
+	/* if this fetch was buffering tuples, handle them now. */
+	if (fetch->tup_first != NULL) {
+		assert(fetch->tup_last != NULL);
+		/* was it because of -H (follow)? */
+		if (query->qp.follow) {
+			fetch_follow(fetch);
+		} else {
+			abort();
+		}
+	}
 
 	/* if this was the last fetch on some query, signal. */
 	if (query->fetches == fetch && fetch->next == NULL)
@@ -198,6 +222,166 @@ fetch_unlink(fetch_t fetch) {
 	else
 		prev->next = fetch->next;
 	fetch->query = NULL;
+}
+
+/* fetch_follow -- unbuffer a stored fetch, looking for CNAMEs
+ */
+static void
+fetch_follow(fetch_t fetch) {
+	/* when follow (-H) is used, the upstream qtype is always ANY, so we
+	 * will hear all qtypes including both those our customer asked for
+	 * and the rest which may include CNAME. the upstream service may have
+	 * seen both CNAME and non-CNAME, so we won't freak out about that.
+	 *
+	 * CNAME matching our query name will trigger a new query at the target
+	 * (we have to look at the owner name in case our query name was a wild
+	 * card). tuples will, if they match any of our desired qtypes (if any,
+	 * and which might include CNAME) be sent to the output channel
+	 * (POSIX sort(1) or the presenter.)
+	 */
+	for (pdns_tuple_ct tup = fetch->tup_first;
+	     tup != NULL;
+	     tup = tup->next)
+	{
+		// normalize time domain of next level search
+		u_long after = 0, before = 0;
+		/*
+		if (tup->zone_first != 0UL && tup->zone_last != 0UL) {
+			after = tup->zone_first;
+			before = tup->zone_last;
+		} else {
+			after = tup->time_first;
+			before = tup->time_last;
+		}
+		*/
+
+		if ((tracing & TRACE_BUFTUP) != 0)
+			fprintf(stderr, "trace(BUFTUP) consume (%s %s)\n",
+				tup->rrname, tup->rrtype);
+
+		// consider each RR for following
+		if (json_is_array(tup->obj.rdata)) {
+			size_t index;
+			json_t *rr;
+
+			json_array_foreach(tup->obj.rdata, index, rr) {
+				fetch_follow_one(fetch, after, before,
+						 tup->rrname, tup->rrtype,
+						 json_string_value(rr));
+			}
+		} else {
+			fetch_follow_one(fetch, after, before,
+					 tup->rrname, tup->rrtype,
+					 tup->rdata);
+		}
+
+		// if it matches criteria, send tuple to the output channel
+		if (fetch->query->qdp->rrtype == NULL ||
+		    strsearch(tup->rrtype,
+			      fetch->query->qdp->rrtypes,
+			      fetch->query->qdp->nrrtypes))
+			pdns_route(fetch, tup);
+	}
+}
+
+/* fetch_follow_one -- consider following one rr
+ */
+static void
+fetch_follow_one(fetch_t fetch, u_long after, u_long before,
+		 const char *rrname, const char *rrtype, const char *rdata)
+{
+	query_ct query = fetch->query;
+	writer_t writer = query->writer;
+	bool duplicate = false;
+
+	/* if we have followed this qname+after+before, don't do it again.
+	 */
+	for (int i = 0; i < writer->nfollowed; i++) {
+		struct followed *f = writer->followed[i];
+		if (after == f->after && before == f->before &&
+		    strcasecmp(rdata, f->qname) == 0) {
+			DEBUG(2, true, "fetch_follow_one(%s) DUP\n", rdata);
+			duplicate = true;
+			break;
+		}
+	}
+
+	if (!duplicate &&
+	    query->qdp->mode == rrset_mode &&
+	    strcasecmp(rrname, query->qdp->thing) == 0 &&
+	    strcasecmp(rrtype, "cname") == 0) {
+		char *thing = strdup(rdata);
+		struct qdesc qd = {
+			.mode = query->qdp->mode,
+			.thing = thing,
+			.rrtype = query->qdp->rrtype,
+			.rrtypes = query->qdp->rrtypes,
+			.nrrtypes = query->qdp->nrrtypes,
+			.bailiwick = NULL,
+			.pfxlen = query->qdp->pfxlen
+		};
+		struct qparam qp = {
+			.after = after,
+			.before = before,
+			.query_limit = query->qp.query_limit,
+			.explicit_output_limit =
+				query->qp.explicit_output_limit,
+			.output_limit = query->qp.output_limit,
+			.offset = 0L,
+			.complete = true,
+			.gravel = false,
+			.follow = true
+		};
+		work_add(&qd, &qp, query->writer);
+
+		/* memorialize the followtude.
+		 */
+		int n = writer->nfollowed, nn = n + 1;
+		writer->followed = realloc(writer->followed,
+					   (size_t) nn *
+						sizeof(struct followed *));
+		writer->nfollowed = nn;
+		struct followed *f = calloc(1, sizeof *f);
+		f->after = after;
+		f->before = before;
+		f->qname = thing;
+		writer->followed[n] = f;
+		if ((tracing & TRACE_FOLLOW) != 0)
+			fprintf(stderr, "trace(FOLLOW) append (%s %lu..%lu)\n",
+				thing, after, before);
+		if (debug_level >= 2) {
+			DEBUG(2, true, "fetch_follow_one(%s) ADD\n", thing);
+			for (int i = 0; i < writer->nfollowed; i++) {
+				f = writer->followed[i];
+				DEBUG(2, false, "\t[%s %lu %lu]\n",
+				      f->qname, f->after, f->before);
+			}
+		}
+	}
+}
+
+static void
+work_add(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
+	work_t work = NULL;
+
+	if ((tracing & TRACE_WORKQ) != 0)
+		fprintf(stderr, "trace(WORKQ) append (%s [%s] %lu..%lu)\n",
+			qdp->thing,
+			qdp->rrtype != NULL ? qdp->rrtype : "",
+			qpp->after, qpp->before);
+	CREATE(work, sizeof *work);
+	if (writer->work_first != NULL) {
+		assert(writer->work_last != NULL);
+		writer->work_last->next = work;
+		writer->work_last = work;
+	} else {
+		assert(writer->work_last == NULL);
+		writer->work_first = work;
+		writer->work_last = work;
+	}
+	work->qdp = qdesc_copy(qdp);
+	work->qp = *qpp;
+	work->writer = writer;
 }
 
 /* writer_init -- instantiate a writer, which may involve forking a "sort".
@@ -272,7 +456,6 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	fetch_t fetch = (fetch_t) blob;
 	query_t query = fetch->query;
 	writer_t writer = query->writer;
-	qparam_ct qp = &query->qp;
 	size_t bytes = size * nmemb;
 	char *nl;
 
@@ -280,7 +463,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	      (int)size, (int)nmemb, (int)bytes);
 
 	/* if we're in asynchronous batch mode, only one query can reach
-	 * the writer at a time. fetches within a query can interleave. */
+	 * the writer at a time. fetches within a query can interleave.
+	 */
 	if (batching == batch_verbose) {
 		if (multiple) {
 			if (writer->active == NULL) {
@@ -289,7 +473,11 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 				DEBUG(2, true, "active (%d) %s\n",
 				      npaused, query->descr);
 			} else if (writer->active != query) {
-				/* pause the query. */
+				/* pause the query. the far end will go on
+				 * working, which may be i/o or cpu bound,
+				 * but libcurl will stop calling us.
+				 */
+				assert(npaused + 1 < MAX_FETCHES);
 				paused[npaused++] = query;
 				DEBUG(2, true, "pause (%d) %s\n",
 				      npaused, query->descr);
@@ -302,6 +490,8 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 	}
 
+	/* consume the payload fragment being offered by libcurl.
+	 */
 	fetch->buf = realloc(fetch->buf, fetch->len + bytes);
 	memcpy(fetch->buf + fetch->len, ptr, bytes);
 	fetch->len += bytes;
@@ -352,7 +542,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		    writer->count >= writer->output_limit)
 		{
 			DEBUG(9, true, "hit output limit %ld\n",
-			      qp->output_limit);
+			      query->qp.output_limit);
 			/* cause CURLE_WRITE_ERROR for this transfer. */
 			bytes = 0;
 			if (psys->encap == encap_saf)
@@ -394,20 +584,22 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	return bytes;
 }
 
-/* last_fetch -- do something with leftover buffer data when a query ends.
+/* last_fetch -- we're out of fetches, try to unpause some more queries if any.
  */
 static void
 last_fetch(fetch_t fetch) {
 	query_t query = fetch->query;
+	writer_t writer = query->writer;
+	bool we_work = false;
 
 	assert(query->fetches == fetch && fetch->next == NULL);
-	DEBUG(2, true, "query_done(%s), meta=%d\n",
-	      query->descr, query->writer->meta_query);
-	if (query->writer->meta_query)
+	DEBUG(2, true, "last_fetch(%s), meta=%d, follow=%d\n",
+	      query->descr, writer->meta_query, query->qp.follow);
+	if (writer->meta_query)
 		return;
 
 	if (batching == batch_none && !quiet) {
-		const char *msg = or_else(fetch->saf_msg, "");
+		const char *msg = or_string(fetch->saf_msg, "");
 
 		if (fetch->saf_cond == sc_limited)
 			my_logf("Database API limit: %s", msg);
@@ -420,8 +612,6 @@ last_fetch(fetch_t fetch) {
 				query->status, query->message);
 	} else if (batching == batch_verbose) {
 		/* if this was an actively written query, unpause another. */
-		writer_t writer = query->writer;
-
 		if (multiple) {
 			assert(writer->active == query);
 			writer->active = NULL;
@@ -429,9 +619,9 @@ last_fetch(fetch_t fetch) {
 		assert(writer->ps_buf == NULL && writer->ps_len == 0);
 		writer->ps_len = (size_t)
 			asprintf(&writer->ps_buf, "-- %s (%s)\n",
-				 or_else(query->status, status_noerror),
-				 or_else(query->message,
-					 or_else(fetch->saf_msg, "no error")));
+				 or_string(query->status, status_noerror),
+				 or_string(query->message,
+					 or_string(fetch->saf_msg, "no error")));
 		if (npaused > 0) {
 			query_t unpause;
 			fetch_t ufetch;
@@ -439,21 +629,48 @@ last_fetch(fetch_t fetch) {
 
 			/* unpause the next query's fetches. */
 			unpause = paused[0];
-			npaused--;
-			for (i = 0; i < npaused; i++)
+			for (i = 0; i + 1 < npaused; i++)
 				paused[i] = paused[i + 1];
+			paused[--npaused] = NULL;
 			for (ufetch = unpause->fetches;
 			     ufetch != NULL;
 			     ufetch = ufetch->next) {
 				DEBUG(2, true, "unpause (%d) %s\n",
 				      npaused, unpause->descr);
 				curl_easy_pause(ufetch->easy, CURLPAUSE_CONT);
+				/* this will prolong io_engine()
+				 * since curl will keep working.
+				 */
+				we_work = true;
 			}
 		}
 	}
+
+	/* we've added no work, but there is work to do, launch it here.
+	 */
+	if (!we_work && writer->work_first != NULL) {
+		assert(writer->work_last != NULL);
+		work_t work = writer->work_first;
+		writer->work_first = work->next;
+		work->next = NULL;
+		if (writer->work_first == NULL)
+			writer->work_last = NULL;
+		/* this will prolong io_engine() since curl will keep working.
+		 */
+		(void) launch_query(work->qdp, &work->qp, writer);
+		if ((tracing & TRACE_WORKQ) != 0)
+			fprintf(stderr,
+				"trace(WORKQ) delete (%s [%s] %lu..%lu)\n",
+				work->qdp->thing,
+				work->qdp->rrtype != NULL ?
+					work->qdp->rrtype : "",
+				work->qp.after, work->qp.before);
+		qdesc_destroy(&work->qdp);
+		DESTROY(work);
+	}
 }
 
-/* writer_fini -- stop a writer's fetches, and perhaps execute a POSIX "sort".
+/* writer_fini -- stop a writer's fetches, and perhaps complete a POSIX "sort".
  */
 void
 writer_fini(writer_t writer) {
@@ -499,6 +716,7 @@ writer_fini(writer_t writer) {
 			fetch = NULL;
 			query->fetches = fetch_next;
 		}
+		qdesc_destroy(&query->qdp);
 		assert((query->status != NULL) == (query->message != NULL));
 		DESTROY(query->status);
 		DESTROY(query->message);
@@ -536,7 +754,6 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 
-			struct pdns_tuple tup;
 			char *nl, *linep;
 			const char *msg;
 			size_t len;
@@ -598,6 +815,7 @@ writer_fini(writer_t writer) {
 				 (int)(nl - linep),
 				 linep);
 			len = (size_t)(nl - linep);
+			struct pdns_tuple *tup;
 			msg = tuple_make(&tup, linep, len);
 			if (msg != NULL) {
 				my_logf("warning: tuple_make: %s", msg);
@@ -606,7 +824,7 @@ writer_fini(writer_t writer) {
 			/* after the sort, we don't know what query
 			 * caused any given tuple.
 			 */
-			(*presenter->output)(&tup, NULL, writer);
+			(*presenter->output)(tup, NULL, writer);
 			tuple_unmake(&tup);
 			count++;
 		}
@@ -640,25 +858,40 @@ unmake_writers(void) {
 		writer_fini(writers);
 }
 
+/* io_more -- accept an assertion that the run queue may have gotten longer.
+ */
+void
+io_more(void) {
+	more = true;
+}
+
 /* io_engine -- let libcurl run until there are few enough outstanding jobs.
  */
 void
 io_engine(int jobs) {
-	int still, repeats, numfds;
+	do {
+		more = false;
+		io_crank(jobs);
+	} while (more);
+}
 
+/* io_crank -- start the engine
+ */
+static void
+io_crank(int jobs) {
 	DEBUG(2, true, "io_engine(%d)\n", jobs);
 
 	/* let libcurl run while there are too many jobs remaining. */
-	still = 0;
-	repeats = 0;
+	int still = 0;
+	bool first = true;
 	while (curl_multi_perform(multi, &still) == CURLM_OK && still > jobs) {
 		DEBUG(3, true, "...waiting (still %d)\n", still);
-		numfds = 0;
+		int numfds = 0;
 		if (curl_multi_wait(multi, NULL, 0, 0, &numfds) != CURLM_OK)
 			break;
 		if (numfds == 0) {
 			/* curl_multi_wait() can return 0 fds for no reason. */
-			if (++repeats > 1) {
+			if (!first) {
 				struct timespec req, rem;
 
 				req = (struct timespec){
@@ -669,9 +902,8 @@ io_engine(int jobs) {
 					/* as required by nanosleep(3). */
 					req = rem;
 				}
+				first = false;
 			}
-		} else {
-			repeats = 0;
 		}
 		io_drain();
 	}
@@ -686,15 +918,11 @@ io_drain(void) {
 	int still = 0;
 
 	while ((cm = curl_multi_info_read(multi, &still)) != NULL) {
-		fetch_t fetch;
-		query_t query;
 		char *private;
-
-		curl_easy_getinfo(cm->easy_handle,
-				  CURLINFO_PRIVATE,
-				  &private);
-		fetch = (fetch_t) private;
-		query = fetch->query;
+		curl_easy_getinfo(cm->easy_handle, CURLINFO_PRIVATE, &private);
+		fetch_t fetch = (fetch_t) private;
+		assert(fetch->easy == cm->easy_handle);
+		query_t query = fetch->query;
 
 		if (cm->msg == CURLMSG_DONE) {
 			if (fetch->rcode == 0)
@@ -723,7 +951,7 @@ io_drain(void) {
 				}
 				DEBUG(2, true, "... saf_cond %d saf_msg %s\n",
 				      fetch->saf_cond,
-				      or_else(fetch->saf_msg, ""));
+				      or_string(fetch->saf_msg, ""));
 			}
 			if (cm->data.result == CURLE_COULDNT_RESOLVE_HOST) {
 				my_logf("libcurl failed since "

@@ -20,6 +20,8 @@
 #include <stdbool.h>
 #include <curl/curl.h>
 
+struct pdns_tuple;
+
 /* encapsulation protocol.  ruminate, DNBDB APIv1 and CIRCL use encap_cof. */
 typedef enum { encap_cof = 0, encap_saf } encap_e;
 
@@ -45,6 +47,7 @@ struct qparam {
 	long		offset;
 	bool		complete;
 	bool		gravel;
+	bool		follow;
 };
 typedef struct qparam *qparam_t;
 typedef const struct qparam *qparam_ct;
@@ -62,17 +65,18 @@ struct fetch {
 	bool		stopped;
 	saf_cond_e	saf_cond;
 	char		*saf_msg;
+	struct pdns_tuple  *tup_first, *tup_last;
 };
 typedef struct fetch *fetch_t;
 
-/* one query; one per invocation (or per batch line.) */
+/* one query; one per invocation (or per batch line, or per follow-event.) */
 struct query {
 	struct query	*next;
 	struct fetch	*fetches;
 	struct writer	*writer;
 	struct qparam	qp;
+	struct qdesc	*qdp;
 	char		*descr;
-	mode_e		mode;
 	bool		multitype;
 	/* invariant: (status == NULL) == (writer == NULL) */
 	char		*status;
@@ -89,6 +93,9 @@ struct writer {
 	struct writer	*next;
 	struct query	*queries;
 	struct query	*active;
+	struct work	*work_first, *work_last;
+	struct followed	**followed;
+	int		nfollowed;
 	FILE		*sort_stdin;
 	FILE		*sort_stdout;
 	pid_t		sort_pid;
@@ -103,6 +110,20 @@ struct writer {
 };
 typedef struct writer *writer_t;
 
+struct work {
+	struct work	*next;
+	struct qdesc	*qdp;
+	struct qparam	qp;
+	struct writer	*writer;
+};
+typedef struct work *work_t;
+
+struct followed {
+	char		*qname;
+	u_long		after;
+	u_long		before;
+};
+
 void make_curl(void);
 void unmake_curl(void);
 fetch_t create_fetch(query_t, char *);
@@ -112,6 +133,7 @@ void query_status(query_t, const char *, const char *);
 size_t writer_func(char *ptr, size_t size, size_t nmemb, void *blob);
 void writer_fini(writer_t);
 void unmake_writers(void);
+void io_more(void);
 void io_engine(int);
 char *escape(const char *);
 

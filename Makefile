@@ -38,7 +38,8 @@ CWARN   +=-Werror
 
 CDEFS = -DWANT_PDNS_DNSDB=1 -DWANT_PDNS_CIRCL=1
 CGPROF =
-CDEBUG = -g -O3
+CDEBUG = -g
+# -O3
 CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)
 INCL= $(CURLINCL) $(JANSINCL)
 LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
@@ -55,7 +56,14 @@ TOOL_SRC = $(TOOL).c ns_ttl.c netio.c \
 	sort.c time.c asinfo.c deduper.c \
 	tokstr.c
 
-all: $(TOOL)
+all: $(TOOL) $(TOOL).cat
+
+$(TOOL).cat: $(TOOL).man Makefile
+	@set -e; if [ -e /boot/vmlinuz ]; then \
+		man -l $(TOOL).man > $(TOOL).cat.tmp; \
+		mv $(TOOL).cat.tmp $(TOOL).cat; \
+		echo $(TOOL).cat remade from $(TOOL).man; \
+	fi
 
 install: all
 	rm -f /usr/local/bin/$(TOOL)
@@ -68,6 +76,7 @@ install: all
 clean:
 	rm -f $(TOOL)
 	rm -f $(TOOL_OBJ)
+	rm -f $(TOOL).cat $(TOOL).cat.new
 
 dnsdbq: $(TOOL_OBJ) Makefile
 	$(CC) $(CDEBUG) -o $(TOOL) $(CGPROF) $(TOOL_OBJ) $(LIBS)

@@ -59,7 +59,8 @@ EXTERN	bool quiet			INIT(false);
 EXTERN	bool iso8601			INIT(false);
 EXTERN	bool multiple			INIT(false);
 EXTERN	bool psys_specified		INIT(false);
-EXTERN	int transforms			INIT(0);
+EXTERN	unsigned int transforms		INIT(0U);
+EXTERN	unsigned int tracing		INIT(0U);
 EXTERN	long max_count			INIT(0L);
 EXTERN	sort_e sorting			INIT(no_sort);
 EXTERN	batch_e batching		INIT(batch_none);
@@ -94,6 +95,16 @@ my_logf(const char *fmtstr, ...) {
 		time_str((u_long)time(NULL), false));
 	vfprintf(stderr, fmtstr, ap);
 	putc('\n', stderr);
+}
+
+/* strsearch -- search for a string in a counted array of same
+ */
+static inline bool
+strsearch(const char *str, char **strs, int nstrs) {
+	for (int i = 0; i < nstrs; i++)
+		if (strcmp(str, *strs++) == 0)
+			return true;
+	return false;
 }
 
 #endif /*GLOBALS_H_INCLUDED*/

@@ -56,7 +56,7 @@
 #include "globals.h"
 #undef MAIN_PROGRAM
 
-#define QPARAM_GETOPT "A:B:L:l:O:cgG"
+#define QPARAM_GETOPT "A:B:L:l:O:cgGH"
 
 /* Forward. */
 
@@ -73,10 +73,7 @@ static char *select_config(void);
 static void do_batch(FILE *, qparam_ct);
 static const char *batch_options(const char *, qparam_t, qparam_ct);
 static const char *batch_parse(char *, qdesc_t);
-static char *makepath(qdesc_ct);
-static query_t query_launcher(qdesc_ct, qparam_ct, writer_t);
-static const char *rrtype_correctness(const char *);
-static void launch_fetch(query_t, const char *, pdns_fence_ct);
+static const char *rrtype_validate(const char *, char ***, int *);
 static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
@@ -156,14 +153,14 @@ main(int argc, char *argv[]) {
 
 	/* process the command line options. */
 	while ((ch = getopt(argc, argv,
-			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:0:o:"
+			    "D:R:r:N:n:i:M:u:p:t:b:k:J:V:T:0:o:x:"
 			    "adfhIjmqSsUv468" QPARAM_GETOPT))
 	       != -1)
 	{
 		switch (ch) {
 		/* keep these in-sync with QPARAM_GETOPT. */
 		case 'A': case 'B': case 'c':
-		case 'g': case 'G':
+		case 'g': case 'G': case 'H':
 		case 'l': case 'L':
 		case 'O':
 			if ((msg = qparam_option(ch, optarg, &qp)) != NULL)
@@ -241,10 +238,19 @@ main(int argc, char *argv[]) {
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
-				qd.thing = strndup(optarg,
-						   (size_t)(p - optarg));
+				if (p > optarg && p[-1] == '.' &&
+				    (p < optarg + 1 || p[-2] != '\\'))
+					p--;
+				asprintf(&qd.thing, "%*.*s.",
+					 (int)(p - optarg), (int)(p - optarg),
+					 optarg);
 			} else {
-				qd.thing = strdup(optarg);
+				size_t len = strlen(optarg);
+
+				if (len > 0 && optarg[len - 1] == '.' &&
+				    (len < 2 || optarg[len - 2] != '\\'))
+					optarg[len - 1] = '\0';
+				asprintf(&qd.thing, "%s.", optarg);
 			}
 			break;
 		    }
@@ -299,10 +305,19 @@ main(int argc, char *argv[]) {
 				} else {
 					qd.rrtype = strdup(p + 1);
 				}
-				qd.thing = strndup(optarg,
-						   (size_t)(p - optarg));
+				if (p > optarg && p[-1] == '.' &&
+				    (p < optarg + 1 || p[-2] != '\\'))
+					p--;
+				asprintf(&qd.thing, "%*.*s.",
+					 (int)(p - optarg), (int)(p - optarg),
+					 optarg);
 			} else {
-				qd.thing = strdup(optarg);
+				size_t len = strlen(optarg);
+
+				if (len > 0 && optarg[len - 1] == '.' &&
+				    (len < 2 || optarg[len - 2] != '\\'))
+					optarg[len - 1] = '\0';
+				asprintf(&qd.thing, "%s.", optarg);
 			}
 			break;
 		    }
@@ -439,6 +454,27 @@ main(int argc, char *argv[]) {
 			tokstr_last(&ts);
 			break;
 		    }
+		case 'x': {
+			struct tokstr *ts = tokstr_string(optarg);
+			for (char *token;
+			     (token = tokstr_next(ts, ",")) != NULL;
+			     free(token))
+			{
+				if (strcasecmp(token, "upstream") == 0)
+					tracing |= TRACE_UPSTREAM;
+				else if (strcasecmp(token, "workq") == 0)
+					tracing |= TRACE_WORKQ;
+				else if (strcasecmp(token, "buftup") == 0)
+					tracing |= TRACE_BUFTUP;
+				else if (strcasecmp(token, "follow") == 0)
+					tracing |= TRACE_FOLLOW;
+				else {
+					usage("unrecognized subsys in -x");
+				}
+			}
+			tokstr_last(&ts);
+			break;
+		    }
 		case 'm':
 			multiple = true;
 			break;
@@ -482,6 +518,12 @@ main(int argc, char *argv[]) {
 	    (qd.mode == name_mode || qd.mode == rrset_mode))
 	{
 		msg = check_7bit(qd.thing);
+		if (msg != NULL)
+			usage(msg);
+	}
+
+	if (qd.rrtype != NULL) {
+		msg = rrtype_validate(qd.rrtype, &qd.rrtypes, &qd.nrrtypes);
 		if (msg != NULL)
 			usage(msg);
 	}
@@ -614,10 +656,12 @@ main(int argc, char *argv[]) {
 			usage("can't mix -V with -J");
 		if (max_count > 0)
 			usage("can't mix -M with -J");
-		if (qp.gravel)
-			usage("can't mix -g with -J");
 		if (qp.offset != 0)
 			usage("can't mix -O with -J");
+		if (qp.gravel)
+			usage("can't mix -g with -J");
+		if (qp.follow)
+			usage("can't mix -H with -J");
 		ruminate_json(json_fd, &qp);
 		close(json_fd);
 	} else if (batching != batch_none) {
@@ -664,7 +708,7 @@ main(int argc, char *argv[]) {
 
 		writer_t writer = writer_init(qp.output_limit,
 					      ps_stdout, false);
-		(void) query_launcher(&qd, &qp, writer);
+		(void) launch_query(&qd, &qp, writer);
 		io_engine(0);
 		writer_fini(writer);
 		writer = NULL;
@@ -677,6 +721,10 @@ main(int argc, char *argv[]) {
 	/* clean up and go home. */
 	DESTROY(qd.thing);
 	DESTROY(qd.rrtype);
+	for (int i = 0; i < qd.nrrtypes; i++)
+		DESTROY(qd.rrtypes[i]);
+	DESTROY(qd.rrtypes);
+	qd.nrrtypes = 0;
 	DESTROY(qd.bailiwick);
 	DESTROY(qd.pfxlen);
 	my_exit(exit_code);
@@ -769,6 +817,7 @@ help(void) {
 	     "\t(output format will depend on -p or -j, framed by '--'.)\n"
 	     "\t(with -ff, framing will be '++ $cmd', '-- $stat ($code)'.\n"
 	     "use -g to get graveled results (default is -G, rocks).\n"
+	     "use -H to follow aliases (CNAME RRs), uses broader queries.\n"
 	     "use -h to reliably display this helpful text.\n"
 	     "use -I to see a system-specific account/key summary.\n"
 	     "for -J, input format is newline-separated JSON, "
@@ -870,6 +919,10 @@ qparam_debug(const char *where, qparam_ct qpp) {
 		debug(false, "%s-g", sep);
 		sep = "\040";
 	}
+	if (qpp->follow) {
+		debug(false, "%s-H", sep);
+		sep = "\040";
+	}
 	debug(false, "\040]\n");
 }
 
@@ -924,6 +977,71 @@ set_timeout(const char *value, const char *source) {
 		usage("%s must be non-negative", source);
 }
 
+/* rrtype_validate -- unpack rrtypes, return an error text if senseless
+ */
+static const char *
+rrtype_validate(const char *input, char ***rrtypes, int *nrrtypes) {
+	const char *ret = NULL;
+	bool some = false, any = false;
+	bool some_dnssec = false, any_dnssec = false;
+
+	*rrtypes = calloc(MAX_FETCHES, sizeof(char *));
+	*nrrtypes = 0;
+
+	struct tokstr *ts = tokstr_string(input);
+	for (char *rrtype;
+	     (rrtype = tokstr_next(ts, ",")) != NULL;
+	     free(rrtype))
+	{
+		for (char *p = rrtype; *p != '\0'; p++)
+			if (isupper((int)*p))
+				*p = (char) tolower((int)*p);
+		if (*nrrtypes == MAX_FETCHES) {
+			ret = "too many rrtypes specified";
+			break;
+		}
+		if (strsearch(rrtype, *rrtypes, *nrrtypes)) {
+			ret = "duplicate rrtype encountered";
+			break;
+		}
+		*rrtypes[*nrrtypes++] = strdup(rrtype);
+		if (strcmp(rrtype, "any") == 0)
+			any = true;
+		else if (strcmp(rrtype, "any-dnssec") == 0)
+			any_dnssec = true;
+		else if (strcmp(rrtype, "ds") == 0 ||
+			 strcmp(rrtype, "rrsig") == 0 ||
+			 strcmp(rrtype, "nsec") == 0 ||
+			 strcmp(rrtype, "dnskey") == 0 ||
+			 strcmp(rrtype, "cdnskey") == 0 ||
+			 strcmp(rrtype, "cds") == 0 ||
+			 strcmp(rrtype, "ta") == 0 ||
+			 strcmp(rrtype, "nsec3") == 0 ||
+			 strcmp(rrtype, "nsec3param") == 0 ||
+			 strcmp(rrtype, "dlv") == 0)
+		{
+			some_dnssec = true;
+		} else {
+			some = true;
+		}
+		if (any && some) {
+			ret = "ANY is redundant when mixed like this";
+			break;
+		}
+		if (any_dnssec && some_dnssec) {
+			ret = "ANY-DNSSEC is redundant when mixed like this";
+			break;
+		}
+	}
+	tokstr_last(&ts);
+	if (ret != NULL) {
+		for (int i = 0; i < *nrrtypes; i++)
+			DESTROY(*rrtypes[i]);
+		DESTROY(*rrtypes);
+	}
+	return ret;
+}
+
 /* qparam_ready -- check and possibly adjust the contents of a qparam.
  */
 static const char *
@@ -961,6 +1079,9 @@ qparam_option(int opt, const char *arg, qparam_t qpp) {
 		break;
 	case 'G':
 		qpp->gravel = false;
+		break;
+	case 'H':
+		qpp->follow = true;
 		break;
 	case 'l':
 		if (!parse_long(arg, &qpp->query_limit) ||
@@ -1089,7 +1210,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 		} else {
 			/* start one or more curl fetches based on this entry.
 			 */
-			query_t query = query_launcher(&qd, &qp, writer);
+			query_t query = launch_query(&qd, &qp, writer);
 
 			/* if merging, drain some jobs; else, drain all jobs.
 			 */
@@ -1125,7 +1246,7 @@ do_batch(FILE *f, qparam_ct qpp) {
 				writer->ps_len = strlen(writer->ps_buf);
 				break;
 			case batch_verbose:
-				/* query_done() will do this. */
+				/* last_fetch() will do this. */
 				break;
 			default:
 				abort();
@@ -1305,247 +1426,6 @@ batch_parse(char *line, qdesc_t qdp) {
 	return NULL;
 }
 
-/* makepath -- make a RESTful URI that describes these query parameters.
- *
- * Returns a string that must be free()d.
- */
-static char *
-makepath(qdesc_ct qdp) {
-	/* recondition various options for HTML use. */
-	char *thing = escape(qdp->thing);
-	char *rrtype = escape(qdp->rrtype);
-	char *bailiwick = escape(qdp->bailiwick);
-	char *pfxlen = escape(qdp->pfxlen);
-
-	char *path = NULL;
-	switch (qdp->mode) {
-		int x;
-	case rrset_mode:
-		if (rrtype != NULL && bailiwick != NULL)
-			x = asprintf(&path, "rrset/name/%s/%s/%s",
-				     thing, rrtype, bailiwick);
-		else if (rrtype != NULL)
-			x = asprintf(&path, "rrset/name/%s/%s",
-				     thing, rrtype);
-		else if (bailiwick != NULL)
-			x = asprintf(&path, "rrset/name/%s/ANY/%s",
-				     thing, bailiwick);
-		else
-			x = asprintf(&path, "rrset/name/%s",
-				     thing);
-		if (x < 0)
-			my_panic(true, "asprintf");
-		break;
-	case name_mode:
-		if (rrtype != NULL)
-			x = asprintf(&path, "rdata/name/%s/%s",
-				     thing, rrtype);
-		else
-			x = asprintf(&path, "rdata/name/%s",
-				     thing);
-		if (x < 0)
-			my_panic(true, "asprintf");
-		break;
-	case ip_mode:
-		if (pfxlen != NULL)
-			x = asprintf(&path, "rdata/ip/%s,%s",
-				     thing, pfxlen);
-		else
-			x = asprintf(&path, "rdata/ip/%s",
-				     thing);
-		if (x < 0)
-			my_panic(true, "asprintf");
-		break;
-	case raw_rrset_mode:
-		if (rrtype != NULL)
-			x = asprintf(&path, "rrset/raw/%s/%s",
-				     thing, rrtype);
-		else
-			x = asprintf(&path, "rrset/raw/%s",
-				     thing);
-		if (x < 0)
-			my_panic(true, "asprintf");
-		break;
-	case raw_name_mode:
-		if (rrtype != NULL)
-			x = asprintf(&path, "rdata/raw/%s/%s",
-				     thing, rrtype);
-		else
-			x = asprintf(&path, "rdata/raw/%s",
-				     thing);
-		if (x < 0)
-			my_panic(true, "asprintf");
-		break;
-	case no_mode:
-		/*FALLTHROUGH*/
-	default:
-		abort();
-	}
-
-	DESTROY(thing);
-	DESTROY(rrtype);
-	DESTROY(bailiwick);
-	DESTROY(pfxlen);
-
-	return path;
-}
-
-/* query_launcher -- fork off some curl jobs via launch() for this query.
- *
- * can write to STDERR and return NULL if a query cannot be launched.
- */
-static query_t
-query_launcher(qdesc_ct qdp, qparam_ct qpp, writer_t writer) {
-	struct pdns_fence fence = {};
-	query_t query = NULL;
-	const char *msg;
-
-	/* ready player one. */
-	CREATE(query, sizeof(struct query));
-	query->descr = makepath(qdp);
-	query->mode = qdp->mode;
-	query->qp = *qpp;
-	qpp = NULL;
-
-	/* define the fence. */
-	if (query->qp.after != 0) {
-		if (query->qp.complete) {
-			/* each db tuple must begin after the fence-start. */
-			fence.first_after = query->qp.after;
-		} else {
-			/* each db tuple must end after the fence-start. */
-			fence.last_after = query->qp.after;
-		}
-	}
-	if (query->qp.before != 0) {
-		if (query->qp.complete) {
-			/* each db tuple must end before the fence-end. */
-			fence.last_before = query->qp.before;
-		} else {
-			/* each db tuple must begin before the fence-end. */
-			fence.first_before = query->qp.before;
-		}
-	}
-
-	/* branch on rrtype; launch (or queue) nec'y fetches. */
-	if (qdp->rrtype == NULL) {
-		/* no rrtype string given, let makepath set it to "any". */
-		char *path = makepath(qdp);
-		launch_fetch(query, path, &fence);
-		DESTROY(path);
-	} else if ((msg = rrtype_correctness(qdp->rrtype)) != NULL) {
-		my_logf("rrtype incorrect: %s", msg);
-		DESTROY(query);
-		return NULL;
-	} else {
-		/* rrtype string was given, parse comma separated list. */
-		int nfetches = 0;
-		struct tokstr *ts = tokstr_string(qdp->rrtype);
-		for (char *rrtype;
-		     (rrtype = tokstr_next(ts, ",")) != NULL;
-		     free(rrtype))
-		{
-			struct qdesc qd = {
-				.mode = qdp->mode,
-				.thing = qdp->thing,
-				.rrtype = rrtype,
-				.bailiwick = qdp->bailiwick,
-				.pfxlen = qdp->pfxlen
-			};
-			char *path = makepath(&qd);
-			launch_fetch(query, path, &fence);
-			nfetches++;
-			DESTROY(path);
-		}
-		tokstr_last(&ts);
-		if (nfetches > 1)
-			query->multitype = true;
-	}
-
-	/* finish query initialization, link it up, and return it. */
-	query->writer = writer;
-	writer = NULL;
-	query->next = query->writer->queries;
-	query->writer->queries = query;
-	return query;
-}
-
-/* rrtype_correctness -- return an error text if the rrtypes are senseless
- */
-static const char *
-rrtype_correctness(const char *input) {
-	char **rrtypeset = calloc(MAX_FETCHES, sizeof(char *));
-	const char *ret = NULL;
-	int nrrtypeset = 0;
-	bool some = false, any = false,
-		some_dnssec = false, any_dnssec = false;
-	struct tokstr *ts = tokstr_string(input);
-	for (char *rrtype;
-	     (rrtype = tokstr_next(ts, ",")) != NULL;
-	     free(rrtype))
-	{
-		for (char *p = rrtype; *p != '\0'; p++)
-			if (isupper((int)*p))
-				*p = (char) tolower((int)*p);
-		if (nrrtypeset == MAX_FETCHES) {
-			ret = "too many rrtypes specified";
-			goto done;
-		}
-		for (int i = 0; i < nrrtypeset; i++)
-			if (strcmp(rrtype, rrtypeset[i]) == 0) {
-				ret = "duplicate rrtype encountered";
-				goto done;
-			}
-		rrtypeset[nrrtypeset++] = strdup(rrtype);
-		if (strcmp(rrtype, "any") == 0)
-			any = true;
-		else if (strcmp(rrtype, "any-dnssec") == 0)
-			any_dnssec = true;
-		else if (strcmp(rrtype, "ds") == 0 ||
-			 strcmp(rrtype, "rrsig") == 0 ||
-			 strcmp(rrtype, "nsec") == 0 ||
-			 strcmp(rrtype, "dnskey") == 0 ||
-			 strcmp(rrtype, "cdnskey") == 0 ||
-			 strcmp(rrtype, "cds") == 0 ||
-			 strcmp(rrtype, "ta") == 0 ||
-			 strcmp(rrtype, "nsec3") == 0 ||
-			 strcmp(rrtype, "nsec3param") == 0 ||
-			 strcmp(rrtype, "dlv") == 0)
-		{
-			some_dnssec = true;
-		} else {
-			some = true;
-		}
-		if (any && some) {
-			ret = "ANY is redundant when mixed like this";
-			goto done;
-		}
-		if (any_dnssec && some_dnssec) {
-			ret = "ANY-DNSSEC is redundant when mixed like this";
-			goto done;
-		}
-	}
-	tokstr_last(&ts);
- done:
-	for (int i = 0; i < nrrtypeset; i++)
-		DESTROY(rrtypeset[i]);
-	DESTROY(rrtypeset);
-	return ret;
-}
-
-/* launch_fetch -- actually launch a query job, given a path and time fences.
- */
-static void
-launch_fetch(query_t query, const char *path, pdns_fence_ct fp) {
-	char *url = psys->url(path, NULL, &query->qp, fp, false);
-	if (url == NULL)
-		my_exit(1);
-
-	DEBUG(1, true, "url [%s]\n", url);
-
-	create_fetch(query, url);
-}
-
 /* ruminate_json -- process a json file from the filesys rather than the API.
  */
 static void
@@ -1565,9 +1445,8 @@ ruminate_json(int json_fd, qparam_ct qpp) {
 	query->fetches = fetch;
 	writer->queries = query;
 	CREATE(buf, ideal_buffer);
-	while ((len = read(json_fd, buf, ideal_buffer)) > 0) {
+	while ((len = read(json_fd, buf, ideal_buffer)) > 0)
 		writer_func(buf, 1, (size_t)len, query->fetches);
-	}
 	DESTROY(buf);
 	writer_fini(writer);
 	writer = NULL;
