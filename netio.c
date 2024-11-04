@@ -540,69 +540,69 @@ writer_fini(writer_t writer) {
 				continue;
 			}
 
-			struct pdns_tuple tup;
-			char *nl, *linep;
-			const char *msg;
-			size_t len;
-
+			char *nl;
 			if ((nl = strchr(line, '\n')) == NULL) {
 				my_logf("warning: no \\n found in '%s'", line);
 				continue;
 			}
-			linep = line;
-			DEBUG(2, true, "sort1: '%*.*s'\n",
-				 (int)(nl - linep),
-				 (int)(nl - linep),
-				 linep);
+			size_t llen = (unsigned)(nl - line);
+			DEBUG(2, true, "sort1: '%*.*s'\n", llen, llen, line);
+			char *linep = line;
 			/* skip sort key: first */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				my_logf("warning: no SP found in '%s'", line);
+				my_logf("warning: no SP found in '%*.*s'",
+					llen, llen, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: last */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				my_logf("warning: no second SP in '%s'", line);
+				my_logf("warning: no second SP in '%*.*s'",
+					llen, llen, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: duration */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				my_logf("warning: no third SP in '%s'", line);
+				my_logf("warning: no third SP in '%*.*s'",
+					llen, llen, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: count */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				my_logf("warning: no fourth SP in '%s'", line);
+				my_logf("warning: no fourth SP in '%*.*s'",
+					llen, llen, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: rrname */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				my_logf("warning: no fifth SP in '%s'", line);
+				my_logf("warning: no fifth SP in '%*.*s'",
+					llen, llen, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: rrtype */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				my_logf("warning: no sixth SP in '%s'", line);
+				my_logf("warning: no sixth SP in '%*.*s'",
+					llen, llen, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
 			/* skip sort key: rdata */
 			if ((linep = strchr(linep, ' ')) == NULL) {
-				my_logf("warning: no seventh SP in '%s'", line);
+				my_logf("warning: no seventh SP in '%*.*s'",
+					llen, llen, line);
 				continue;
 			}
 			linep += strspn(linep, " ");
+
 			/* recover the json */
-			DEBUG(2, true, "sort2: '%*.*s'\n",
-				 (int)(nl - linep),
-				 (int)(nl - linep),
-				 linep);
-			len = (size_t)(nl - linep);
-			msg = tuple_make(&tup, linep, len);
+			size_t len = (unsigned)(nl - linep);
+			DEBUG(2, true, "sort2: '%*.*s'\n", len, len, linep);
+			struct pdns_tuple tup;
+			const char *msg = tuple_make(&tup, linep, len);
 			if (msg != NULL) {
 				my_logf("warning: tuple_make: %s", msg);
 				continue;

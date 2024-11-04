@@ -37,8 +37,5 @@ void sort_destroy(void);
 __attribute__((noreturn)) void exec_sort(int p1[], int p2[]);
 char *sortable_rrname(pdns_tuple_ct);
 char *sortable_rdata(pdns_tuple_ct);
-void sortable_rdatum(sortbuf_t, const char *, const char *);
-void sortable_dnsname(sortbuf_t, const char *);
-void sortable_hexify(sortbuf_t, const u_char *, size_t);
 
 #endif /*SORT_H_INCLUDED*/

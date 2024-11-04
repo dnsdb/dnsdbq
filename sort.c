@@ -44,6 +44,10 @@
 
 extern char **environ;
 
+static void sortable_rdatum(sortbuf_t, const char *, const char *);
+static void sortable_dnsname(sortbuf_t, const char *);
+static void sortable_hexify(sortbuf_t, const u_char *, size_t);
+
 static struct sortkey keys[MAX_KEYS];
 static int nkeys = 0;
 
@@ -195,7 +199,7 @@ sortable_rdata(pdns_tuple_ct tup) {
 	return buf.base;
 }
 
-/* sortable_rdatum -- called only by sortable_rdata(), realloc and normalize.
+/* sortable_rdatum -- called only by sortable_rdata(): realloc and normalize.
  *
  * this converts (lossily) addresses into hex strings, and extracts the
  * server-name component of a few other types like MX. all other rdata
@@ -203,7 +207,7 @@ sortable_rdata(pdns_tuple_ct tup) {
  * to sort by with something like TXT, and extracting the serial number
  * from an SOA using a language like C is a bit ugly.
  */
-void
+static void
 sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
 	if (strcmp(rrtype, "A") == 0) {
 		u_char a[4];
@@ -238,16 +242,21 @@ sortable_rdatum(sortbuf_t buf, const char *rrtype, const char *rdatum) {
 	}
 }
 
-/* sortable_hexify -- convert src into hex string in buffer
+/* sortable_hexify -- convert src into hex string or placeholder in buffer
  */
-void
+static void
 sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
-	buf->base = realloc(buf->base, buf->size + len*2);
-	for (size_t i = 0; i < len; i++) {
-		static const char hex[] = "0123456789abcdef";
-		unsigned int ch = src[i];
-		buf->base[buf->size++] = hex[ch >> 4];
-		buf->base[buf->size++] = hex[ch & 0xf];
+	if (len == 0) {
+		buf->base = realloc(buf->base, buf->size + 1);
+		buf->base[buf->size++] = '=';
+	} else {
+		buf->base = realloc(buf->base, buf->size + len*2);
+		for (size_t i = 0; i < len; i++) {
+			static const char hex[] = "0123456789abcdef";
+			unsigned int ch = src[i];
+			buf->base[buf->size++] = hex[ch >> 4];
+			buf->base[buf->size++] = hex[ch & 0xf];
+		}
 	}
 }
 
@@ -258,7 +267,7 @@ sortable_hexify(sortbuf_t buf, const u_char *src, size_t len) {
  * and all characters except dots then converted to hexadecimal. this
  * transformation is for POSIX sort's use, and is irreversibly lossy.
  */
-void
+static void
 sortable_dnsname(sortbuf_t buf, const char *name) {
 	struct counted *c = countoff(name);
 
