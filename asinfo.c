@@ -84,7 +84,7 @@ asinfo_domain_exists(const char *domain) {
 	u_char buf[NS_PACKETSZ];
 
 	return res_query(domain, ns_c_in, ns_t_txt, buf, sizeof buf) > 0 ||
-		_res.res_h_errno != HOST_NOT_FOUND;
+		h_errno != HOST_NOT_FOUND;
 }
 
 /* asinfo_shutdown() -- deallocate underlying library's heap resources
@@ -108,7 +108,7 @@ asinfo_from_ipv4(const char *addr, char **asnum, char **cidr) {
 	u_char a4[32/8];
 	char *dname;
 
-	if (inet_pton(AF_INET, addr, a4) < 0)
+	if (inet_pton(AF_INET, addr, a4) == 0)
 		return strdup(strerror(errno));
 	int n = asprintf(&dname, "%d.%d.%d.%d.%s",
 			 a4[3], a4[2], a4[1], a4[0], asinfo_domain);
@@ -175,7 +175,8 @@ asinfo_from_dns(const char *dname, char **asnum, char **cidr) {
 
 	DEBUG(1, true, "asinfo_from_dns(%s)\n", dname);
 	if ((res.options & RES_INIT) == 0)
-		res_ninit(&res);
+		if (res_ninit(&res) < 0)
+			return strdup("res_ninit failed");
 	n = res_nquery(&res, dname, ns_c_in, ns_t_txt, buf, sizeof buf);
 	if (n < 0) {
 		if (res.res_h_errno == HOST_NOT_FOUND)

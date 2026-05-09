@@ -112,8 +112,7 @@ time_get(const char *src, u_long *dst) {
 	ll = strtoll(src, &ep, 10);
 	if (*src != '\0' && *ep == '\0') {
 		if (ll < 0)
-			*dst = (u_long)startup_time.tv_sec -
-				(u_long)imaxabs(ll);
+			*dst = (u_long)(startup_time.tv_sec + ll);
 		else
 			*dst = (u_long)ll;
 		return 1;

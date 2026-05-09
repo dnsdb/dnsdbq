@@ -33,7 +33,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
-#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -621,6 +620,8 @@ main(int argc, char *argv[]) {
 			usage("can't mix -g with -J");
 		if (qp.offset != 0)
 			usage("can't mix -O with -J");
+		if (presentation == pres_minimal)
+			usage("can't mix -p minimal with -J");
 		ruminate_json(json_fd, &qp);
 		close(json_fd);
 	} else if (batching != batch_none) {
@@ -978,7 +979,7 @@ qparam_option(int opt, const char *arg, qparam_t qpp) {
 		qpp->explicit_output_limit = qpp->output_limit;
 		break;
 	case 'O':
-		if (!parse_long(optarg, &qpp->offset) ||
+		if (!parse_long(arg, &qpp->offset) ||
 		    (qpp->offset < 0))
 			return "-O must be zero or positive";
 		break;
@@ -1029,7 +1030,8 @@ select_config(void) {
 	for (conf = conf_files; *conf != NULL; conf++) {
 		wordexp_t we;
 
-		wordexp(*conf, &we, WRDE_NOCMD);
+		if (wordexp(*conf, &we, WRDE_NOCMD) != 0)
+			continue;
 		cf = strdup(we.we_wordv[0]);
 		wordfree(&we);
 		if (access(cf, R_OK) == 0) {
