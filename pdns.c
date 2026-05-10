@@ -644,7 +644,8 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		my_logf("warning: json_loadb: %d:%d: %s %s",
 			error.line, error.column,
 			error.text, error.source);
-		abort();
+		msg = "json_loadb failed";
+		goto ouch;
 	}
 	if (debug_level >= 4) {
 		char *pretty = json_dumps(tup->obj.main, JSON_INDENT(2));

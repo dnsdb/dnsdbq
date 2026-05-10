@@ -39,7 +39,10 @@ CWARN   +=-Werror
 CDEFS = -DWANT_PDNS_DNSDB=1 -DWANT_PDNS_CIRCL=1
 CGPROF =
 CDEBUG = -g -O3
-CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS)
+CPROT = -fstack-protector-strong \
+	-D_FORTIFY_SOURCE=2 \
+	-fPIE -pie -Wl,-z,relro,-z,now
+CFLAGS += $(CGPROF) $(CDEBUG) $(CWARN) $(CDEFS) $(CPROT)
 INCL= $(CURLINCL) $(JANSINCL)
 LIBS= $(CURLLIBS) $(JANSLIBS) -lresolv
 # For freebsd, it requires that -lresolv _not_ be used here, use this instead of the above line:

@@ -311,6 +311,10 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 	}
 
+	if (fetch->len + bytes > MAX_FETCH_BUF) {
+		printf("?? very large response\n");
+		return 0;
+	}
 	x = realloc(fetch->buf, fetch->len + bytes);
 	if (x == NULL)
 		my_panic(true, "realloc");
