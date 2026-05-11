@@ -46,9 +46,6 @@ struct tokstr *tokstr_region(struct tokstr_reg);
 // tokstr_string -- create an iterator for a nul-terminated string
 struct tokstr *tokstr_string(const char *);
 
-// tokstr_string -- create an iterator for a nul-terminated string
-struct tokstr *tokstr_string(const char *);
-
 // tokstr_next -- return next token from an iterator (which must be free()'d)
 // (NULL means no more tokens are available.)
 char *tokstr_next(struct tokstr *, const char *);

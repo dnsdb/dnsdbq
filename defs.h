@@ -47,6 +47,7 @@
  * must not be greater than any pDNS system's concurrent connection limit.
  */
 #define	MAX_FETCHES 8
+#define	MAX_FETCH_BUF (16*1024*1024)
 
 #define DNSDBQ_SYSTEM "DNSDBQ_SYSTEM"
 

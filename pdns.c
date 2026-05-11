@@ -644,7 +644,8 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 		my_logf("warning: json_loadb: %d:%d: %s %s",
 			error.line, error.column,
 			error.text, error.source);
-		abort();
+		msg = "json_loadb failed";
+		goto ouch;
 	}
 	if (debug_level >= 4) {
 		char *pretty = json_dumps(tup->obj.main, JSON_INDENT(2));
@@ -762,57 +763,62 @@ tuple_make(pdns_tuple_t tup, const char *buf, size_t len) {
 
 	/* Records. */
 	tup->obj.rrname = json_object_get(tup->obj.cof_obj, "rrname");
-	if (tup->obj.rrname != NULL) {
-		if (!json_is_string(tup->obj.rrname)) {
-			msg = "rrname must be a string";
-			goto ouch;
-		}
-
-		char *r = strdup(json_string_value(tup->obj.rrname));
-		int dot = 0;
-
-		if ((transforms & TRANS_REVERSE) != 0) {
-			char *t = reverse(r);
-			DESTROY(r);
-			r = t;
-			t = NULL;
-			/* leading dot comes from reverse() */
-			if ((transforms & TRANS_CHOMP) != 0)
-				dot = 1;
-		} else if ((transforms & TRANS_CHOMP) != 0) {
-			/* unescaped trailing dot? */
-			size_t l = strlen(r);
-			if (l > 0 && r[l-1] == '.' &&
-			    (l == 1 || r[l-2] != '\\'))
-				r[l-1] = '\0';
-		}
-
-		if (dot) {
-			/* in chomp+reverse, the dot to chomp is now leading. */
-			tup->rrname = strdup(r + dot);
-			DESTROY(r);
-		} else {
-			tup->rrname = r;
-		}
+	if (tup->obj.rrname == NULL) {
+		msg = "rrname is required";
+		goto ouch;
 	}
-	tup->obj.rrtype = json_object_get(tup->obj.cof_obj, "rrtype");
-	if (tup->obj.rrtype != NULL) {
-		if (!json_is_string(tup->obj.rrtype)) {
-			msg = "rrtype must be a string";
-			goto ouch;
-		}
-		tup->rrtype = json_string_value(tup->obj.rrtype);
+	if (!json_is_string(tup->obj.rrname)) {
+		msg = "rrname must be a string";
+		goto ouch;
 	}
-	tup->obj.rdata = json_object_get(tup->obj.cof_obj, "rdata");
-	if (tup->obj.rdata != NULL) {
-		if (json_is_string(tup->obj.rdata)) {
-			tup->rdata = json_string_value(tup->obj.rdata);
-		} else if (!json_is_array(tup->obj.rdata)) {
-			msg = "rdata must be a string or array";
-			goto ouch;
-		}
-		/* N.b., the array case is for the consumer to iterate over. */
-	}
+
+        char *r = strdup(json_string_value(tup->obj.rrname));
+        int dot = 0;
+
+        if ((transforms & TRANS_REVERSE) != 0) {
+                char *t = reverse(r);
+                DESTROY(r);
+                r = t;
+                t = NULL;
+                /* leading dot comes from reverse() */
+                if ((transforms & TRANS_CHOMP) != 0)
+                        dot = 1;
+        } else if ((transforms & TRANS_CHOMP) != 0) {
+                /* unescaped trailing dot? */
+                size_t l = strlen(r);
+                if (l > 0 && r[l - 1] == '.' && (l == 1 || r[l - 2] != '\\'))
+                        r[l - 1] = '\0';
+        }
+
+        if (dot) {
+                /* in chomp+reverse, the dot to chomp is now leading. */
+                tup->rrname = strdup(r + dot);
+                DESTROY(r);
+        } else {
+                tup->rrname = r;
+        }
+        tup->obj.rrtype = json_object_get(tup->obj.cof_obj, "rrtype");
+        if (tup->obj.rrtype == NULL) {
+                msg = "rrtype is required";
+                goto ouch;
+        }
+        if (!json_is_string(tup->obj.rrtype)) {
+                msg = "rrtype must be a string";
+                goto ouch;
+        }
+        tup->rrtype = json_string_value(tup->obj.rrtype);
+        tup->obj.rdata = json_object_get(tup->obj.cof_obj, "rdata");
+        if (tup->obj.rdata == NULL) {
+                msg = "rdata is required";
+                goto ouch;
+        }
+        if (json_is_string(tup->obj.rdata)) {
+                tup->rdata = json_string_value(tup->obj.rdata);
+        } else if (!json_is_array(tup->obj.rdata)) {
+                msg = "rdata must be a string or array";
+                goto ouch;
+        }
+        /* N.b., the array case is for the consumer to iterate over. */
 
 	assert(msg == NULL);
 	return NULL;
@@ -1089,7 +1095,7 @@ pick_system(const char *name, const char *context) {
 	}
 
 	if (msg != NULL) {
-		my_logf("%s (in %s)\n", msg, context);
+		my_logf("%s (in %s)", msg, context);
 		DESTROY(msg);
 		my_exit(1);
 	}
@@ -1145,7 +1151,7 @@ read_config(void) {
 
 		l++;
 		if (strchr(line, '\n') == NULL) {
-			my_logf("conf line #%d: too long", l);
+			my_logf("conf line #%d: indecipherable", l);
 			my_exit(1);
 		}
 		tok1 = strtok_r(line, "\040\012", &saveptr);
@@ -1166,7 +1172,7 @@ read_config(void) {
 			if (strcmp(tok2, "system") == 0 && !psys_specified) {
 				pick_system(tok3, config_file);
 				if (psys == NULL) {
-					my_logf("unknown %s %s\n",
+					my_logf("unknown %s %s",
 						DNSDBQ_SYSTEM,
 						tok3);
 					my_exit(1);

@@ -234,7 +234,11 @@ writer_init(long output_limit, ps_user_t ps_user, bool meta_query) {
 			exec_sort(p1, p2);
 		close(p1[0]);
 		writer->sort_stdin = fdopen(p1[1], "w");
+		if (writer->sort_stdin == NULL)
+			my_panic(true, "fdopen");
 		writer->sort_stdout = fdopen(p2[0], "r");
+		if (writer->sort_stdout == NULL)
+			my_panic(true, "fdopen");
 		close(p2[1]);
 	}
 
@@ -278,6 +282,7 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 	writer_t writer = query->writer;
 	qparam_ct qp = &query->qp;
 	size_t bytes = size * nmemb;
+	char *x;
 	char *nl;
 
 	DEBUG(3, true, "writer_func(%d, %d): %d\n",
@@ -306,7 +311,15 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 		}
 	}
 
-	fetch->buf = realloc(fetch->buf, fetch->len + bytes);
+	if (fetch->len + bytes > MAX_FETCH_BUF) {
+		printf("?? very large response\n");
+		return 0;
+	}
+	x = realloc(fetch->buf, fetch->len + bytes);
+	if (x == NULL)
+		my_panic(true, "realloc");
+	fetch->buf = x;
+	x = NULL;
 	memcpy(fetch->buf + fetch->len, ptr, bytes);
 	fetch->len += bytes;
 
@@ -365,8 +378,11 @@ writer_func(char *ptr, size_t size, size_t nmemb, void *blob) {
 			fetch->stopped = true;
 		} else if (writer->meta_query) {
 			/* concatenate this fragment (incl \n) to ps_buf. */
-			writer->ps_buf = realloc(writer->ps_buf,
-						 writer->ps_len + pre_len + 1);
+			x = realloc(writer->ps_buf, writer->ps_len + pre_len + 1);
+			if (x == NULL)
+				my_panic(true, "realloc");
+			writer->ps_buf = x;
+			x = NULL;
 			memcpy(writer->ps_buf + writer->ps_len,
 			       fetch->buf, pre_len + 1);
 			writer->ps_len += pre_len + 1;
@@ -431,11 +447,13 @@ last_fetch(fetch_t fetch) {
 			writer->active = NULL;
 		}
 		assert(writer->ps_buf == NULL && writer->ps_len == 0);
-		writer->ps_len = (size_t)
-			asprintf(&writer->ps_buf, "-- %s (%s)\n",
+		int x = asprintf(&writer->ps_buf, "-- %s (%s)\n",
 				 or_else(query->status, status_noerror),
 				 or_else(query->message,
 					 or_else(fetch->saf_msg, "no error")));
+		if (x < 0)
+			my_panic(true, "asprintf");
+		writer->ps_len = (size_t) x;
 		if (npaused > 0) {
 			query_t unpause;
 			fetch_t ufetch;
