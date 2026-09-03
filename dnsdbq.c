@@ -742,6 +742,7 @@ help(void) {
 	printf("usage: %s [-acdfGghIjmqSsUv468] [-p dns|json|csv|minimal]\n",
 	       program_name);
 	puts("\t[-u SYSTEM] [-V VERB] [-0 FUNCTION=INPUT]\n"
+	     "\t[-C COOKIEFILE] [-o TIMEOUT]\n"
 	     "\t[-k (first|last|duration|count|name|type|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT]\n"
 	     "\t[-O OFFSET] [-M MAX_COUNT]\n"
@@ -761,6 +762,7 @@ help(void) {
 	     "\tor relative format %%dw%%dd%%dh%%dm%%ds.\n"
 	     "use -a to get ASNs associated with reported IP addresses\n"
 	     "use -c to get complete (strict) time matching for -A and -B.\n"
+	     "use -C COOKIEFILE to pass an HTTP cookie file to libcurl.\n"
 	     "for -D, the default is \"%s\"\n"
 	     "use -d one or more times to ramp up the diagnostic output.\n"
 	     "for -0, the function must be \"countoff\"\n"
@@ -782,6 +784,7 @@ help(void) {
 	     "use -m with -f for multiple upstream queries in single result.\n"
 	     "use -m with -f -f for multiple upstream queries out of order.\n"
 	     "use -O # to skip this many results in what is returned.\n"
+	     "use -o # to set a connect and transfer timeout in seconds (also $DNSDBQ_TIMEOUT).\n"
 	     "use -q for warning reticence.\n"
 	     "use -s to sort in ascending order, "
 	     "or -S for descending order.\n"
