@@ -81,6 +81,7 @@ static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
 static const char *check_7bit(const char *);
+static const char *check_ipv4_leading_zeros(const char *);
 
 /* Constants. */
 
@@ -324,6 +325,8 @@ main(int argc, char *argv[]) {
 			} else {
 				qd.thing = strdup(optarg);
 			}
+			if ((msg = check_ipv4_leading_zeros(qd.thing)) != NULL)
+				usage(msg);
 			break;
 		    }
 		case 'V': {
@@ -1298,6 +1301,9 @@ batch_parse(char *line, qdesc_t qdp) {
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/ip/'";
 			qd.thing = t;
+			msg = check_ipv4_leading_zeros(qd.thing);
+			if (msg != NULL)
+				return msg;
 		} else {
 			return "unrecognized term after 'rdata/'";
 		}
@@ -1312,31 +1318,20 @@ batch_parse(char *line, qdesc_t qdp) {
 	return NULL;
 }
 
-static char *
-strip_leading_zeros_v4(const char *addr)
+static const char *
+check_ipv4_leading_zeros(const char *addr)
 {
-	char *dup, *a, *b;
-
-	dup = strdup(addr);
-	if (dup == NULL) {
-		return (NULL);
-	}
-
-	a = dup;
-	b = dup;
+	const char *a = addr;
 
 	while (*a != '\0') {
-		if (*a == '0' && isdigit((unsigned char)a[1])) {
-			a++;
-			continue;
-		}
-
-		*b++ = *a++;
+		if (*a == '0' && isdigit((unsigned char)a[1]) &&
+		    (a == addr || !isdigit((unsigned char)a[-1])))
+			return "invalid IPv4 address: "
+			       "leading zeros in an octet are not permitted";
+		a++;
 	}
 
-	*b = '\0';
-
-	return dup;
+	return NULL;
 }
 
 /* makepath -- make a RESTful URI that describes these query parameters.
@@ -1353,19 +1348,6 @@ makepath(qdesc_ct qdp)
 	char *pfxlen = escape(qdp->pfxlen);
 	char *path = NULL;
 	int x;
-
-	if (qdp->mode == ip_mode) {
-		char *thing_norm;
-
-		thing_norm = strip_leading_zeros_v4(qdp->thing);
-
-		if (thing_norm != NULL) {
-			DESTROY(thing);
-			thing = escape(thing_norm);
-		}
-
-		DESTROY(thing_norm);
-	}
 
 	switch (qdp->mode) {
 	case rrset_mode:
