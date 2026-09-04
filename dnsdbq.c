@@ -1312,21 +1312,62 @@ batch_parse(char *line, qdesc_t qdp) {
 	return NULL;
 }
 
+static char *
+strip_leading_zeros_v4(const char *addr)
+{
+	char *dup, *a, *b;
+
+	dup = strdup(addr);
+	if (dup == NULL) {
+		return (NULL);
+	}
+
+	a = dup;
+	b = dup;
+
+	while (*a != '\0') {
+		if (*a == '0' && isdigit((unsigned char)a[1])) {
+			a++;
+			continue;
+		}
+
+		*b++ = *a++;
+	}
+
+	*b = '\0';
+
+	return dup;
+}
+
 /* makepath -- make a RESTful URI that describes these query parameters.
  *
  * Returns a string that must be free()d.
  */
 static char *
-makepath(qdesc_ct qdp) {
+makepath(qdesc_ct qdp)
+{
 	/* recondition various options for HTML use. */
 	char *thing = escape(qdp->thing);
 	char *rrtype = escape(qdp->rrtype);
 	char *bailiwick = escape(qdp->bailiwick);
 	char *pfxlen = escape(qdp->pfxlen);
-
 	char *path = NULL;
+	int x;
+
+	if (qdp->mode == ip_mode) {
+		char *thing_norm;
+
+		thing_norm = strip_leading_zeros_v4(qdp->thing);
+
+		if (thing_norm != NULL) {
+			DESTROY(thing);
+			thing = escape(thing_norm);
+		}
+
+		DESTROY(thing_norm);
+	}
+
 	switch (qdp->mode) {
-		int x;
 	case rrset_mode:
 		if (rrtype != NULL && bailiwick != NULL)
 			x = asprintf(&path, "rrset/name/%s/%s/%s",

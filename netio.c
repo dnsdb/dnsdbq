@@ -767,7 +767,7 @@ io_drain(void) {
 	}
 }
 
-/* escape -- HTML-encode a string, returns a string which must be free()'d.
+/* escape -- URL percent-encode a string, returns a string which must be free()'d.
  */
 char *
 escape(const char *str) {
