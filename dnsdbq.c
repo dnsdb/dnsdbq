@@ -1324,10 +1324,9 @@ check_ipv4_leading_zeros(const char *addr)
 	const char *a = addr;
 
 	while (*a != '\0') {
-		if (*a == '0' && isdigit((unsigned char)a[1]) &&
-		    (a == addr || !isdigit((unsigned char)a[-1])))
-			return "invalid IPv4 address: "
-			       "leading zeros in an octet are not permitted";
+		if (*a == '0' && isdigit((unsigned char)a[1]) && (a == addr || a[-1] == '.')) {
+			return "invalid IPv4 address: leading zeros in an octet are not permitted";
+		}
 		a++;
 	}
 
