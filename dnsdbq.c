@@ -81,6 +81,7 @@ static void ruminate_json(int, qparam_ct);
 static const char *lookup_ok(void);
 static const char *summarize_ok(void);
 static const char *check_7bit(const char *);
+static const char *check_ipv4_leading_zeros(const char *);
 
 /* Constants. */
 
@@ -324,6 +325,8 @@ main(int argc, char *argv[]) {
 			} else {
 				qd.thing = strdup(optarg);
 			}
+			if ((msg = check_ipv4_leading_zeros(qd.thing)) != NULL)
+				usage(msg);
 			break;
 		    }
 		case 'V': {
@@ -742,6 +745,7 @@ help(void) {
 	printf("usage: %s [-acdfGghIjmqSsUv468] [-p dns|json|csv|minimal]\n",
 	       program_name);
 	puts("\t[-u SYSTEM] [-V VERB] [-0 FUNCTION=INPUT]\n"
+	     "\t[-C COOKIEFILE] [-o TIMEOUT]\n"
 	     "\t[-k (first|last|duration|count|name|type|data)[,...]]\n"
 	     "\t[-l QUERY-LIMIT] [-L OUTPUT-LIMIT]\n"
 	     "\t[-O OFFSET] [-M MAX_COUNT]\n"
@@ -761,6 +765,7 @@ help(void) {
 	     "\tor relative format %%dw%%dd%%dh%%dm%%ds.\n"
 	     "use -a to get ASNs associated with reported IP addresses\n"
 	     "use -c to get complete (strict) time matching for -A and -B.\n"
+	     "use -C COOKIEFILE to pass an HTTP cookie file to libcurl.\n"
 	     "for -D, the default is \"%s\"\n"
 	     "use -d one or more times to ramp up the diagnostic output.\n"
 	     "for -0, the function must be \"countoff\"\n"
@@ -782,6 +787,7 @@ help(void) {
 	     "use -m with -f for multiple upstream queries in single result.\n"
 	     "use -m with -f -f for multiple upstream queries out of order.\n"
 	     "use -O # to skip this many results in what is returned.\n"
+	     "use -o # to set a connect and transfer timeout in seconds.\n"
 	     "use -q for warning reticence.\n"
 	     "use -s to sort in ascending order, "
 	     "or -S for descending order.\n"
@@ -1295,6 +1301,9 @@ batch_parse(char *line, qdesc_t qdp) {
 			if ((t = strtok_r(NULL, "/", &saveptr)) == NULL)
 				return "missing term after 'rdata/ip/'";
 			qd.thing = t;
+			msg = check_ipv4_leading_zeros(qd.thing);
+			if (msg != NULL)
+				return msg;
 		} else {
 			return "unrecognized term after 'rdata/'";
 		}
@@ -1309,21 +1318,37 @@ batch_parse(char *line, qdesc_t qdp) {
 	return NULL;
 }
 
+static const char *
+check_ipv4_leading_zeros(const char *addr)
+{
+	const char *a = addr;
+
+	while (*a != '\0') {
+		if (*a == '0' && isdigit((unsigned char)a[1]) && (a == addr || a[-1] == '.')) {
+			return "invalid IPv4 address: leading zeros in an octet are not permitted";
+		}
+		a++;
+	}
+
+	return NULL;
+}
+
 /* makepath -- make a RESTful URI that describes these query parameters.
  *
  * Returns a string that must be free()d.
  */
 static char *
-makepath(qdesc_ct qdp) {
+makepath(qdesc_ct qdp)
+{
 	/* recondition various options for HTML use. */
 	char *thing = escape(qdp->thing);
 	char *rrtype = escape(qdp->rrtype);
 	char *bailiwick = escape(qdp->bailiwick);
 	char *pfxlen = escape(qdp->pfxlen);
-
 	char *path = NULL;
+	int x;
+
 	switch (qdp->mode) {
-		int x;
 	case rrset_mode:
 		if (rrtype != NULL && bailiwick != NULL)
 			x = asprintf(&path, "rrset/name/%s/%s/%s",
