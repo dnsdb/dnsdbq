@@ -787,7 +787,7 @@ help(void) {
 	     "use -m with -f for multiple upstream queries in single result.\n"
 	     "use -m with -f -f for multiple upstream queries out of order.\n"
 	     "use -O # to skip this many results in what is returned.\n"
-	     "use -o # to set a connect and transfer timeout in seconds (also $DNSDBQ_TIMEOUT).\n"
+	     "use -o # to set a connect and transfer timeout in seconds.\n"
 	     "use -q for warning reticence.\n"
 	     "use -s to sort in ascending order, "
 	     "or -S for descending order.\n"
